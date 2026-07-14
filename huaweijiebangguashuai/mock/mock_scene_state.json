@@ -1,0 +1,40 @@
+{
+  "description": "模拟 Isaac Sim 抓取到的桌面环境坐标 JSON",
+  "scene_id": "mock-scene-001",
+  "timestamp": "2026-07-14T10:00:00Z",
+  "objects": [
+    {
+      "name": "红色方块",
+      "position": { "x": 0.15, "y": 0.05, "z": 0.03 },
+      "bbox": { "width": 0.04, "height": 0.04, "depth": 0.04 },
+      "color": "#FF0000",
+      "label": "cube"
+    },
+    {
+      "name": "蓝色杯子",
+      "position": { "x": -0.10, "y": -0.08, "z": 0.06 },
+      "bbox": { "width": 0.07, "height": 0.10, "depth": 0.07 },
+      "color": "#0000FF",
+      "label": "cup"
+    },
+    {
+      "name": "绿色圆柱",
+      "position": { "x": 0.20, "y": -0.12, "z": 0.04 },
+      "bbox": { "width": 0.05, "height": 0.08, "depth": 0.05 },
+      "color": "#00FF00",
+      "label": "cylinder"
+    },
+    {
+      "name": "黄色三角",
+      "position": { "x": -0.15, "y": 0.10, "z": 0.02 },
+      "bbox": { "width": 0.06, "height": 0.03, "depth": 0.06 },
+      "color": "#FFFF00",
+      "label": "triangle"
+    }
+  ],
+  "robot_state": {
+    "joint_angles": [0.0, -0.5, 0.0, -1.2, 0.0, 1.0],
+    "end_effector_pose": { "x": 0.0, "y": 0.0, "z": 0.3, "roll": 0.0, "pitch": 0.0, "yaw": 0.0 },
+    "gripper": { "width": 0.08, "force": 0.0, "is_closed": false }
+  }
+}

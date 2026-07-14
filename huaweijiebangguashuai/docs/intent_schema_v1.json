@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Intent Schema v1 - 结构化需求 JSON 模版规范 (T001-T010)",
+  "description": "同学 A：口语转规范 JSON 的统一 Schema 规范",
+  "version": "1.0.0",
+  "type": "object",
+  "properties": {
+    "intent_id": {
+      "type": "string",
+      "description": "意图唯一标识"
+    },
+    "raw_text": {
+      "type": "string",
+      "description": "原始自然语言输入"
+    },
+    "action": {
+      "type": "string",
+      "enum": ["pick", "place", "push", "pull", "stack", "sort", "open", "close"],
+      "description": "核心动作类型"
+    },
+    "target_object": {
+      "type": "string",
+      "description": "目标物体名称"
+    },
+    "destination": {
+      "type": "object",
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      },
+      "description": "目标位置坐标"
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "用户附加约束条件"
+    }
+  },
+  "required": ["intent_id", "raw_text", "action", "target_object"]
+}

@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# 虚拟环境
+venv/
+.venv/
+env/
+.env
+conda-env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 环境变量 (含密钥！)
+.env
+.env.local
+.env.*.local
+
+# Isaac Sim
+*.usd~
+*.log
+isaac_sim/
+_experimental/
+
+# 仿真大日志
+logs/
+*.log
+*.out
+output/
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+tmp/
+temp/
+*.tmp

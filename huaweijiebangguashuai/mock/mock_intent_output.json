@@ -1,0 +1,35 @@
+{
+  "description": "模拟同学 A (intent_parser) 解析出来的标准需求 JSON",
+  "samples": [
+    {
+      "intent_id": "task-001",
+      "raw_text": "帮我把那个红色的方块拿过来放到蓝杯子旁边",
+      "action": "pick_and_place",
+      "target_object": "红色方块",
+      "reference_object": "蓝色杯子",
+      "spatial_relation": "next_to",
+      "destination": { "x": -0.10, "y": 0.02, "z": 0.03 },
+      "constraints": [],
+      "confidence": 0.95
+    },
+    {
+      "intent_id": "task-002",
+      "raw_text": "把桌子上所有积木按颜色分成三堆",
+      "action": "sort",
+      "target_objects": ["红色方块", "蓝色方块", "绿色方块"],
+      "sort_criterion": "color",
+      "num_piles": 3,
+      "constraints": [],
+      "confidence": 0.88
+    },
+    {
+      "intent_id": "task-003",
+      "raw_text": "小心地把最上面那个易碎品拿下来放平",
+      "action": "pick_and_place",
+      "target_object": "易碎品",
+      "attributes": ["topmost", "fragile"],
+      "constraints": ["low_velocity", "gentle_grip"],
+      "confidence": 0.72
+    }
+  ]
+}
