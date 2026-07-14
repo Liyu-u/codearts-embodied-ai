@@ -1,26 +1,47 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Intent Schema v1 - 结构化需求 JSON 模版规范 (T001-T010)",
-  "description": "同学 A：口语转规范 JSON 的统一 Schema 规范",
+  "title": "结构化需求 JSON 模板规范 v1 (T001-T010)",
+  "description": "同学 A 上传 — 统一口语解析输出格式，覆盖抓取、放置、排序、筛选等任务",
   "version": "1.0.0",
   "type": "object",
+  "required": ["intent_id", "raw_text", "action", "target_object"],
   "properties": {
     "intent_id": {
       "type": "string",
-      "description": "意图唯一标识"
+      "description": "任务唯一标识，格式: task-XXX"
     },
     "raw_text": {
       "type": "string",
-      "description": "原始自然语言输入"
+      "description": "用户输入的原始自然语言指令"
     },
     "action": {
       "type": "string",
-      "enum": ["pick", "place", "push", "pull", "stack", "sort", "open", "close"],
-      "description": "核心动作类型"
+      "enum": [
+        "pick_and_place",
+        "push",
+        "pull",
+        "stack",
+        "sort_by_color",
+        "sort_by_size",
+        "filter_by_attribute",
+        "open",
+        "close",
+        "pour"
+      ],
+      "description": "核心动作类型枚举，覆盖 T001-T010"
     },
     "target_object": {
       "type": "string",
-      "description": "目标物体名称"
+      "description": "主目标物体名称或描述"
+    },
+    "target_objects": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "多目标物体列表 (用于排序、分类等批量操作)"
+    },
+    "reference_object": {
+      "type": "string",
+      "description": "参照物体名称"
     },
     "destination": {
       "type": "object",
@@ -29,13 +50,38 @@
         "y": { "type": "number" },
         "z": { "type": "number" }
       },
-      "description": "目标位置坐标"
+      "description": "目标放置位置 (世界坐标系，单位: 米)"
+    },
+    "spatial_relation": {
+      "type": "string",
+      "enum": ["on_top", "next_to", "behind", "in_front_of", "inside"],
+      "description": "空间关系描述"
+    },
+    "attributes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "目标物体属性标签 (颜色、材质、易碎等)"
     },
     "constraints": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "用户附加约束条件"
+      "description": "用户附加约束条件 (如: low_velocity, gentle_grip, avoid_obstacle)"
+    },
+    "sort_criterion": {
+      "type": "string",
+      "enum": ["color", "size", "weight", "shape"],
+      "description": "排序/分类依据"
+    },
+    "num_piles": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "分类堆数"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "意图解析置信度"
     }
-  },
-  "required": ["intent_id", "raw_text", "action", "target_object"]
+  }
 }

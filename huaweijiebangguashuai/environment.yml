@@ -2,17 +2,14 @@ name: embodied-ai
 channels:
   - conda-forge
   - defaults
-  - pytorch
 
 dependencies:
   - python=3.10
   - pip>=23.0
-
-  # --- 核心数值库 ---
   - numpy>=1.26.0
   - scipy>=1.12.0
-
-  # --- 网络 ---
+  - pytest>=8.0.0
+  - pytest-cov>=4.1.0
   - pip:
     - fastapi>=0.110.0
     - uvicorn[standard]>=0.27.0
@@ -22,15 +19,8 @@ dependencies:
     - httpx>=0.27.0
     - python-dotenv>=1.0.0
     - loguru>=0.7.0
-
-  # --- Isaac Sim 特定依赖 ---
-  # 注意：Isaac Sim 自带 Python 环境，以下为扩展依赖
-  # 安装 Isaac Sim 后需在内部使用其捆绑的 Python
-  # 详见: https://docs.omniverse.nvidia.com/isaacsim/
-  - pip:
-    - omni-usd
-    - omni-isaac-core
-
-  # --- 测试 ---
-  - pytest>=8.0.0
-  - pytest-cov>=4.1.0
+    - black>=24.0.0
+    - ruff>=0.2.0
+    # Isaac Sim 特定依赖
+    # 注意: Isaac Sim 自带 Python 环境，以下为扩展依赖
+    # 详见 https://docs.omniverse.nvidia.com/isaacsim/

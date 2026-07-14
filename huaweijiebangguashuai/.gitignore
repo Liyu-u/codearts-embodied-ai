@@ -6,50 +6,38 @@ __pycache__/
 dist/
 build/
 .eggs/
-*.egg
 
 # 虚拟环境
 venv/
 .venv/
 env/
-.env
 conda-env/
+
+# 环境变量 (含密钥，严禁提交!)
+.env
+.env.local
 
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
 *~
-
-# 环境变量 (含密钥！)
-.env
-.env.local
-.env.*.local
 
 # Isaac Sim
 *.usd~
-*.log
 isaac_sim/
 _experimental/
 
-# 仿真大日志
-logs/
+# 运行时日志 (logs/ 中的 JSON 保留，但排除临时日志)
+logs/*.log
 *.log
-*.out
-output/
-
-# 数据库
-*.db
-*.sqlite
-*.sqlite3
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# 临时文件
+# Temp
 tmp/
 temp/
 *.tmp
