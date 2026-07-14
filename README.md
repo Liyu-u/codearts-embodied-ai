@@ -29,7 +29,7 @@ huaweijiebangguashuai/
 ├── src/              # 💻 [核心源代码] 按模块解耦的工程代码
 │   ├── ui/           # 🎨 前端交互界面 (A)
 │   │   └── app.py                    # Gradio 应用 (输入框+预设下拉+JSON渲染器)
-│   ├── agent/        # 🧠 大模型调用与安全校验 (同学 B)
+│   ├── agent/        # 🧠 大模型调用与安全校验 (B)
 │   │   └── code_validator.py         # 代码沙盒校验器 (黑/白名单 + 安全断言检查)
 │   ├── isaac/        # 🤖 Isaac Sim 物理仿真与元API (C)
 │   │   ├── exec_wrapper.py           # 【核心】元 API 底层驱动 + IK + 防撞断言
@@ -107,13 +107,47 @@ cd src/ui && python app.py
 
 ---
 
-## 👥 团队分工
+## 👥 团队分工与职责
 
-| 角色 | 模块 | 本周必传物 |
-|------|------|-----------|
-| **王翊航/郭家腾** | `src/ui/` + `prompts/` + `docs/` | `app.py`, `intent_parser_prompt.md`, `intent_schema_v1.json` |
-| **冯海** | `src/agent/` + `prompts/` | `code_validator.py`, `codearts_system_prompt.md` |
-| **吴昌庆** | `src/isaac/` + `docs/` | `exec_wrapper.py`, `get_scene_json.py`, `robot_meta_api_whitepaper.md` |
-| **王翊航/郭家腾** | `src/backend/` + `src/monitor/` | `server.py`, `trace_probe.py` |
+| 角色 | 姓名 | 职责定位 | 模块 | 本周核心产出 |
+|------|------|----------|------|-------------|
+| **A** | 王翊航 / 郭家腾 | 意图解析与交互 | `src/ui/` + `prompts/` + `docs/` | `app.py`, `intent_parser_prompt.md`, `intent_schema_v1.json` |
+| **B** | 冯海 | CodeArts 智能体与策略代码 | `src/agent/` + `prompts/` | `code_validator.py`, `codearts_system_prompt.md` |
+| **C** | 吴昌庆 | 物理仿真与环境感知 | `src/isaac/` + `docs/` | `exec_wrapper.py`, `get_scene_json.py`, `robot_meta_api_whitepaper.md` |
+| **D** | 王翊航 / 郭家腾 | 闭环纠错 | `src/backend/` + `src/monitor/` | `server.py`, `trace_probe.py` |
 
 ---
+
+## 📋 第一周阶段性成果
+
+1. 建立了最前沿的 **Isaac Sim 6.0.1 + Franka Panda 7-DOF** GPU 物理仿真环境；高质量完成了 `T001-T010` 共 10 个典型任务的结构化 JSON Schema 契约初稿。
+2. 深度学习了《Code as Policies》《SayCan》《TraceCoder》《Voyager》等 8 篇 CCF A/B 类顶会方法论，将"排序、条件筛选、形状匹配"等复杂逻辑融入赛题要求，确立了系统的三阶段处理架构。
+
+---
+
+## 🎯 第二周核心目标
+
+实现**自然语言 → Isaac Sim 仿真机器人的闭环控制**。
+
+### 里程碑
+
+| 里程碑 | 目标 | 说明 |
+|--------|------|------|
+| **M1** | 接口契约定稿 | 确定《需求 JSON 规范》、《机器人元 API 说明书》、《诊断日志 JSON 规范》的格式和字段接口 |
+| **M2** | 四模块独立跑通 | 四个模块各自独立通过 Mock 测试 |
+| **M3** | MVP 单链路贯通 | 在交互界面输入自然语言 → Isaac Sim 中 Franka Panda 成功完成物理动作 |
+
+### 各角色重点目标
+
+- **A (王翊航/郭家腾)**：打通口语转 JSON，搭建可视化交互网页
+- **B (冯海)**：调教 CodeArts，把 JSON 翻译为带几何计算的 Python 控制脚本
+- **C (吴昌庆)**：维护 Isaac Sim，输出感知坐标，把底层运动封装成元 API
+- **D (王翊航/郭家腾)**：打通前后端数据链，植入底层监控探针
+
+> 📖 详细开发说明见 [开发说明.md](开发说明.md)
+
+---
+
+## 📄 许可证
+
+[待定]
