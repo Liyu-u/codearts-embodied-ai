@@ -111,11 +111,10 @@ cd src/ui && python app.py
 
 | 角色 | 模块 | 本周必传物 |
 |------|------|-----------|
-| **同学 A** | `src/ui/` + `prompts/` + `docs/` | `app.py`, `intent_parser_prompt.md`, `intent_schema_v1.json` |
-| **同学 B** | `src/agent/` + `prompts/` | `code_validator.py`, `codearts_system_prompt.md` |
-| **同学 C (吴昌庆)** | `src/isaac/` + `docs/` | `exec_wrapper.py`, `get_scene_json.py`, `robot_meta_api_whitepaper.md` |
-| **同学 D** | `src/backend/` + `src/monitor/` | `server.py`, `trace_probe.py` |
-| **组长** | `docs/sprint1_plan.md` + 协调 | 冲刺规划 |
+| **王翊航/郭家腾** | `src/ui/` + `prompts/` + `docs/` | `app.py`, `intent_parser_prompt.md`, `intent_schema_v1.json` |
+| **冯海** | `src/agent/` + `prompts/` | `code_validator.py`, `codearts_system_prompt.md` |
+| **吴昌庆** | `src/isaac/` + `docs/` | `exec_wrapper.py`, `get_scene_json.py`, `robot_meta_api_whitepaper.md` |
+| **王翊航/郭家腾** | `src/backend/` + `src/monitor/` | `server.py`, `trace_probe.py` |
 
 ---
 
