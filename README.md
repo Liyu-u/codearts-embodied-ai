@@ -16,38 +16,38 @@
 
 ```
 huaweijiebangguashuai/
-├── docs/             # 📑 [文档与契约] Schema规范、API白皮书、项目进度
-│   ├── intent_schema_v1.json         # [同学 A] 结构化需求 JSON 模板规范 (T001-T010)
-│   ├── robot_meta_api_whitepaper.md   # [同学 C/B] 机器人元 API 白皮书 (6-8 核心动词)
-│   ├── sprint1_plan.md               # [组长] 本周冲刺规划与阶段目标纪要
+├── docs/             # 📑 [文档] JSON规范、API说明、项目进度
+│   ├── intent_schema_v1.json         # [A]结构化需求 JSON 模板规范 (T001-T010)
+│   ├── robot_meta_api_whitepaper.md   # [C/B] 机器人元 API 说明书
+│   ├── sprint1_plan.md               # [组长] 本周规划与阶段目标纪要
 │   └── weekly_reports/               # 各周进度汇报与文献调研备份
 │
 ├── prompts/          # 💬 [提示词库] CodeArts与意图解析的System Prompt与Few-shot
-│   ├── intent_parser_prompt.md       # [同学 A] 口语→JSON 解析 (内置 3 个转换样例)
-│   └── codearts_system_prompt.md     # [同学 B] CaP 策略生成 (内置 4 个代码样例)
+│   ├── intent_parser_prompt.md       # [A] 口语→JSON 解析 (内置转换样例)
+│   └── codearts_system_prompt.md     # [B]策略生成 (内置代码样例)
 │
 ├── src/              # 💻 [核心源代码] 按模块解耦的工程代码
-│   ├── ui/           # 🎨 前端交互界面 (同学 A)
+│   ├── ui/           # 🎨 前端交互界面 (A)
 │   │   └── app.py                    # Gradio 应用 (输入框+预设下拉+JSON渲染器)
 │   ├── agent/        # 🧠 大模型调用与安全校验 (同学 B)
 │   │   └── code_validator.py         # 代码沙盒校验器 (黑/白名单 + 安全断言检查)
-│   ├── isaac/        # 🤖 Isaac Sim 物理仿真与元API (同学 C/吴昌庆)
+│   ├── isaac/        # 🤖 Isaac Sim 物理仿真与元API (C)
 │   │   ├── exec_wrapper.py           # 【核心】元 API 底层驱动 + IK + 防撞断言
 │   │   ├── get_scene_json.py         # 场景感知脚本 (物体 3D 坐标 + BBox)
 │   │   └── scenes/                   # Isaac Sim 场景存档文件 (.usd)
-│   ├── backend/      # 🔗 后端中央中转转发服务 (同学 D)
+│   ├── backend/      # 🔗 后端中央中转转发服务 (D)
 │   │   └── server.py                 # FastAPI 中转服务器 (HTTP + Socket)
-│   └── monitor/      # 🚨 运行态探针与异常监听 (同学 D)
+│   └── monitor/      # 🚨 运行态探针与异常监听 (D)
 │       └── trace_probe.py            # 【闭环亮点】探针 + error_report 生成器
 │
 ├── tests/            # 🧪 [测试脚本] 各角色的独立 Mock 测试用例
-│   ├── test_ui_json_display.py       # [同学 A] 前端 JSON 渲染测试
-│   ├── test_codearts_generation.py   # [同学 B] 策略生成 + 安全校验测试
-│   ├── test_isaac_api_motion.py      # [同学 C] 机械臂运动 + 安全断言测试
-│   └── test_probe_interception.py    # [同学 D] 探针异常拦截 + 报告生成测试
+│   ├── test_ui_json_display.py       # [A] 前端 JSON 渲染测试
+│   ├── test_codearts_generation.py   # [B] 策略生成 + 安全校验测试
+│   ├── test_isaac_api_motion.py      # [C] 机械臂运动 + 安全断言测试
+│   └── test_probe_interception.py    # [D] 探针异常拦截 + 报告生成测试
 │
 ├── logs/             # 📊 [运行日志] 自动生成的感知JSON与报错JSON ("黑匣子")
-│   ├── scene_state.json              # (自动生成) 战场实体坐标快照
+│   ├── scene_state.json              # (自动生成) 实体坐标快照
 │   └── error_report_*.json           # (自动生成) 异常现场报告 → 触发反思闭环
 │
 ├── .gitignore
@@ -117,7 +117,3 @@ cd src/ui && python app.py
 | **王翊航/郭家腾** | `src/backend/` + `src/monitor/` | `server.py`, `trace_probe.py` |
 
 ---
-
-## 📄 许可证
-
-[待定]
