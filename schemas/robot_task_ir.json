@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Robot Task IR — 机器人任务中间表示",
+  "description": "自然语言经意图理解后输出的结构化任务中间表示 (Intermediate Representation)",
+  "version": "0.1.0",
+  "type": "object",
+  "required": ["task_id", "action", "target"],
+  "properties": {
+    "task_id": { "type": "string", "description": "任务唯一标识" },
+    "action": { "type": "string", "enum": ["pick","place","push","pull","stack","sort","filter","open","close","pour"], "description": "原子动作" },
+    "target": { "type": "string", "description": "目标物体" },
+    "targets": { "type": "array", "items": { "type": "string" }, "description": "多目标列表" },
+    "source": { "type": "object", "properties": { "x": {"type":"number"},"y": {"type":"number"},"z": {"type":"number"} } },
+    "destination": { "type": "object", "properties": { "x": {"type":"number"},"y": {"type":"number"},"z": {"type":"number"} } },
+    "constraints": { "type": "array", "items": { "$ref": "constraint.json" } },
+    "context": { "type": "object", "description": "场景上下文引用" }
+  }
+}

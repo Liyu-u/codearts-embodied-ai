@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Constraint — 任务约束规范",
+  "description": "定义任务执行时的各类约束条件",
+  "version": "0.1.0",
+  "type": "object",
+  "required": ["constraint_id", "type"],
+  "properties": {
+    "constraint_id": { "type": "string" },
+    "type": { "type": "string", "enum": ["safety","kinematic","temporal","spatial","force","velocity","grasp"] },
+    "description": { "type": "string" },
+    "params": { "type": "object" },
+    "priority": { "type": "string", "enum": ["hard","soft"], "default": "hard" }
+  }
+}
