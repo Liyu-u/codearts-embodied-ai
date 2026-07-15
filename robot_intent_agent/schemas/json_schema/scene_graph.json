@@ -1,0 +1,346 @@
+{
+  "$defs": {
+    "Affordance": {
+      "description": "物体可供性 (Gibsonian affordance)",
+      "enum": [
+        "graspable",
+        "pushable",
+        "pourable",
+        "stackable",
+        "openable",
+        "container",
+        "fragile",
+        "movable",
+        "fixed"
+      ],
+      "title": "Affordance",
+      "type": "string"
+    },
+    "BoundingBox": {
+      "description": "3D 包围盒 (单位: m)",
+      "properties": {
+        "width": {
+          "description": "宽度 (m)",
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "number"
+        },
+        "height": {
+          "description": "高度 (m)",
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "number"
+        },
+        "depth": {
+          "description": "深度 (m)",
+          "exclusiveMinimum": 0,
+          "title": "Depth",
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "depth"
+      ],
+      "title": "BoundingBox",
+      "type": "object"
+    },
+    "GripperState": {
+      "description": "夹爪状态",
+      "properties": {
+        "is_open": {
+          "default": true,
+          "description": "是否张开",
+          "title": "Is Open",
+          "type": "boolean"
+        },
+        "width": {
+          "default": 0.08,
+          "description": "夹爪开度 (m)",
+          "maximum": 0.1,
+          "minimum": 0.0,
+          "title": "Width",
+          "type": "number"
+        },
+        "force": {
+          "default": 0.0,
+          "description": "当前夹持力 (N)",
+          "maximum": 10.0,
+          "minimum": 0.0,
+          "title": "Force",
+          "type": "number"
+        },
+        "has_object": {
+          "default": false,
+          "description": "是否持有物体",
+          "title": "Has Object",
+          "type": "boolean"
+        }
+      },
+      "title": "GripperState",
+      "type": "object"
+    },
+    "JointState": {
+      "description": "关节状态",
+      "properties": {
+        "angles": {
+          "description": "7 自由度关节角 (rad)",
+          "items": {
+            "type": "number"
+          },
+          "title": "Angles",
+          "type": "array"
+        },
+        "velocities": {
+          "description": "关节速度 (rad/s)",
+          "items": {
+            "type": "number"
+          },
+          "title": "Velocities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "angles"
+      ],
+      "title": "JointState",
+      "type": "object"
+    },
+    "Orientation": {
+      "description": "3D 朝向 (Euler angles, 单位: rad)",
+      "properties": {
+        "roll": {
+          "default": 0.0,
+          "description": "Roll (rad)",
+          "title": "Roll",
+          "type": "number"
+        },
+        "pitch": {
+          "default": 0.0,
+          "description": "Pitch (rad)",
+          "title": "Pitch",
+          "type": "number"
+        },
+        "yaw": {
+          "default": 0.0,
+          "description": "Yaw (rad)",
+          "title": "Yaw",
+          "type": "number"
+        }
+      },
+      "title": "Orientation",
+      "type": "object"
+    },
+    "Position": {
+      "description": "3D 位置 (世界坐标系, 单位: m)",
+      "properties": {
+        "x": {
+          "description": "X 坐标 (m)",
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "description": "Y 坐标 (m)",
+          "title": "Y",
+          "type": "number"
+        },
+        "z": {
+          "description": "Z 坐标 (m)",
+          "title": "Z",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "title": "Position",
+      "type": "object"
+    },
+    "RobotState": {
+      "description": "机器人完整状态快照",
+      "properties": {
+        "gripper": {
+          "$ref": "#/$defs/GripperState"
+        },
+        "joint_state": {
+          "$ref": "#/$defs/JointState"
+        },
+        "battery": {
+          "default": 100.0,
+          "description": "电量 (%)",
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Battery",
+          "type": "number"
+        },
+        "is_homed": {
+          "default": true,
+          "description": "是否已归位",
+          "title": "Is Homed",
+          "type": "boolean"
+        }
+      },
+      "title": "RobotState",
+      "type": "object"
+    },
+    "SceneObject": {
+      "description": "场景中的单个物体。\n\n示例:\n    SceneObject(\n        id=\"obj-001\",\n        name=\"红色药瓶\",\n        position=Position(x=0.15, y=0.05, z=0.03),\n        bbox=BoundingBox(width=0.03, height=0.08, depth=0.03),\n        attributes={\"color\": \"red\", \"material\": \"plastic\"},\n        affordances=[Affordance.GRASPABLE, Affordance.FRAGILE],\n    )",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "description": "物体名称",
+          "title": "Name",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "语义标签 (bottle, cup, cube...)",
+          "title": "Label"
+        },
+        "position": {
+          "$ref": "#/$defs/Position",
+          "description": "3D 世界坐标"
+        },
+        "orientation": {
+          "$ref": "#/$defs/Orientation"
+        },
+        "bbox": {
+          "$ref": "#/$defs/BoundingBox",
+          "description": "包围盒尺寸"
+        },
+        "attributes": {
+          "additionalProperties": true,
+          "description": "自由属性 (color, material, weight...)",
+          "title": "Attributes",
+          "type": "object"
+        },
+        "affordances": {
+          "description": "可供性列表",
+          "items": {
+            "$ref": "#/$defs/Affordance"
+          },
+          "title": "Affordances",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "position",
+        "bbox"
+      ],
+      "title": "SceneObject",
+      "type": "object"
+    },
+    "SpatialPredicate": {
+      "description": "空间关系谓词",
+      "enum": [
+        "left_of",
+        "right_of",
+        "above",
+        "below",
+        "in_front_of",
+        "behind",
+        "inside",
+        "next_to",
+        "near",
+        "blocking",
+        "supporting"
+      ],
+      "title": "SpatialPredicate",
+      "type": "string"
+    },
+    "SpatialRelation": {
+      "description": "两个物体之间的空间关系",
+      "properties": {
+        "subject": {
+          "description": "主体物体 ID",
+          "title": "Subject",
+          "type": "string"
+        },
+        "predicate": {
+          "$ref": "#/$defs/SpatialPredicate",
+          "description": "空间谓词"
+        },
+        "object": {
+          "description": "客体物体 ID",
+          "title": "Object",
+          "type": "string"
+        },
+        "confidence": {
+          "default": 1.0,
+          "description": "关系置信度",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "额外信息 (距离、遮挡程度...)",
+          "title": "Metadata",
+          "type": "object"
+        }
+      },
+      "required": [
+        "subject",
+        "predicate",
+        "object"
+      ],
+      "title": "SpatialRelation",
+      "type": "object"
+    }
+  },
+  "description": "完整语义场景图。\n\n包含:\n    - 所有场景物体 (含属性、可供性)\n    - 物体间空间关系\n    - 机器人当前状态",
+  "properties": {
+    "scene_id": {
+      "title": "Scene Id",
+      "type": "string"
+    },
+    "timestamp": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "ISO 时间戳",
+      "title": "Timestamp"
+    },
+    "objects": {
+      "items": {
+        "$ref": "#/$defs/SceneObject"
+      },
+      "title": "Objects",
+      "type": "array"
+    },
+    "relations": {
+      "items": {
+        "$ref": "#/$defs/SpatialRelation"
+      },
+      "title": "Relations",
+      "type": "array"
+    },
+    "robot_state": {
+      "$ref": "#/$defs/RobotState"
+    }
+  },
+  "title": "SemanticSceneGraph",
+  "type": "object"
+}
