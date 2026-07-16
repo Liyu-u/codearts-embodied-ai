@@ -15,7 +15,7 @@ from .behavior_tree_generator import (
     RuleInstructionParser,
     ACTION_PIPELINE,
 )
-from .llm_planner import LLMPlanner
+from .llm_planner import LLMPlanner, HybridRouter, LLMPlannerError
 
 __all__ = [
     # Interface
@@ -27,6 +27,8 @@ __all__ = [
     "BehaviorTreeGenerator",
     "RuleInstructionParser",
     "ACTION_PIPELINE",
-    # LLM (Mock)
+    # LLM + DeepSeek
     "LLMPlanner",
+    "HybridRouter",
+    "LLMPlannerError",
 ]

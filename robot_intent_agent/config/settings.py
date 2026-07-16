@@ -32,15 +32,60 @@ class Settings(BaseSettings):
     default_min_z_m: float = Field(default=0.02, description="默认最低 Z 高度 (m)")
     default_collision_margin_m: float = Field(default=0.05, description="默认碰撞边距 (m)")
 
-    # --- LLM (预留) ---
-    llm_model: str = Field(default="gpt-4o", description="LLM 模型名")
-    llm_temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    # ============================================================
+    # DeepSeek API 配置
+    # ============================================================
+    deepseek_api_key: str = Field(
+        default="",
+        description="DeepSeek API Key (环境变量: RIA_DEEPSEEK_API_KEY)",
+    )
+    deepseek_base_url: str = Field(
+        default="https://api.deepseek.com",
+        description="DeepSeek API 地址",
+    )
+    deepseek_model: str = Field(
+        default="deepseek-chat",
+        description="DeepSeek 模型: deepseek-chat (V3) | deepseek-reasoner (R1)",
+    )
+    deepseek_temperature: float = Field(
+        default=0.1, ge=0.0, le=2.0,
+        description="LLM 温度参数",
+    )
+    deepseek_max_tokens: int = Field(
+        default=4096,
+        description="最大输出 token 数",
+    )
+    deepseek_timeout_s: float = Field(
+        default=30.0,
+        description="API 调用超时 (秒)",
+    )
+    deepseek_max_retries: int = Field(
+        default=1,
+        description="API 调用失败重试次数",
+    )
+
+    # --- 混合路由配置 ---
+    planner_engine: str = Field(
+        default="rule",
+        description="规划引擎: rule (纯规则) | llm (纯LLM) | hybrid (规则优先+LLM兜底)",
+    )
+    llm_fallback_on_low_confidence: bool = Field(
+        default=True,
+        description="规则引擎低置信度时是否回退到 LLM",
+    )
+    rule_confidence_threshold: float = Field(
+        default=0.6, ge=0.0, le=1.0,
+        description="规则引擎置信度阈值（低于此值启用 LLM）",
+    )
 
     model_config = {
         "env_prefix": "RIA_",
         "env_file": ".env",
         "extra": "forbid",
     }
+
+    def has_deepseek_key(self) -> bool:
+        return bool(self.deepseek_api_key)
 
 
 @lru_cache
