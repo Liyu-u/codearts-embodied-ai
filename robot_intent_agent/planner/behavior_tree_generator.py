@@ -212,8 +212,15 @@ class BehaviorTreeGenerator(TaskPlannerInterface):
         memory_params = self._merge_memory(memory_context or [])
         modifiers = {**memory_params, **modifiers}
 
-        # 4. 在场景中查找目标
+        # 4. 在场景中查找目标 — 实体接地
+        #    如果正则提取的目标在场景中找不到，遍历场景物体做子串匹配
         target_obj = scene.find_object(target) if scene else None
+        if scene and not target_obj:
+            for obj in scene.objects:
+                if obj.name in instruction:
+                    target = obj.name
+                    target_obj = obj
+                    break
 
         # 5. 构建行为树子节点
         children: List[BTNode] = []
@@ -232,8 +239,10 @@ class BehaviorTreeGenerator(TaskPlannerInterface):
                 ]
                 avoid_objects = list(set(avoid_objects + blockers))
 
-            for obstacle in avoid_objects:
-                children.append(self._make_avoid_node(obstacle))
+            # insert(0) 强制 Avoid 置于所有主技能动作之前 (紧跟前置条件)
+            insert_pos = len(children)  # 当前 children 只有 conditions
+            for i, obstacle in enumerate(avoid_objects):
+                children.insert(insert_pos + i, self._make_avoid_node(obstacle))
 
         # ── 主技能序列 ──
         for skill_name in pipeline:

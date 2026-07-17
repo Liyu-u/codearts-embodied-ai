@@ -1,10 +1,12 @@
 """
-Robot Task IR Schema — Pydantic v2 数据模型
+Universal Task IR v3.0 -- Pydantic v2 data models.
 
-这是整个意图理解管道的最终输出:
-    NL + Scene + Memory → Robot Task IR
-
-CodeArts 未来将直接解析此 JSON 生成 Python 控制代码。
+v3.0 additions:
+    - TaskIntent: structured NL intent (replaces bare string target)
+    - RiskObject: scene hazard markers
+    - ConstraintSource: constraint provenance enum
+    - OverrideLedgerEntry: conflict resolution record
+    - ExplainReport: XAI report (Markdown + Mermaid)
 """
 
 from __future__ import annotations
@@ -15,152 +17,209 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from .scene import SemanticSceneGraph
-from .behavior_tree import BehaviorTree
-from .constraint import ConstraintSet
+try:
+    from .scene import SemanticSceneGraph
+    from .behavior_tree import BehaviorTree
+    from .constraint import ConstraintSet
+except ImportError:
+    SemanticSceneGraph = Any
+    BehaviorTree = Any
+    ConstraintSet = Any
 
 
 # ============================================================
-# 任务元数据
+# v2.1: GroundedEntity
 # ============================================================
 
-class TaskMetadata(BaseModel):
-    """任务元数据"""
-    task_id: str = Field(default_factory=lambda: f"task-{uuid4().hex[:8]}")
-    raw_instruction: str = Field(..., description="用户原始自然语言指令")
-    language: str = Field(default="zh", description="语言 (zh|en)")
-    created_at: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
-        description="创建时间 (ISO 8601)",
-    )
-    user_context: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="用户上下文 (偏好、历史...)",
-    )
+class GroundedEntity(BaseModel):
+    """Grounded entity -- binds NL mention to a physical scene object."""
+    entity_id: str = Field(..., description="Unique physical object ID in scene")
+    name: str = Field(..., description="Object name")
+    label: Optional[str] = Field(default=None, description="Semantic label")
+    affordances: List[str] = Field(default_factory=list, description="Affordance list")
+    grounding_confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Grounding confidence")
 
-
-# ============================================================
-# 前置条件断言
-# ============================================================
-
-class PreconditionAssertion(BaseModel):
-    """单个前置条件"""
-    assertion: str = Field(..., description="断言表达式")
-    description: str = Field(default="", description="人类可读说明")
-
-
-class PreconditionSet(BaseModel):
-    """
-    前置条件集合。
-
-    在执行行为树之前必须全部满足。
-    """
-    assertions: List[PreconditionAssertion] = Field(default_factory=list)
-
-    def add(self, assertion: str, description: str = "") -> None:
-        self.assertions.append(
-            PreconditionAssertion(assertion=assertion, description=description)
+    @classmethod
+    def from_scene_object(cls, obj: Any, confidence: float = 1.0) -> "GroundedEntity":
+        return cls(
+            entity_id=getattr(obj, 'id', 'unknown'),
+            name=getattr(obj, 'name', str(obj)),
+            label=getattr(obj, 'label', None),
+            affordances=[a.value for a in obj.affordances] if hasattr(obj, 'affordances') and obj.affordances else [],
+            grounding_confidence=confidence,
         )
 
 
 # ============================================================
-# 优化空间
+# v2.0: ParamValue -- parameter with provenance
 # ============================================================
 
-class OptimizationTarget(str):
-    """优化目标枚举"""
-    MIN_TIME = "min_time"
-    MIN_ENERGY = "min_energy"
-    MAX_SAFETY = "max_safety"
-    MAX_SMOOTHNESS = "max_smoothness"
+class ParamValue(BaseModel):
+    """Parameter with source and evidence chain."""
+    value: Any = Field(..., description="Parameter value")
+    source: List[str] = Field(default_factory=list, description="Source: memory | constraint | rule | llm | safety")
+    evidence: List[str] = Field(default_factory=list, description="Evidence chain")
+
+    @classmethod
+    def from_value(cls, value: Any, source: str = "rule", evidence: str = "") -> "ParamValue":
+        return cls(value=value, source=[source], evidence=[evidence] if evidence else [])
+
+
+# ============================================================
+# v2.0: DecisionTraceNode
+# ============================================================
+
+class DecisionTraceNode(BaseModel):
+    """Explainable decision trace node with DAG dependencies."""
+    module: str = Field(..., description="NL_PARSE | SCENE_GROUNDING | MEMORY_RETRIEVAL | CONSTRAINT_REASONING | CONFLICT_RESOLUTION | TASK_COMPILATION")
+    input: str = Field(default="")
+    output: str = Field(default="")
+    reason: str = Field(default="")
+    depends_on: List[str] = Field(default_factory=list)
+    latency_ms: float = Field(default=0.0)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+# ============================================================
+# v3.0: TaskIntent
+# ============================================================
+
+class TaskIntent(BaseModel):
+    """Structured NL intent -- replaces bare string target pushing."""
+    action: str = Field(default="grasp", description="Standard primitive: grasp | transfer | assemble | push | stack | pour | inspect")
+    target: Optional[GroundedEntity] = Field(default=None, description="Grounded target entity")
+    user_constraints: Dict[str, Any] = Field(default_factory=dict, description="User explicit requirements: {force_n: 100.0, velocity_ms: 5.0}")
+    urgency: str = Field(default="normal", description="normal | high | emergency | critical")
+    safety_goal: str = Field(default="collision_free", description="Safety objective")
+
+
+# ============================================================
+# v3.0: RiskObject
+# ============================================================
+
+class RiskObject(BaseModel):
+    """Scene hazard object."""
+    entity_id: str = Field(..., description="Object ID")
+    name: str = Field(default="")
+    risk_type: str = Field(default="collision", description="collision | chemical_spill | vibration | thermal | radiation")
+    priority: str = Field(default="high", description="low | medium | high | critical")
+    description: str = Field(default="")
+
+
+# ============================================================
+# v3.0: ConstraintSource
+# ============================================================
+
+class ConstraintSource(BaseModel):
+    """Constraint provenance metadata."""
+    source: str = Field(default="rule", description="user | object_affordance | robot_limit | memory | safety_rule")
+    priority: str = Field(default="hard", description="hard | soft")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    reason: str = Field(default="")
+
+
+# ============================================================
+# v3.0: OverrideLedgerEntry
+# ============================================================
+
+class OverrideLedgerEntry(BaseModel):
+    """Single conflict resolution record."""
+    conflict_id: str = Field(default="")
+    parameter: str = Field(default="")
+    user_request: str = Field(default="")
+    competing_constraint: str = Field(default="")
+    resolved_value: str = Field(default="")
+    arbitration_rule: str = Field(default="")
+
+
+# ============================================================
+# v3.0: ExplainReport
+# ============================================================
+
+class ExplainReport(BaseModel):
+    """XAI explainability report (Markdown + Mermaid + Override Ledger)."""
+    decision_report_md: str = Field(default="", description="Markdown decision report")
+    constraint_explain_graph_mermaid: str = Field(default="", description="Mermaid constraint graph code")
+    override_ledger: List[OverrideLedgerEntry] = Field(default_factory=list, description="Conflict resolution records")
+    scene_summary: Dict[str, Any] = Field(default_factory=dict, description="SSOT scene summary")
+
+
+# ============================================================
+# TaskMetadata
+# ============================================================
+
+class TaskMetadata(BaseModel):
+    task_id: str = Field(default_factory=lambda: f"task-{uuid4().hex[:8]}")
+    raw_instruction: str = Field(..., description="Raw NL instruction")
+    language: str = Field(default="zh")
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    user_context: Dict[str, Any] = Field(default_factory=dict)
+    engine: Dict[str, str] = Field(default_factory=lambda: {
+        "type": "Embodied Intent Reasoner",
+        "version": "3.0",
+        "planner": "RuleEngine",
+        "reasoning_mode": "constraint-aware",
+    })
+
+
+# ============================================================
+# Precondition + Optimization
+# ============================================================
+
+class PreconditionAssertion(BaseModel):
+    assertion: str = Field(...)
+    description: str = Field(default="")
+
+
+class PreconditionSet(BaseModel):
+    assertions: List[PreconditionAssertion] = Field(default_factory=list)
+    def add(self, assertion: str, description: str = "") -> None:
+        self.assertions.append(PreconditionAssertion(assertion=assertion, description=description))
 
 
 class OptimizationSpace(BaseModel):
-    """
-    下游优化器可调节的参数空间。
-
-    CodeArts / TraceCoder 可以在这些边界内微调。
-    """
-    force_range_n: tuple = Field(default=(1.0, 10.0), description="力范围 (min, max) N")
-    velocity_range_ms: tuple = Field(default=(0.05, 0.3), description="速度范围 (min, max) m/s")
-    z_safe_margin_m: tuple = Field(default=(0.02, 0.10), description="Z 安全边距范围 (m)")
-    collision_margin_m: tuple = Field(default=(0.03, 0.15), description="碰撞边距范围 (m)")
-    targets: List[str] = Field(default_factory=list, description="优化目标优先级")
-    free_params: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="扩展可调参数",
-    )
+    force_range_n: tuple = Field(default=(0.1, 10.0))
+    velocity_range_ms: tuple = Field(default=(0.05, 0.3))
+    z_safe_margin_m: tuple = Field(default=(0.02, 0.10))
+    collision_margin_m: tuple = Field(default=(0.03, 0.15))
+    targets: List[str] = Field(default_factory=list)
+    free_params: Dict[str, Any] = Field(default_factory=dict)
 
 
 # ============================================================
-# Robot Task IR (顶层)
+# RobotTaskIR v3.0
 # ============================================================
 
 class RobotTaskIR(BaseModel):
-    """
-    机器人任务中间表示 (Intermediate Representation)。
-
-    这是整个意图理解管道的最终输出 Schema。
-
-    架构:
-        ir_version              → 版本号 (CodeArts 兼容性)
-        task_metadata           → 任务元数据
-        precondition_assertions → 前置条件 (执行前必须全部满足)
-        scene                   → 语义场景图
-        behavior_tree           → 可执行行为树
-        skills                  → 技能映射表
-        compiled_constraints    → 编译后的约束集
-        optimization_space      → 下游优化边界
-    """
-    ir_version: str = Field(
-        default="1.0.0",
-        description="IR 版本号 (兼容性标识)",
-    )
-    task_metadata: TaskMetadata = Field(..., description="任务元数据")
-    precondition_assertions: PreconditionSet = Field(
-        default_factory=PreconditionSet,
-        description="前置条件断言",
-    )
-    scene: Optional[SemanticSceneGraph] = Field(
-        default=None, description="语义场景图",
-    )
-    behavior_tree: BehaviorTree = Field(..., description="行为树")
-    skills: Dict[str, Dict[str, Any]] = Field(
-        default_factory=dict,
-        description="技能映射表 (skill_name → {params, constraints, ...})",
-    )
-    compiled_constraints: ConstraintSet = Field(
-        default_factory=lambda: ConstraintSet(task_id="pending"),
-        description="编译后约束集",
-    )
-    optimization_space: OptimizationSpace = Field(
-        default_factory=OptimizationSpace,
-        description="可调优参数空间",
-    )
-    memory_context: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Memory 模块注入的上下文",
-    )
+    """Universal Task IR v3.0 -- the final output of the intent understanding pipeline."""
+    ir_version: str = Field(default="3.0.0")
+    task_metadata: TaskMetadata = Field(...)
+    precondition_assertions: PreconditionSet = Field(default_factory=PreconditionSet)
+    task_intent: Optional[TaskIntent] = Field(default=None)
+    overall_confidence: float = Field(default=0.95, ge=0.0, le=1.0)
+    decision_trace: List[DecisionTraceNode] = Field(default_factory=list)
+    explain_report: ExplainReport = Field(default_factory=ExplainReport)
+    scene: Optional[Any] = Field(default=None)
+    behavior_tree: Any = Field(default=None)
+    skills: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    compiled_constraints: Any = Field(default=None)
+    optimization_space: OptimizationSpace = Field(default_factory=OptimizationSpace)
+    memory_context: Dict[str, Any] = Field(default_factory=dict)
+    risk_objects: List[RiskObject] = Field(default_factory=list)
 
     def model_post_init(self, __context: Any) -> None:
-        """初始化后自动同步 task_id"""
-        if self.compiled_constraints.task_id == "pending":
-            self.compiled_constraints.task_id = self.task_metadata.task_id
-        if self.behavior_tree.task_id == "":
-            self.behavior_tree.task_id = self.task_metadata.task_id
+        if self.compiled_constraints is not None and hasattr(self.compiled_constraints, 'task_id'):
+            if getattr(self.compiled_constraints, 'task_id', '') == "pending":
+                self.compiled_constraints.task_id = self.task_metadata.task_id
 
     def summary(self) -> str:
-        """生成人类可读摘要"""
-        actions = self.behavior_tree.root.flatten_actions()
-        hard_count = len(self.compiled_constraints.hard_constraints)
-        soft_count = len(self.compiled_constraints.soft_constraints)
-
-        lines = [
-            f"Task IR: {self.task_metadata.task_id}",
-            f"  Instruction: {self.task_metadata.raw_instruction}",
-            f"  Actions: {' → '.join(a.skill_name for a in actions)}",
-            f"  Hard Constraints: {hard_count}",
-            f"  Soft Constraints: {soft_count}",
-            f"  Objects: {len(self.scene.objects) if self.scene else 0}",
-        ]
-        return "\n".join(lines)
+        actions = []
+        if self.behavior_tree and hasattr(self.behavior_tree, 'root'):
+            actions = self.behavior_tree.root.flatten_actions()
+        return (
+            f"Task IR v3.0: {self.task_metadata.task_id}\n"
+            f"  Instruction: {self.task_metadata.raw_instruction[:60]}\n"
+            f"  Engine: {self.task_metadata.engine.get('planner','?')} | "
+            f"Confidence: {self.overall_confidence:.2f}\n"
+            f"  Actions: {' > '.join(a.skill_name for a in actions[:6])}"
+        )

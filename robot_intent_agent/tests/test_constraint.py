@@ -210,10 +210,10 @@ class TestConstraintRuleEngine:
         assert len(vel_constraints) >= 1
         assert vel_constraints[0].params["max_linear_ms"] == 0.10
 
-    def test_extract_avoid_from_nl(self, engine):
-        """'别碰水杯' → collision_avoid(水杯)"""
+    def test_extract_avoid_from_nl(self, engine, scene):
+        """'别碰水杯' → collision_avoid(水杯) — 需场景实体接地"""
         constraints = engine.extract(
-            "帮我把药瓶递给我，不要碰水杯", target="红色药瓶"
+            "帮我把药瓶递给我，不要碰水杯", target="红色药瓶", scene=scene
         )
         avoid = [c for c in constraints if c.constraint_type == "collision_avoid"]
         assert len(avoid) >= 1

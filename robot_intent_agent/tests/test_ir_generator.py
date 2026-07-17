@@ -220,7 +220,7 @@ class TestRobotTaskIRGenerator:
         )
         json_str = ir.model_dump_json(indent=2)
         data = json.loads(json_str)
-        assert data["ir_version"] == "1.0.0"
+        assert data["ir_version"] == "3.0.0"
         assert data["task_metadata"]["raw_instruction"] == CANONICAL
         assert "skills" in data
         assert "behavior_tree" in data

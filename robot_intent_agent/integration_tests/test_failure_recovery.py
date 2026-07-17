@@ -103,5 +103,5 @@ class TestObstacleRecovery:
 
         import json
         data = json.loads(ir.model_dump_json())
-        assert data["ir_version"] == "1.0.0"
+        assert data["ir_version"] == "3.0.0"
         assert "skills" in data

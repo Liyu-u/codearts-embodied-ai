@@ -94,14 +94,14 @@ class TestFullPipeline:
         )
 
         assert isinstance(ir, RobotTaskIR)
-        assert ir.ir_version == "1.0.0"
+        assert ir.ir_version == "3.0.0"
 
         # ===== 验证: IR 可序列化 =====
         json_str = ir.model_dump_json(indent=2)
         data = json.loads(json_str)
 
         # 关键字段完整性
-        assert data["ir_version"] == "1.0.0"
+        assert data["ir_version"] == "3.0.0"
         assert data["task_metadata"]["raw_instruction"] == CANONICAL
         assert "skills" in data
         assert "behavior_tree" in data
@@ -110,7 +110,10 @@ class TestFullPipeline:
         # Grasp 约束
         grasp = data["skills"]["Grasp"]
         assert grasp["constraints"]["fragile"] is True
-        assert grasp["constraints"]["force"]["max_force_n"] <= 3.0
+        force_val = grasp["constraints"]["force"]["max_force_n"]
+        if isinstance(force_val, dict):
+            force_val = force_val.get("value", 10.0)
+        assert float(force_val) <= 3.0
 
         # Avoid 障碍物
         all_avoids = []

@@ -134,6 +134,12 @@ class HybridConstraintCompiler:
         self._deduplicate(graph)
         self._resolve_conflicts(graph)
 
+        # ══════════════════════════════════════════
+        # 第 4 层: 最小安全限度选择 (Min-Clamping)
+        # "谁更严格、更安全，优先听谁"
+        # ══════════════════════════════════════════
+        self._apply_min_clamping(graph)
+
         return graph
 
     # ============================================================
@@ -241,6 +247,127 @@ class HybridConstraintCompiler:
 
         if violations:
             graph.metadata["conflicts"] = violations
+
+    # ============================================================
+    # 第 4 层: Min-Clamping — 最小安全限度选择
+    # ============================================================
+
+    def _apply_min_clamping(self, graph: ConstraintGraph) -> None:
+        """
+        对 force_limit 和 velocity_limit 实施 min-clamping。
+
+        规则:
+            - 遍历全部 force_limit 约束，取最小的 max_force_n
+            - 将该最小值封入所有 force_limit 约束
+            - 同理处理 velocity_limit
+            - "谁更严格、更安全，优先听谁"
+        """
+        # ── Force clamping (with evidence chain) ──
+        force_nodes = [
+            n for n in graph.nodes if n.constraint_type == "force_limit"
+        ]
+        if force_nodes:
+            # 收集各方提出的 max_force_n + 证据
+            force_sources: List[tuple[float, str, str]] = []
+            for n in force_nodes:
+                mf = n.params.get("max_force_n")
+                if mf is not None:
+                    source = n.description or n.constraint_type
+                    # 推断来源标签
+                    src_label = "constraint"
+                    if "memory" in source.lower() or "skill" in source.lower():
+                        src_label = "memory"
+                    elif "safety" in source.lower() or "fragile" in source.lower():
+                        src_label = "safety"
+                    elif "rule" in source.lower() or "modifier" in source.lower():
+                        src_label = "rule"
+                    evidence_id = f"{src_label}:{n.constraint_type}_{mf}N"
+                    force_sources.append((float(mf), src_label, evidence_id))
+
+            if force_sources:
+                clamped = min(s[0] for s in force_sources)
+                # 收集证据链
+                evidence_chain = []
+                sources = []
+                for val, src, ev in force_sources:
+                    if val == clamped:
+                        evidence_chain.append(ev)
+                    if src not in sources:
+                        sources.append(src)
+
+                # 同步写回 + 注入证据
+                for n in force_nodes:
+                    n.params["max_force_n"] = clamped
+                    n.params["_clamping_evidence"] = evidence_chain
+                    n.params["_clamping_sources"] = sources
+                    n.expression = (
+                        f"force({n.target or 'object'}) in "
+                        f"({n.params.get('min_force_n', 0.1)}, {clamped}] N"
+                    )
+                # Build override ledger
+                override_ledger = graph.metadata.get("override_ledger", [])
+                max_requested = max(s[0] for s in force_sources) if force_sources else clamped
+                if max_requested > clamped:
+                    override_ledger.append({
+                        "parameter": "force_n",
+                        "requested_val": max_requested,
+                        "clamped_val": clamped,
+                        "clamping_sources": sources,
+                        "evidence": evidence_chain,
+                    })
+                graph.metadata["override_ledger"] = override_ledger
+                graph.metadata["force_clamping"] = {
+                    "candidates": [s[0] for s in force_sources],
+                    "selected": clamped,
+                    "rule": "min-max_force_n",
+                    "evidence": evidence_chain,
+                    "sources": sources,
+                }
+
+        # ── Velocity clamping (with evidence chain) ──
+        vel_nodes = [
+            n for n in graph.nodes if n.constraint_type == "velocity_limit"
+        ]
+        if vel_nodes:
+            vel_sources: List[tuple[float, str, str]] = []
+            for n in vel_nodes:
+                mv = n.params.get("max_linear_ms")
+                if mv is not None:
+                    src_label = "constraint"
+                    if "memory" in (n.description or "").lower():
+                        src_label = "memory"
+                    elif "rule" in (n.description or "").lower():
+                        src_label = "rule"
+                    ev_id = f"{src_label}:{n.constraint_type}_{mv}mps"
+                    vel_sources.append((float(mv), src_label, ev_id))
+
+            if vel_sources:
+                clamped_v = min(s[0] for s in vel_sources)
+                evidence_chain_v = [s[2] for s in vel_sources if s[0] == clamped_v]
+                sources_v = list(set(s[1] for s in vel_sources if s[0] == clamped_v))
+                for n in vel_nodes:
+                    n.params["max_linear_ms"] = clamped_v
+                    n.params["_clamping_evidence"] = evidence_chain_v
+                    n.params["_clamping_sources"] = sources_v
+                    n.expression = f"velocity <= {clamped_v} m/s"
+                override_ledger_v = graph.metadata.get("override_ledger", [])
+                max_requested_v = max(s[0] for s in vel_sources) if vel_sources else clamped_v
+                if max_requested_v > clamped_v:
+                    override_ledger_v.append({
+                        "parameter": "velocity_ms",
+                        "requested_val": max_requested_v,
+                        "clamped_val": clamped_v,
+                        "clamping_sources": sources_v,
+                        "evidence": evidence_chain_v,
+                    })
+                graph.metadata["override_ledger"] = override_ledger_v
+                graph.metadata["velocity_clamping"] = {
+                    "candidates": [s[0] for s in vel_sources],
+                    "selected": clamped_v,
+                    "rule": "min-max_linear_ms",
+                    "evidence": evidence_chain_v,
+                    "sources": sources_v,
+                }
 
 
 # ============================================================

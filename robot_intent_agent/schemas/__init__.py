@@ -51,6 +51,14 @@ from .robot_task_ir import (
     PreconditionSet,
     OptimizationSpace,
     RobotTaskIR,
+    ParamValue,
+    DecisionTraceNode,
+    GroundedEntity,
+    TaskIntent,
+    RiskObject,
+    ConstraintSource,
+    OverrideLedgerEntry,
+    ExplainReport,
 )
 
 __all__ = [
@@ -68,7 +76,10 @@ __all__ = [
     "ForceConstraint", "VelocityConstraint", "CollisionConstraint",
     "HeightConstraint", "TemporalConstraint", "PreferenceConstraint",
     "AnyConstraint", "ConstraintSet",
-    # RobotTaskIR
+    # RobotTaskIR v3.0
     "TaskMetadata", "PreconditionAssertion", "PreconditionSet",
     "OptimizationSpace", "RobotTaskIR",
+    "ParamValue", "DecisionTraceNode", "GroundedEntity",
+    "TaskIntent", "RiskObject", "ConstraintSource",
+    "OverrideLedgerEntry", "ExplainReport",
 ]

@@ -84,8 +84,8 @@ class ConstraintRuleEngine:
         # 1. NL 修饰语 → 物理约束
         constraints.extend(self._extract_from_modifiers(instruction, target))
 
-        # 2. 规避关键词 → 空间约束
-        constraints.extend(self._extract_avoid_constraints(instruction))
+        # 2. 规避关键词 → 空间约束 (实体接地)
+        constraints.extend(self._extract_avoid_constraints(instruction, scene=scene, target=target))
 
         # 3. 场景分析 → 空间约束
         if scene and target:
@@ -145,24 +145,80 @@ class ConstraintRuleEngine:
 
         return constraints
 
-    def _extract_avoid_constraints(self, text: str) -> List[ConstraintNode]:
-        """从规避关键词提取碰撞避免约束"""
-        constraints: List[ConstraintNode] = []
+    def _extract_avoid_constraints(
+        self, text: str, scene: Optional[SemanticSceneGraph] = None,
+        target: str = ""
+    ) -> List[ConstraintNode]:
+        """
+        从自然语言指令 + 场景图中提取碰撞避免约束。
 
-        for match in AVOID_KEYWORDS.finditer(text):
-            start = match.end()
-            obj_match = re.match(r"([一-鿿\w]{1,4})", text[start:])
-            if obj_match:
-                obstacle = obj_match.group(1).strip()
-                obstacle = re.sub(r"[的了呢吗啊]$", "", obstacle)
-                if obstacle:
+        策略 (Entity Grounding):
+            1. 遍历场景中所有物体，若其 name 或 label 在指令中出现
+               且不是当前抓取目标 → 加入规避列表
+            2. 若用户使用泛指 ("别碰周围/前边的东西") 而物体名不在指令中，
+               遍历 scene.relations，找出与目标有 blocking/near 关系的物体
+            3. 废弃原有的正则盲切 (避免 "到前边正" 等碎片)
+        """
+        constraints: List[ConstraintNode] = []
+        seen_obstacles: set = set()
+
+        # --- 策略 1: 场景物体名精准匹配 ---
+        if scene:
+            target_obj = scene.find_object(target) if target else None
+            target_name = target_obj.name if target_obj else target
+
+            for obj in scene.objects:
+                # 跳过的条件: 就是目标自己、已处理过、名字太短
+                if obj.name == target_name:
+                    continue
+                if obj.name in seen_obstacles:
+                    continue
+                if len(obj.name) < 1:
+                    continue
+
+                # 检查物体名是否出现在指令中 (中文子串匹配)
+                if obj.name in text:
+                    seen_obstacles.add(obj.name)
                     constraints.append(
                         SpatialConstraint.collision_avoid(
-                            obstacle=obstacle,
+                            obstacle=obj.name,
                             min_distance_m=0.05,
                             applies_to_skill="",
                         )
                     )
+
+        # --- 策略 2: 几何关系兜底 ---
+        # 如果用户说了"别碰"/"避开"等关键词，但策略 1 未匹配到任何具体物体，
+        # 则自动将 blocking 和 near 关系的物体加入规避列表
+        if not seen_obstacles and AVOID_KEYWORDS.search(text) and scene and target:
+            target_obj = scene.find_object(target)
+            if target_obj:
+                blocking_ids = scene.blocking_objects(target_obj.id)
+                for bid in blocking_ids:
+                    blocker = scene.find_object(bid)
+                    if blocker and blocker.name != target and blocker.name not in seen_obstacles:
+                        seen_obstacles.add(blocker.name)
+                        constraints.append(
+                            SpatialConstraint.collision_avoid(
+                                obstacle=blocker.name,
+                                min_distance_m=0.05,
+                                applies_to_skill="",
+                            )
+                        )
+
+                # near 关系也加入
+                for rel in scene.relations_of(target_obj.id):
+                    if rel.predicate.value == "near":
+                        near_obj = scene.find_object(rel.object) or scene.find_object(rel.subject)
+                        if near_obj and near_obj.name != target and near_obj.name not in seen_obstacles:
+                            seen_obstacles.add(near_obj.name)
+                            constraints.append(
+                                SpatialConstraint.collision_avoid(
+                                    obstacle=near_obj.name,
+                                    min_distance_m=0.05,
+                                    applies_to_skill="",
+                                )
+                            )
 
         return constraints
 

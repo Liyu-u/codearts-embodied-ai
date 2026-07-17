@@ -369,10 +369,9 @@ class TestLLMPlanner:
         llm = LLMPlanner(model="gpt-4o")
         assert "gpt-4o" in llm.name
 
-    def test_plan_returns_placeholder(self):
-        """plan() 返回占位 BT"""
-        llm = LLMPlanner()
-        bt = llm.plan("测试指令")
-        assert isinstance(bt, BehaviorTree)
-        assert "PLACEHOLDER" in bt.root.name
-        assert bt.metadata["status"] == "mock"
+    def test_plan_raises_without_key(self):
+        """无 API Key 时 plan() 抛出 LLMPlannerError"""
+        from robot_intent_agent.planner.llm_planner import LLMPlannerError
+        llm = LLMPlanner(api_key="")  # empty key
+        with pytest.raises(LLMPlannerError):
+            llm.plan("测试指令")
