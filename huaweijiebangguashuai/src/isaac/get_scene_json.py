@@ -1,28 +1,45 @@
 """
-环境感知脚本
-同学 C（吴昌庆）上传：实时从 Isaac Sim 6.0.1 仿真战场中
-抓取所有物体的名字、3D 世界坐标和 Bounding Box 尺寸，
-并导出为 scene_state.json 供其他模块读取。
+环境感知脚本 — Isaac Sim 6.0.1 真实 USD Stage 版
+同学 C（吴昌庆）上传：实时从仿真战场抓取所有物体信息
+
+功能：
+1. 遍历 USD Stage 中所有 Xform Prim
+2. 提取物体的名称、世界坐标、Bounding Box 尺寸
+3. 通过语义标签匹配物体属性（颜色、类别）
+4. 导出 scene_state.json 供 A（意图解析）和 B（策略生成）读取
 """
 
 import json
-import os
-from dataclasses import dataclass, asdict
-from typing import Any, Dict, List, Optional, Tuple
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+# ============================================================
+# Isaac Sim 6.0.1 API 导入
+# ============================================================
+_KIT_MODE = False
+try:
+    from isaacsim.core.utils.stage import get_current_stage
+    from isaacsim.core.utils.prims import get_prim_at_path, get_all_matching_child_prims
+    from isaacsim.core.experimental.prims import XFormPrim
+    _KIT_MODE = True
+except ImportError:
+    pass
 
 
 # ============================================================
-# 数据结构定义
+# 数据结构
 # ============================================================
 @dataclass
 class SceneObject:
     """场景中的单个可操作物体"""
     name: str
-    position: Tuple[float, float, float]  # (x, y, z) 世界坐标 (m)
-    bbox: Tuple[float, float, float]      # (width, height, depth) Bounding Box (m)
-    color: Optional[str] = None            # RGBA 颜色值
-    label: Optional[str] = None            # 语义标签
+    position: Tuple[float, float, float]
+    bbox: Tuple[float, float, float]
+    color: Optional[str] = None
+    label: Optional[str] = None
 
 
 @dataclass
@@ -30,29 +47,153 @@ class SceneState:
     """完整场景状态快照"""
     scene_id: str
     timestamp: str
-    objects: List[SceneObject]
-    robot_joint_angles: List[float]
-    gripper_width: float
-    gripper_force: float
+    objects: List[Dict[str, Any]] = field(default_factory=list)
+    robot_joint_angles: List[float] = field(default_factory=list)
+    gripper_width: float = 0.08
+    gripper_force: float = 0.0
 
 
 # ============================================================
-# 场景感知主函数
+# 场景感知 — 真实 USD 遍历
 # ============================================================
+# 需要忽略的 Prim 名称（地面、光源、相机等非交互物体）
+IGNORED_PRIMS = {
+    "defaultGroundPlane", "default_ground_plane",
+    "World", "GroundPlane", "defaultLight",
+    "camera", "Camera", "Light", "light",
+    "Franka", "panda_link", "panda_hand",
+    "PhysicsScene", "environment",
+}
+
+
+def _is_manipulable(prim_path: str, prim_name: str) -> bool:
+    """判断 Prim 是否为可操作物体"""
+    if prim_name in IGNORED_PRIMS:
+        return False
+    if any(ignored in prim_name for ignored in IGNORED_PRIMS):
+        return False
+    # 只处理 Xform 类型的 Prim
+    return True
+
+
+def _extract_color(prim) -> Optional[str]:
+    """从 Prim 材质/MDL 中提取颜色信息"""
+    try:
+        # 尝试从 displayColor 属性读取
+        if prim.HasAttribute("displayColor"):
+            color_attr = prim.GetAttribute("displayColor")
+            color_vals = color_attr.Get()
+            if color_vals:
+                r, g, b = color_vals[0], color_vals[1], color_vals[2]
+                return f"#{int(r*255):02X}{int(g*255):02X}{int(b*255):02X}"
+    except Exception:
+        pass
+
+    # 从语义标签推断
+    try:
+        from omni.usd.schema.semantics import SemanticsAPI
+        semantics = SemanticsAPI(prim)
+        if semantics:
+            label = semantics.GetLabel()
+            if label:
+                # 从语义标签提取颜色
+                color_map = {
+                    "red": "#FF0000", "blue": "#0000FF",
+                    "green": "#00FF00", "yellow": "#FFFF00",
+                }
+                for cn, cv in color_map.items():
+                    if cn in label.lower():
+                        return cv
+    except Exception:
+        pass
+
+    return None
+
+
+def _extract_label(prim) -> Optional[str]:
+    """从 Prim 语义标签中提取物体类别"""
+    try:
+        from omni.usd.schema.semantics import SemanticsAPI
+        semantics = SemanticsAPI(prim)
+        if semantics:
+            return semantics.GetLabel()
+    except Exception:
+        pass
+    return None
+
+
 def get_scene_objects() -> List[SceneObject]:
     """
-    从 Isaac Sim USD Stage 中提取所有物体信息。
+    从 Isaac Sim USD Stage 中提取所有可操作物体信息。
 
-    实际部署时将调用 Isaac Sim Python API:
-        from omni.isaac.core.utils.stage import get_current_stage
-        stage = get_current_stage()
-        for prim in stage.TraverseAll(): ...
+    在 Kit 模式下调用真实的 Isaac Sim API 遍历 Stage；
+    在 Mock 模式下返回硬编码的测试数据。
 
     Returns:
         List[SceneObject]: 场景中所有物体的感知列表
     """
-    # TODO: 替换为真实 Isaac Sim API 调用
-    # 当前返回 Mock 数据供独立调试
+    if not _KIT_MODE:
+        return _get_mock_scene_objects()
+
+    stage = get_current_stage()
+    objects = []
+
+    for prim in stage.TraverseAll():
+        prim_path = str(prim.GetPath())
+        prim_name = prim.GetName()
+
+        if not _is_manipulable(prim_path, prim_name):
+            continue
+
+        try:
+            xform = XFormPrim(prim_path=str(prim_path))
+            position = xform.get_world_pose()[0]
+
+            # 计算 Bounding Box
+            bbox = _compute_bbox(prim)
+
+            color = _extract_color(prim)
+            label = _extract_label(prim)
+
+            objects.append(SceneObject(
+                name=prim_name,
+                position=(float(position[0]), float(position[1]), float(position[2])),
+                bbox=bbox,
+                color=color,
+                label=label,
+            ))
+        except Exception as e:
+            # 跳过无法处理的 Prim（如材质、Shader 等）
+            continue
+
+    return objects
+
+
+def _compute_bbox(prim) -> Tuple[float, float, float]:
+    """通过 USD Boundable 或 Extent 属性计算 Bounding Box"""
+    try:
+        # 尝试从 extent 属性读取
+        if prim.HasAttribute("extent"):
+            extent = prim.GetAttribute("extent").Get()
+            if extent and len(extent) == 2:
+                bbox_min, bbox_max = extent
+                return (
+                    float(bbox_max[0] - bbox_min[0]),
+                    float(bbox_max[1] - bbox_min[1]),
+                    float(bbox_max[2] - bbox_min[2]),
+                )
+    except Exception:
+        pass
+
+    # 默认返回 4cm 立方体
+    return (0.04, 0.04, 0.04)
+
+
+# ============================================================
+# 机械臂状态查询
+# ============================================================
+def _get_mock_scene_objects() -> List[SceneObject]:
+    """Mock 模式 — 返回硬编码测试数据"""
     return [
         SceneObject(
             name="红色方块",
@@ -92,9 +233,21 @@ def get_scene_objects() -> List[SceneObject]:
     ]
 
 
-def get_robot_state() -> Dict[str, Any]:
+def get_robot_state(robot: Any = None) -> Dict[str, Any]:
     """获取 Franka Panda 当前状态"""
-    # TODO: 从 Isaac Sim 读取真实关节角度
+    if robot is not None:
+        state = robot.get_robot_state()
+        return {
+            "joint_angles": state.joint_angles,
+            "end_effector_pose": {
+                "x": state.end_effector_pose[0],
+                "y": state.end_effector_pose[1],
+                "z": state.end_effector_pose[2],
+                "roll": state.end_effector_pose[3],
+                "pitch": state.end_effector_pose[4],
+                "yaw": state.end_effector_pose[5],
+            },
+        }
     return {
         "joint_angles": [0.0, -0.5, 0.0, -1.2, 0.0, 1.0, 0.5],
         "end_effector_pose": {
@@ -104,32 +257,43 @@ def get_robot_state() -> Dict[str, Any]:
     }
 
 
-def get_gripper_state() -> Dict[str, Any]:
+def get_gripper_state(robot: Any = None) -> Dict[str, Any]:
     """获取夹爪当前状态"""
+    if robot is not None:
+        state = robot.get_gripper_state()
+        return {
+            "width": state.width,
+            "force": state.force,
+            "is_closed": state.is_closed,
+        }
     return {"width": 0.08, "force": 0.0, "is_closed": False}
 
 
 # ============================================================
-# 场景状态持久化 (自动生成 scene_state.json)
+# 场景状态导出（供 server.py 调用）
 # ============================================================
-def export_scene_state(log_dir: str = "logs") -> Dict[str, Any]:
+def export_scene_state(
+    robot: Any = None,
+    log_dir: str = "logs",
+) -> Dict[str, Any]:
     """
     将当前场景状态导出为 JSON 文件。
-    此函数在每次场景变化时自动调用，生成 logs/scene_state.json。
+    每次场景变化时自动调用，生成 logs/scene_state.json。
 
     Args:
-        log_dir: 日志输出目录 (默认 logs/)
+        robot: ExecutionWrapper 实例（可选）
+        log_dir: 日志输出目录
 
     Returns:
-        dict: 包含完整场景信息的字典
+        dict: 完整场景信息
     """
-    objects = get_scene_objects()
-    robot = get_robot_state()
-    gripper = get_gripper_state()
+    scene_objects = get_scene_objects()
+    robot_state = get_robot_state(robot)
+    gripper_state = get_gripper_state(robot)
 
     scene_dict = {
-        "scene_id": "scene-001",
-        "timestamp": "2026-07-14T10:00:00Z",
+        "scene_id": f"scene-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "objects": [
             {
                 "name": obj.name,
@@ -146,13 +310,12 @@ def export_scene_state(log_dir: str = "logs") -> Dict[str, Any]:
                 "color": obj.color,
                 "label": obj.label,
             }
-            for obj in objects
+            for obj in scene_objects
         ],
-        "robot_state": robot,
-        "gripper_state": gripper,
+        "robot_state": robot_state,
+        "gripper_state": gripper_state,
     }
 
-    # 确保 logs 目录存在
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
 
@@ -160,10 +323,14 @@ def export_scene_state(log_dir: str = "logs") -> Dict[str, Any]:
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(scene_dict, f, indent=2, ensure_ascii=False)
 
-    print(f"[PERCEPTION] 场景状态已导出 -> {output_file}")
+    print(f"[PERCEPTION] 场景状态已导出 -> {output_file} "
+          f"({len(scene_objects)} 个物体)")
     return scene_dict
 
 
+# ============================================================
+# 自检（独立运行）
+# ============================================================
 if __name__ == "__main__":
     result = export_scene_state()
     print(json.dumps(result, indent=2, ensure_ascii=False))

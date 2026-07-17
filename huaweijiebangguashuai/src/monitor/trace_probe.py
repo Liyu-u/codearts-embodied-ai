@@ -126,6 +126,7 @@ class TraceProbe:
         main_error = errors[0]  # 取首个关键错误作为主因
 
         report = {
+            "status": "error",
             "error_id": f"err-{self.task_id}-{len(errors)}",
             "task_id": self.task_id,
             "timestamp": datetime.now().isoformat(),

@@ -28,6 +28,8 @@ class CodeValidator:
         "open_gripper", "close_gripper", "verify_grasp",
         "get_scene_objects", "get_robot_state", "get_gripper_state",
         "check_collision",
+        # 策略代码常用
+        "next", "ExecutionWrapper",
         "print", "len", "range", "enumerate", "zip", "sorted",
         "sum", "min", "max", "abs", "round", "int", "float", "str",
         "list", "dict", "tuple", "set", "bool",
@@ -40,9 +42,9 @@ class CodeValidator:
         """语法检查 — 使用 AST 解析"""
         try:
             ast.parse(code)
-            return True, "✅ 语法检查通过"
+            return True, "[OK] Syntax check passed"
         except SyntaxError as e:
-            return False, f"❌ 语法错误 [行 {e.lineno}]：{e.msg}"
+            return False, f"[FAIL] 语法错误 [行 {e.lineno}]：{e.msg}"
 
     @classmethod
     def validate_security(cls, code: str) -> Tuple[bool, List[str]]:
@@ -53,12 +55,12 @@ class CodeValidator:
         for mod in cls.FORBIDDEN_MODULES:
             if re.search(rf"\bimport\s+{mod}\b", code) or \
                re.search(rf"\bfrom\s+{mod}\b", code):
-                violations.append(f"🚫 禁止导入模块: `{mod}`")
+                violations.append(f"[BLOCK] 禁止导入模块: `{mod}`")
 
         # 检查函数调用
         for func in cls.FORBIDDEN_FUNCTIONS:
             if re.search(rf"\b{func}\s*\(", code):
-                violations.append(f"🚫 禁止调用函数: `{func}()`")
+                violations.append(f"[BLOCK] 禁止调用函数: `{func}()`")
 
         # 检查未知函数调用 (不在白名单内的函数)
         all_calls = re.findall(r'\b(\w+(?:\.\w+)?)\s*\(', code)
@@ -73,10 +75,12 @@ class CodeValidator:
             )
             # 也允许自定义函数（def task_xx 等）和局部变量
             is_local = call.startswith("task_") or call.startswith("robot.")
-            if not is_allowed and not is_local and call not in cls.FORBIDDEN_FUNCTIONS:
+            # 允许对象方法调用: obj.method(), name.lower(), target.position
+            is_method = "." in call and call.split(".")[0][0].islower()
+            if not is_allowed and not is_local and not is_method and call not in cls.FORBIDDEN_FUNCTIONS:
                 # 只报告明显的调用
                 if not call.startswith("_"):
-                    violations.append(f"⚠️ 未知函数调用: `{call}()` — 请确认在元 API 范围内")
+                    violations.append(f"[WARN] 未知函数调用: `{call}()` — 请确认在元 API 范围内")
 
         return len(violations) == 0, violations
 
@@ -92,7 +96,7 @@ class CodeValidator:
 
         for pattern, message in checks.items():
             if not re.search(pattern, code):
-                warnings.append(f"⚠️ {message}")
+                warnings.append(f"[WARN] {message}")
 
         return len(warnings) == 0, warnings
 
@@ -123,9 +127,9 @@ class CodeValidator:
             "security": (security_ok, security_violations),
             "safety": (safety_ok, safety_warnings),
             "summary": (
-                "✅ 全部校验通过"
+                "[OK] 全部校验通过"
                 if passed
-                else f"❌ 校验失败 — {len(security_violations)} 个安全违规"
+                else f"[FAIL] 校验失败 — {len(security_violations)} 个安全违规"
             ),
         }
 
