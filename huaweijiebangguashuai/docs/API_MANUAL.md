@@ -270,7 +270,12 @@ src/isaac/
   get_scene_json.py  # 场景感知（双模式, perception_observation v1.0.0）
   action_library.py  # 常见动作封装库（12 个高层动作）
   code_loader.py     # 策略代码加载器（注入元API+动作库）
-  run_simulation.py  # Isaac Sim 仿真入口
+  scene_builder.py   # 三标准测试场景构建器（Kit/Mock 双模式）
+  run_simulation.py  # Isaac Sim 仿真入口（支持 --scene 参数）
+  scenes/            # 标准测试场景文件 (.usda)
+    stacking_cubes.usda   # 场景1: 3方块堆叠
+    cup_lineup.usda       # 场景2: 5杯子排列
+    color_sorting.usda    # 场景3: 6方块颜色分类
 src/agent/
   code_validator.py  # 代码安全校验（三层防护）
 src/backend/

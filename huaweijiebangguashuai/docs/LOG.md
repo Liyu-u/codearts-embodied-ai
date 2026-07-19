@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-07-20 会话
+
+**做了什么**：
+- SceneObject 数据结构升级为 perception_observation v1.0.0（四元数朝向、置信度候选、追踪、真值元数据）
+- 新增 `src/isaac/action_library.py` — 12 个常见动作封装（pick_up, place_at, pick_and_place, stack, push, sort_by_color 等）
+- 新增 `src/isaac/scene_builder.py` — 三标准测试场景构建器（Kit/Mock 双模式）
+- 创建 3 个标准 .usda 场景文件（stacking_cubes 3物体, cup_lineup 5杯子, color_sorting 6方块）
+- run_simulation.py 重构 — 接入 scene_builder，新增 4 个场景匹配的示例任务
+- code_loader.py 注入动作库到策略执行命名空间
+- server.py `/api/scene/current` 返回完整 perception_observation 格式
+- 创建 4 个 JSON 样例文件到 docs/samples/
+- 修复 exec_wrapper Mock 模式夹爪状态跟踪
+- API_MANUAL.md 完整重写队友 B 章节
+- 55/55 单元测试 + 11 烟雾测试全部通过
+- Git 提交: `5bd52b3` feat: perception_observation v1.0.0 + 12 动作封装库
+
+**下次继续**：
+- Isaac Sim headless 端到端测试
+- 与队友 A/B/D 联调
+- 全链路 MVP 贯通
+
+---
+
 ## 2026-07-17 会话
 
 **做了什么**：
