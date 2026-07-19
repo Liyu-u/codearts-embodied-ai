@@ -28,9 +28,11 @@ conda-env/
 isaac_sim/
 _experimental/
 
-# 运行时日志 (logs/ 中的 JSON 保留，但排除临时日志)
-logs/*.log
-*.log
+# 运行时日志（动态生成，不提交）
+logs/
+
+# 临时测试脚本
+src/isaac/scripts/
 
 # OS
 .DS_Store

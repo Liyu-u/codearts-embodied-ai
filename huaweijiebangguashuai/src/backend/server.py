@@ -76,10 +76,18 @@ class CodeExecuteResponse(BaseModel):
     validation: Optional[Dict[str, Any]] = None
 
 
-class SceneQueryResponse(BaseModel):
-    scene_id: str
-    timestamp: str
+class PerceptionObservationResponse(BaseModel):
+    """perception_observation v1.0.0 格式响应"""
+    schema_version: str = "1.0.0"
+    message_type: str = "perception_observation"
+    observation_id: str = ""
+    scene_id: str = ""
+    timestamp: int = 0
+    clock_domain: str = "unix_utc"
+    coordinate_system: str = "robot_base"
+    source: Dict[str, Any] = {}
     objects: list = []
+    simulation_metadata: Dict[str, Any] = {}
 
 
 # ============================================================
@@ -203,39 +211,49 @@ async def retry_task(error_report: Dict[str, Any]):
     }
 
 
-@app.get("/api/scene/current", response_model=SceneQueryResponse)
+@app.get("/api/scene/current", response_model=PerceptionObservationResponse)
 async def get_current_scene():
     """
-    【队友 A 专用】获取当前场景中所有物体。
+    【队友 A 专用】获取当前场景感知结果 (perception_observation v1.0.0)。
 
-    队友 A 的意图解析器调用此接口，获取场景中可抓取的物体列表，
-    用于消歧自然语言指令中的目标物体。
+    队友 A 的意图解析器调用此接口，获取：
+    - 场景中所有可抓取物体的 6D 位姿 + 四元数朝向
+    - 每个物体的分类/颜色/形状候选列表（带置信度）
+    - 追踪信息（速度、帧数）
+    - 仿真真值（用于评测对比）
     """
     from isaac.get_scene_json import get_scene_objects
+    import uuid as _uuid
 
     objects_raw = get_scene_objects()
-    objects = []
-    for obj in objects_raw:
-        objects.append({
-            "name": obj.name,
-            "position": {
-                "x": obj.position[0],
-                "y": obj.position[1],
-                "z": obj.position[2],
-            },
-            "bbox": {
-                "width": obj.bbox[0],
-                "height": obj.bbox[1],
-                "depth": obj.bbox[2],
-            },
-            "color": obj.color,
-            "label": obj.label,
-        })
+    objects = [obj.to_dict() for obj in objects_raw]
+    ts_ms = int(time.time() * 1000)
 
-    return SceneQueryResponse(
-        scene_id=f"scene-{uuid.uuid4().hex[:8]}",
-        timestamp=time.strftime("%Y-%m-%dT%H:%M:%S"),
+    return PerceptionObservationResponse(
+        observation_id=f"obs_{ts_ms}_{_uuid.uuid4().hex[:4]}",
+        scene_id="table_scene_001",
+        timestamp=ts_ms,
+        source={
+            "module": "perception_pipeline",
+            "pipeline_version": "1.0.0",
+            "sensor_ids": ["camera_front", "depth_front"],
+        },
         objects=objects,
+        simulation_metadata={
+            "evaluation_only": True,
+            "ground_truth_objects": [
+                {
+                    "object_id": obj.object_id,
+                    "prim_path": f"/World/Table/{obj.name.replace(' ', '_')}",
+                    "mass_kg": 0.15 if "方块" in obj.name else 0.2,
+                    "material": "plastic" if "方块" in obj.name else "glass",
+                    "friction": 0.4,
+                    "rigid_body": True,
+                    "collision_enabled": True,
+                }
+                for obj in objects_raw
+            ],
+        },
     )
 
 

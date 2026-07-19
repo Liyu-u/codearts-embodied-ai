@@ -80,6 +80,10 @@ class ExecutionWrapper:
         self._current_z: float = 0.35
         self._world = world
 
+        # Mock 模式内部状态（使 verify_grasp 可正确模拟）
+        self._mock_gripper_width: float = 0.08
+        self._mock_gripper_force: float = 0.0
+
         # 延迟初始化：在首次调用运动 API 时才加载 Franka
         self._robot: Optional[Articulation] = None
         self._gripper: Optional[Articulation] = None
@@ -250,6 +254,7 @@ class ExecutionWrapper:
         )
 
         self._ensure_initialized()
+        self._mock_gripper_width = width
         if _KIT_MODE and self._gripper is not None:
             self._gripper.apply_action(
                 ArticulationAction(joint_positions=[width / 2, width / 2])
@@ -273,6 +278,8 @@ class ExecutionWrapper:
         )
 
         self._ensure_initialized()
+        self._mock_gripper_force = force
+        self._mock_gripper_width = 0.0
         if _KIT_MODE and self._gripper is not None:
             self._gripper.apply_action(
                 ArticulationAction(
@@ -314,7 +321,11 @@ class ExecutionWrapper:
             force = max(efforts) if efforts else 0.0
             is_closed = width < 0.005
             return GripperState(width=width, force=force, is_closed=is_closed)
-        return GripperState(width=0.08, force=0.0, is_closed=False)
+        return GripperState(
+            width=self._mock_gripper_width,
+            force=self._mock_gripper_force,
+            is_closed=self._mock_gripper_width < 0.005,
+        )
 
     # ============================================================
     # 逻辑判断 API

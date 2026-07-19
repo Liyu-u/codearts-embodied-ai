@@ -67,8 +67,9 @@ class StrategyExecutor:
         self.scene_provider = scene_provider
 
     def build_namespace(self) -> Dict[str, Any]:
-        """构建注入策略代码的命名空间"""
+        """构建注入策略代码的命名空间（包含元 API + 动作库）"""
         from isaac.get_scene_json import get_scene_objects
+        from isaac.action_library import ACTION_LIBRARY, ACTION_CONSTANTS
 
         ns = {
             # 元 API — 运动控制
@@ -85,7 +86,24 @@ class StrategyExecutor:
             # 元 API — 逻辑判断
             "check_collision": self.robot.check_collision,
             "verify_grasp": self.robot.verify_grasp,
-             # Python 内置
+            # 动作库 — 队友 B 可直接调用的高层动作
+            "pick_up": ACTION_LIBRARY["pick_up"],
+            "place_at": ACTION_LIBRARY["place_at"],
+            "pick_and_place": ACTION_LIBRARY["pick_and_place"],
+            "move_home": ACTION_LIBRARY["move_home"],
+            "approach_safely": ACTION_LIBRARY["approach_safely"],
+            "retreat_safely": ACTION_LIBRARY["retreat_safely"],
+            "push": ACTION_LIBRARY["push"],
+            "stack": ACTION_LIBRARY["stack"],
+            "find_object": ACTION_LIBRARY["find_object"],
+            "scan_table": ACTION_LIBRARY["scan_table"],
+            "sort_by_color": ACTION_LIBRARY["sort_by_color"],
+            # 安全常量
+            "SAFE_Z": ACTION_CONSTANTS["SAFE_Z"],
+            "PLACE_Z": ACTION_CONSTANTS["PLACE_Z"],
+            "DEFAULT_FORCE": ACTION_CONSTANTS["DEFAULT_FORCE"],
+            "DEFAULT_WIDTH": ACTION_CONSTANTS["DEFAULT_WIDTH"],
+            # Python 内置
             "print": print,
             "len": len, "range": range, "enumerate": enumerate,
             "zip": zip, "sorted": sorted,
@@ -93,7 +111,6 @@ class StrategyExecutor:
             "int": int, "float": float, "str": str,
             "list": list, "dict": dict, "tuple": tuple, "set": set, "bool": bool,
             "True": True, "False": False, "None": None,
-            # NumPy（如果可用）
             "__builtins__": __builtins__,
         }
 

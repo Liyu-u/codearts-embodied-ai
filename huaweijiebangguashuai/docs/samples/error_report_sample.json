@@ -1,0 +1,28 @@
+{
+  "_comment": "队友 D（监控探针）的异常报告格式",
+  "task_id": "task-001",
+  "status": "error",
+  "timestamp": "2026-07-17T15:35:22",
+  "errors": [
+    {
+      "id": "err-001",
+      "type": "COLLISION_DETECTED",
+      "message": "路径与蓝色杯子干涉！",
+      "position": {"x": 0.02, "y": -0.03, "z": 0.04},
+      "joints": [0.1, -0.6, 0.2, -1.5, 0.0, 0.8, 0.3],
+      "timestamp": "2026-07-17T15:35:22"
+    },
+    {
+      "id": "err-002",
+      "type": "GRASP_FAILED",
+      "message": "抓取力不足，物体滑落",
+      "position": {"x": 0.15, "y": 0.05, "z": 0.03},
+      "joints": [0.0, -0.8, 0.0, -2.0, 0.0, 1.2, 0.0],
+      "timestamp": "2026-07-17T15:35:28"
+    }
+  ],
+  "summary": {
+    "total_errors": 2,
+    "types": ["COLLISION_DETECTED", "GRASP_FAILED"]
+  }
+}
