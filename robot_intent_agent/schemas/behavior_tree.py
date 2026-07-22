@@ -63,6 +63,14 @@ class SkillAction(BaseModel):
         default_factory=dict,
         description="技能参数 ({force: 3.0, velocity: 0.1, ...})",
     )
+    preconditions: List[str] = Field(default_factory=list, description="技能前置条件")
+    success_conditions: List[str] = Field(default_factory=list, description="成功判定条件")
+    failure_conditions: List[str] = Field(default_factory=list, description="失败判定条件")
+    timeout_s: Optional[float] = Field(default=None, description="超时时间 (s)")
+    retry_policy: Dict[str, Any] = Field(default_factory=dict, description="重试策略")
+    fallback: Optional[str] = Field(default=None, description="失败后的回退技能或策略")
+    runtime_safety_guards: List[str] = Field(default_factory=list, description="运行时安全守卫")
+    semantic_role: Optional[str] = Field(default=None, description="主题/来源/目的地/接收者等语义角色")
 
 
 class ConditionCheck(BaseModel):

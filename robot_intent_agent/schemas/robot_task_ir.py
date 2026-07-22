@@ -16,6 +16,13 @@ from typing import Dict, List, Optional, Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+from robot_intent_agent.task_semantics import (
+    ParsedTask,
+    GroundedTask,
+    ConstraintResolution,
+    ValidationResult,
+    PlanStatus,
+)
 
 try:
     from .scene import SemanticSceneGraph
@@ -28,7 +35,7 @@ except ImportError:
 
 
 # ============================================================
-# v2.1: GroundedEntity
+# v3.0: GroundedEntity
 # ============================================================
 
 class GroundedEntity(BaseModel):
@@ -91,6 +98,21 @@ class TaskIntent(BaseModel):
     user_constraints: Dict[str, Any] = Field(default_factory=dict, description="User explicit requirements: {force_n: 100.0, velocity_ms: 5.0}")
     urgency: str = Field(default="normal", description="normal | high | emergency | critical")
     safety_goal: str = Field(default="collision_free", description="Safety objective")
+
+
+class PlanMetadata(BaseModel):
+    compiler_version: str = Field(default="1.0.0")
+    planner_name: str = Field(default="RuleBasedPlanner")
+    llm_model: Optional[str] = Field(default=None)
+    rule_set_version: str = Field(default="1.0.0")
+    audit_id: str = Field(default_factory=lambda: f"audit-{uuid4().hex[:8]}")
+    plan_hash: str = Field(default="")
+    plan_status: PlanStatus = Field(default=PlanStatus.NEEDS_CLARIFICATION)
+    parse_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    grounding_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    constraint_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    plan_feasibility_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    execution_readiness: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 # ============================================================
@@ -195,7 +217,13 @@ class RobotTaskIR(BaseModel):
     ir_version: str = Field(default="3.0.0")
     task_metadata: TaskMetadata = Field(...)
     precondition_assertions: PreconditionSet = Field(default_factory=PreconditionSet)
+    parsed_task: Optional[ParsedTask] = Field(default=None)
+    grounded_task: Optional[GroundedTask] = Field(default=None)
     task_intent: Optional[TaskIntent] = Field(default=None)
+    constraint_resolution: Optional[ConstraintResolution] = Field(default=None)
+    validation_result: Optional[ValidationResult] = Field(default=None)
+    robot_capability_decisions: List[Dict[str, Any]] = Field(default_factory=list)
+    plan_metadata: PlanMetadata = Field(default_factory=PlanMetadata)
     overall_confidence: float = Field(default=0.95, ge=0.0, le=1.0)
     decision_trace: List[DecisionTraceNode] = Field(default_factory=list)
     explain_report: ExplainReport = Field(default_factory=ExplainReport)
@@ -206,6 +234,9 @@ class RobotTaskIR(BaseModel):
     optimization_space: OptimizationSpace = Field(default_factory=OptimizationSpace)
     memory_context: Dict[str, Any] = Field(default_factory=dict)
     risk_objects: List[RiskObject] = Field(default_factory=list)
+    # ── Phase 8: Semantic enforcement trace — full-chain prohibition/condition audit ──
+    semantic_enforcement_trace: Dict[str, Any] = Field(default_factory=dict,
+        description="Full-chain trace of every prohibition and condition through all pipeline stages")
 
     def model_post_init(self, __context: Any) -> None:
         if self.compiled_constraints is not None and hasattr(self.compiled_constraints, 'task_id'):
@@ -219,7 +250,7 @@ class RobotTaskIR(BaseModel):
         return (
             f"Task IR v3.0: {self.task_metadata.task_id}\n"
             f"  Instruction: {self.task_metadata.raw_instruction[:60]}\n"
-            f"  Engine: {self.task_metadata.engine.get('planner','?')} | "
+            f"  Engine: {self.plan_metadata.planner_name} | Status: {self.plan_metadata.plan_status.value}\n"
             f"Confidence: {self.overall_confidence:.2f}\n"
             f"  Actions: {' > '.join(a.skill_name for a in actions[:6])}"
         )

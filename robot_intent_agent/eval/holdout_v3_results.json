@@ -1,0 +1,87 @@
+{
+  "total": 150,
+  "passed": 126,
+  "failed": 24,
+  "pass_rate": 0.84,
+  "action_accuracy": 0.8591,
+  "role": {
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  "entity_grounding_accuracy": 0.0,
+  "disambiguation_accuracy": 0.0,
+  "negation": {
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0
+  },
+  "condition_accuracy": 0.0,
+  "sequence_accuracy": 0.0,
+  "numeric_accuracy": 0.0,
+  "missing_role_accuracy": 0.0,
+  "clarification_precision": 0.8857,
+  "unnecessary_clarification_rate": 0.45,
+  "dangerous_false_allow": 2,
+  "schema_pass_rate": 1.0,
+  "metamorphic_consistency": 0.8333,
+  "by_category": {
+    "simple_action": {
+      "total": 12,
+      "passed": 11
+    },
+    "role_binding": {
+      "total": 12,
+      "passed": 8
+    },
+    "multi_object": {
+      "total": 12,
+      "passed": 12
+    },
+    "size_color_spatial": {
+      "total": 12,
+      "passed": 12
+    },
+    "ordinal_reference": {
+      "total": 10,
+      "passed": 9
+    },
+    "negation": {
+      "total": 12,
+      "passed": 7
+    },
+    "if_else": {
+      "total": 10,
+      "passed": 5
+    },
+    "unless": {
+      "total": 10,
+      "passed": 10
+    },
+    "sequence": {
+      "total": 10,
+      "passed": 10
+    },
+    "numeric_constraints": {
+      "total": 10,
+      "passed": 7
+    },
+    "robot_state": {
+      "total": 10,
+      "passed": 10
+    },
+    "ambiguity": {
+      "total": 10,
+      "passed": 8
+    },
+    "missing_role": {
+      "total": 10,
+      "passed": 10
+    },
+    "conflicting_input": {
+      "total": 10,
+      "passed": 7
+    }
+  },
+  "latency_avg_ms": 2.3
+}

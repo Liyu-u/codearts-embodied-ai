@@ -35,6 +35,12 @@ class SkillDefinition:
     effects: List[str] = field(default_factory=list)
     params_schema: Dict[str, Any] = field(default_factory=dict)
     safety_notes: List[str] = field(default_factory=list)
+    success_conditions: List[str] = field(default_factory=list)
+    failure_conditions: List[str] = field(default_factory=list)
+    timeout_s: Optional[float] = None
+    retry_policy: Dict[str, Any] = field(default_factory=dict)
+    fallback: Optional[str] = None
+    runtime_safety_guards: List[str] = field(default_factory=list)
 
     def requires_target(self) -> bool:
         """是否需要目标物体"""
@@ -72,6 +78,55 @@ class SkillCatalog:
     """
 
     _SKILLS: Dict[str, SkillDefinition] = {
+        # ── WaitUntilStable (v3.0: 移动目标稳定门控) ──
+        "WaitUntilStable": SkillDefinition(
+            name="WaitUntilStable",
+            description="Wait until {target} stops moving before proceeding",
+            preconditions=["target_tracking_available","velocity_confidence>=0.7"],
+            effects=["target_stable","ready_for_grasp"],
+            params_schema={
+                "target": "str — 目标物体名称",
+                "max_speed_mps": "float = 0.01 — 稳定判定阈值 (m/s)",
+                "timeout_s": "float = 5.0 — 超时时间 (s)",
+                "required_consecutive_frames": "int = 3 — 连续稳定帧数",
+                "min_velocity_confidence": "float = 0.70",
+            },
+            safety_notes=["Must complete before any grasp on moving target"],
+            success_conditions=["target_velocity <= max_speed_mps for required_consecutive_frames"],
+            failure_conditions=["timeout_exceeded", "tracking_lost", "velocity_confidence_drop"],
+            timeout_s=5.0,
+            retry_policy={"max_retries": 1, "reacquire_before_retry": True},
+            fallback="ReSenseTarget",
+            runtime_safety_guards=["velocity_threshold", "timeout_guard"],
+        ),
+
+        # ── PlanPath (v3.0: 无碰撞全局路径规划) ──
+        "PlanPath": SkillDefinition(
+            name="PlanPath",
+            description="Plan collision-free global path to {target}, avoiding obstacles: {destination}",
+            preconditions=[
+                "target_position_known",
+                "obstacle_positions_known",
+            ],
+            effects=[
+                "collision_free_path_planned",
+                "ready_for_approach",
+            ],
+            params_schema={
+                "target": "str — 目标物体名称",
+                "avoid_obstacles": "List[str] — 需规避的障碍物名称列表",
+                "collision_check": "bool = True — 是否启用碰撞检测",
+                "min_clearance_m": "float = 0.05 — 最小安全距离 (m)",
+            },
+            safety_notes=["Collision check must be enabled", "Min clearance >= 0.05m"],
+            success_conditions=["collision_free_path_planned"],
+            failure_conditions=["path_blocked", "clearance_violation", "planner_timeout"],
+            timeout_s=4.0,
+            retry_policy={"max_retries": 2, "replan_on_obstacle_motion": True},
+            fallback="FallbackToSaferPath",
+            runtime_safety_guards=["trajectory_collision_guard", "sweep_volume_guard"],
+        ),
+
         # ── Reach ──
         "Reach": SkillDefinition(
             name="Reach",
@@ -91,6 +146,12 @@ class SkillCatalog:
                 "safe_z_offset": "float = 0.10 — 安全高度偏移 (m)",
             },
             safety_notes=["Ensure Z >= 0.02m before lateral move"],
+            success_conditions=["end_effector_at_target_safe_height"],
+            failure_conditions=["target_lost", "path_blocked", "timeout_exceeded"],
+            timeout_s=4.0,
+            retry_policy={"max_retries": 1, "reacquire_target": True},
+            fallback="PlanPath",
+            runtime_safety_guards=["z_floor_guard", "collision_guard"],
         ),
 
         # ── Grasp ──
@@ -112,6 +173,12 @@ class SkillCatalog:
                 "approach_axis": "str = 'z' — 接近方向",
             },
             safety_notes=["force must be <= 10.0N", "Verify grasp after close"],
+            success_conditions=["target_in_hand", "gripper_closed"],
+            failure_conditions=["grasp_slip", "contact_misalignment", "force_limit_violation", "timeout_exceeded"],
+            timeout_s=3.0,
+            retry_policy={"max_retries": 2, "reposition_before_retry": True},
+            fallback="Inspect",
+            runtime_safety_guards=["force_guard", "contact_guard"],
         ),
 
         # ── MoveTo ──
@@ -133,6 +200,12 @@ class SkillCatalog:
                 "velocity_ms": "float = 0.15 — 移动速度 (m/s)",
             },
             safety_notes=["Lift to safe Z before lateral movement"],
+            success_conditions=["target_at_destination"],
+            failure_conditions=["path_blocked", "destination_unreachable", "timeout_exceeded"],
+            timeout_s=6.0,
+            retry_policy={"max_retries": 2, "replan_before_retry": True},
+            fallback="PlanPath",
+            runtime_safety_guards=["trajectory_guard", "collision_guard"],
         ),
 
         # ── Release ──
@@ -152,6 +225,113 @@ class SkillCatalog:
                 "open_width_m": "float = 0.08 — 张开宽度 (m)",
             },
             safety_notes=["Ensure object stable before release"],
+            success_conditions=["target_released"],
+            failure_conditions=["object_not_stable", "release_blocked", "timeout_exceeded"],
+            timeout_s=2.0,
+            retry_policy={"max_retries": 1, "retry_after_inspect": True},
+            fallback="Inspect",
+            runtime_safety_guards=["stability_guard"],
+        ),
+
+        # ── Fetch ──
+        "Fetch": SkillDefinition(
+            name="Fetch",
+            description="Fetch {target} and deliver it toward {destination}",
+            preconditions=["target_visible", "delivery_target_known"],
+            effects=["target_relocated", "delivery_candidate_ready"],
+            params_schema={
+                "target": "str — 目标物体名称",
+                "destination": "str — 交付位置或接收者",
+            },
+            safety_notes=["Must not fabricate a delivery destination"],
+            success_conditions=["target_relocated_or_delivered"],
+            failure_conditions=["destination_missing", "target_lost", "timeout_exceeded"],
+            timeout_s=8.0,
+            retry_policy={"max_retries": 1, "reacquire_target": True},
+            fallback="WaitUntilStable",
+            runtime_safety_guards=["delivery_destination_guard", "collision_guard"],
+        ),
+
+        # ── Place ──
+        "Place": SkillDefinition(
+            name="Place",
+            description="Place {target} on support surface {destination}",
+            preconditions=["target_in_hand", "support_surface_known", "placement_pose_known"],
+            effects=["target_on_support_surface", "placement_complete"],
+            params_schema={
+                "target": "str — 被放置物体名称",
+                "destination": "str — 支撑面或放置区域",
+                "support_surface": "str — 支撑面名称",
+                "placement_pose": "dict — 计算得到的放置位姿",
+                "placement_region": "dict — 可放置区域",
+            },
+            safety_notes=["Do not fake placement with MoveTo+Release only"],
+            success_conditions=["target_stable_on_surface", "released_clear"],
+            failure_conditions=["surface_missing", "placement_pose_invalid", "timeout_exceeded"],
+            timeout_s=8.0,
+            retry_policy={"max_retries": 1, "recompute_pose": True},
+            fallback="Inspect",
+            runtime_safety_guards=["edge_clearance_guard", "contact_guard", "stability_guard"],
+        ),
+
+        # ── Handover ──
+        "Handover": SkillDefinition(
+            name="Handover",
+            description="Hand over {target} to the recipient",
+            preconditions=["recipient_known", "handover_pose_known", "target_in_hand"],
+            effects=["recipient_can_receive", "handover_complete"],
+            params_schema={
+                "target": "str — 被交付物体",
+                "recipient": "str — 接收者",
+                "recipient_pose": "dict — 接收者位姿",
+            },
+            safety_notes=["Do not deliver to an unknown recipient pose"],
+            success_conditions=["handover_acknowledged"],
+            failure_conditions=["recipient_missing", "recipient_pose_missing", "timeout_exceeded"],
+            timeout_s=8.0,
+            retry_policy={"max_retries": 1, "reacquire_recipient": True},
+            fallback="WaitUntilStable",
+            runtime_safety_guards=["human_proximity_guard", "release_guard"],
+        ),
+
+        # ── Transfer ──
+        "Transfer": SkillDefinition(
+            name="Transfer",
+            description="Transfer {target} from source to destination",
+            preconditions=["source_known", "destination_known", "target_in_hand"],
+            effects=["target_transferred"],
+            params_schema={
+                "target": "str — 被转移物体",
+                "source": "str — 来源",
+                "destination": "str — 目的地",
+            },
+            safety_notes=["Do not claim completion without source/destination grounding"],
+            success_conditions=["target_transferred"],
+            failure_conditions=["source_missing", "destination_missing", "timeout_exceeded"],
+            timeout_s=8.0,
+            retry_policy={"max_retries": 1, "replan_after_failure": True},
+            fallback="Inspect",
+            runtime_safety_guards=["trajectory_guard", "handover_guard"],
+        ),
+
+        # ── DynamicGrasp ──
+        "DynamicGrasp": SkillDefinition(
+            name="DynamicGrasp",
+            description="Track and grasp a moving {target}",
+            preconditions=["target_tracking_available", "motion_state_known", "graspable"],
+            effects=["moving_target_captured"],
+            params_schema={
+                "target": "str — 目标物体名称",
+                "target_speed_mps": "float — 目标速度",
+                "max_wait_s": "float — 最大等待/追踪时间",
+            },
+            safety_notes=["Must stop if confidence drops", "Must not wait forever"],
+            success_conditions=["target_captured_and_stable"],
+            failure_conditions=["tracking_lost", "timeout_exceeded", "confidence_drop"],
+            timeout_s=6.0,
+            retry_policy={"max_retries": 1, "reacquire_before_retry": True},
+            fallback="WaitUntilStable",
+            runtime_safety_guards=["prediction_guard", "timeout_guard", "confidence_guard"],
         ),
 
         # ── Push ──

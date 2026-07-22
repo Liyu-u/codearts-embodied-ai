@@ -1,0 +1,231 @@
+{
+  "run_id": "eval-99e0e71d4ba1",
+  "dataset": "holdout_v3.json",
+  "total": 150,
+  "passed": 148,
+  "failed": 2,
+  "severe_veto_count": 0,
+  "pass_rate": 0.9867,
+  "dimensions": {
+    "action_recognition": {
+      "name": "action_recognition",
+      "applicable": 0,
+      "correct": 0,
+      "accuracy": -1.0,
+      "critical_errors": 0,
+      "high_errors": 0,
+      "medium_errors": 0
+    },
+    "role_extraction": {
+      "name": "role_extraction",
+      "applicable": 30,
+      "correct": 30,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0,
+      "medium_errors": 0
+    },
+    "entity_grounding": {
+      "name": "entity_grounding",
+      "applicable": 0,
+      "correct": 0,
+      "accuracy": -1.0,
+      "critical_errors": 0,
+      "high_errors": 0,
+      "medium_errors": 0
+    },
+    "multi_object_disambiguation": {
+      "name": "multi_object_disambiguation",
+      "applicable": 35,
+      "correct": 35,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0,
+      "medium_errors": 0
+    },
+    "negation_constraint_retention": {
+      "name": "negation_constraint_retention",
+      "applicable": 15,
+      "correct": 15,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0,
+      "medium_errors": 0
+    },
+    "conditional_sequential_understanding": {
+      "name": "conditional_sequential_understanding",
+      "applicable": 31,
+      "correct": 31,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0,
+      "medium_errors": 0
+    },
+    "numeric_operator_unit": {
+      "name": "numeric_operator_unit",
+      "applicable": 10,
+      "correct": 10,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0,
+      "medium_errors": 0
+    },
+    "perception_factual_fidelity": {
+      "name": "perception_factual_fidelity",
+      "applicable": 149,
+      "correct": 149,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0,
+      "medium_errors": 0
+    },
+    "robot_capability_constraint": {
+      "name": "robot_capability_constraint",
+      "applicable": 21,
+      "correct": 20,
+      "accuracy": 0.9524,
+      "critical_errors": 0,
+      "high_errors": 1,
+      "medium_errors": 0
+    },
+    "bt_ir_cross_field_consistency": {
+      "name": "bt_ir_cross_field_consistency",
+      "applicable": 149,
+      "correct": 148,
+      "accuracy": 0.9933,
+      "critical_errors": 0,
+      "high_errors": 1,
+      "medium_errors": 0
+    },
+    "schema_validity": {
+      "name": "schema_validity",
+      "applicable": 149,
+      "correct": 149,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0,
+      "medium_errors": 0
+    },
+    "dangerous_error_pass_through": {
+      "name": "dangerous_error_pass_through",
+      "applicable": 0,
+      "correct": 0,
+      "accuracy": -1.0,
+      "critical_errors": 0,
+      "high_errors": 0,
+      "medium_errors": 0
+    }
+  },
+  "severity_counts": {
+    "CRITICAL": 0,
+    "HIGH": 2,
+    "MEDIUM": 0,
+    "LOW": 0,
+    "INFO": 0
+  },
+  "latency": {
+    "avg_ms": 3224.1,
+    "p50_ms": 2881.0,
+    "p95_ms": 5240.5,
+    "p99_ms": 5807.9
+  },
+  "by_category": {
+    "simple_action": {
+      "total": 12,
+      "passed": 12,
+      "critical": 0,
+      "high": 0
+    },
+    "role_binding": {
+      "total": 12,
+      "passed": 12,
+      "critical": 0,
+      "high": 0
+    },
+    "multi_object": {
+      "total": 12,
+      "passed": 12,
+      "critical": 0,
+      "high": 0
+    },
+    "size_color_spatial": {
+      "total": 12,
+      "passed": 12,
+      "critical": 0,
+      "high": 0
+    },
+    "ordinal_reference": {
+      "total": 10,
+      "passed": 10,
+      "critical": 0,
+      "high": 0
+    },
+    "negation": {
+      "total": 12,
+      "passed": 12,
+      "critical": 0,
+      "high": 0
+    },
+    "if_else": {
+      "total": 10,
+      "passed": 9,
+      "critical": 0,
+      "high": 1
+    },
+    "unless": {
+      "total": 10,
+      "passed": 10,
+      "critical": 0,
+      "high": 0
+    },
+    "sequence": {
+      "total": 10,
+      "passed": 10,
+      "critical": 0,
+      "high": 0
+    },
+    "numeric_constraints": {
+      "total": 10,
+      "passed": 10,
+      "critical": 0,
+      "high": 0
+    },
+    "robot_state": {
+      "total": 10,
+      "passed": 9,
+      "critical": 0,
+      "high": 1
+    },
+    "ambiguity": {
+      "total": 10,
+      "passed": 10,
+      "critical": 0,
+      "high": 0
+    },
+    "missing_role": {
+      "total": 10,
+      "passed": 10,
+      "critical": 0,
+      "high": 0
+    },
+    "conflicting_input": {
+      "total": 10,
+      "passed": 10,
+      "critical": 0,
+      "high": 0
+    }
+  },
+  "legacy": {
+    "action_accuracy": 1.0,
+    "action_cases": 0,
+    "entity_grounding_accuracy": 1.0,
+    "entity_cases": 0,
+    "force_parsing_accuracy": 1.0,
+    "force_cases": 0,
+    "role_detection_accuracy": 1.0,
+    "role_cases": 30,
+    "schema_pass_rate": 1.0,
+    "overall_pass_rate": 0.9867,
+    "avg_elapsed_ms": 3224.1
+  }
+}

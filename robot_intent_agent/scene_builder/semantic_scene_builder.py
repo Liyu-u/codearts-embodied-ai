@@ -40,10 +40,13 @@ from robot_intent_agent.schemas.scene import (
 @dataclass
 class SpatialConfig:
     """空间关系推理参数 (可调)"""
-    near_threshold_m: float = 0.10       # 判定 near 的最大距离 (m)
+    near_threshold_m: float = 0.30       # 判定 near 的最大中心距离 (m)
     blocking_angle_deg: float = 30.0     # 判定 blocking 的视线锥角 (deg)
-    horizontal_threshold: float = 0.02   # 判定水平方向的最小 X 差 (m)
+    axis_deadband_m: float = 0.03        # 方向关系轴向死区 (m)
+    min_relation_confidence: float = 0.10 # 最低保留置信度
+    confidence_full_scale_m: float = 0.30 # 置信度归一化距离 (m)
     stacking_z_overlap_m: float = 0.01   # 判定 supporting 的 Z 重叠裕度 (m)
+    bidirectional_relations: bool = True  # 保留逆关系(向后兼容)
 
 
 # ============================================================
@@ -60,6 +63,11 @@ _DEFAULT_AFFORDANCES: Dict[str, List[Affordance]] = {
     "box": [Affordance.GRASPABLE, Affordance.CONTAINER, Affordance.PUSHABLE],
     "table": [Affordance.FIXED],
     "wall": [Affordance.FIXED],
+    "ball": [Affordance.GRASPABLE, Affordance.MOVABLE],
+    "needle": [Affordance.GRASPABLE, Affordance.MOVABLE],
+    "device": [Affordance.GRASPABLE, Affordance.FRAGILE, Affordance.MOVABLE],
+    "rubber": [Affordance.GRASPABLE, Affordance.MOVABLE],
+    "metal": [Affordance.GRASPABLE, Affordance.MOVABLE],
     # Chinese keywords
     "药": [Affordance.GRASPABLE, Affordance.FRAGILE, Affordance.MOVABLE],
     "瓶": [Affordance.GRASPABLE, Affordance.FRAGILE, Affordance.MOVABLE],
@@ -67,6 +75,8 @@ _DEFAULT_AFFORDANCES: Dict[str, List[Affordance]] = {
     "玻璃": [Affordance.GRASPABLE, Affordance.FRAGILE, Affordance.CONTAINER],
     "木": [Affordance.GRASPABLE, Affordance.STACKABLE, Affordance.MOVABLE],
     "块": [Affordance.GRASPABLE, Affordance.STACKABLE, Affordance.MOVABLE],
+    "球": [Affordance.GRASPABLE, Affordance.MOVABLE],
+    "针": [Affordance.GRASPABLE, Affordance.MOVABLE],
 }
 
 _DEFAULT_LABELS: Dict[str, str] = {
@@ -77,6 +87,13 @@ _DEFAULT_LABELS: Dict[str, str] = {
     "glass": "glass_cup",
     "block": "cube",
     "box": "box",
+    "tray": "tray",
+    "table": "table",
+    "ball": "ball",
+    "needle": "needle",
+    "device": "device",
+    "rubber": "rubber",
+    "metal": "metal",
     # Chinese
     "药": "medicine_bottle",
     "瓶": "bottle",
@@ -84,6 +101,11 @@ _DEFAULT_LABELS: Dict[str, str] = {
     "玻璃": "glass_cup",
     "木": "wooden_block",
     "块": "cube",
+    "托盘": "tray",
+    "桌": "table",
+    "球": "ball",
+    "针": "needle",
+    "铁": "metal",
 }
 
 
@@ -103,26 +125,41 @@ class RawObjectPercept:
     depth: float = 0.05
     color: Optional[str] = None
     material: Optional[str] = None
+    object_id: Optional[str] = None  # original perception object_id from dataset
+    has_invalid_data: bool = False    # set when input values failed validation
     extra_attrs: Dict[str, Any] = field(default_factory=dict)
 
     def to_scene_object(self) -> SceneObject:
         """转换为标准 SceneObject"""
         label = self._infer_label()
         affordances = self._infer_affordances(label)
+        specific_class, parent_class, parent_classes = self._infer_class_hierarchy(label)
+
+        attrs = {
+            "color": self.color or "unknown",
+            "material": self.material or "unknown",
+            **self.extra_attrs,
+        }
+        # Preserve original perception object_id for evaluator mapping
+        if self.object_id:
+            attrs["_perception_object_id"] = self.object_id
+        # Flag invalid input data
+        if self.has_invalid_data:
+            attrs["_has_invalid_input"] = True
 
         return SceneObject(
             name=self.name,
+            original_mention=self.name,
             label=label,
+            specific_class=specific_class,
+            parent_class=parent_class,
+            parent_classes=parent_classes,
             position=Position(x=self.x, y=self.y, z=self.z),
             orientation=Orientation(),
             bbox=BoundingBox(
                 width=self.width, height=self.height, depth=self.depth
             ),
-            attributes={
-                "color": self.color or "unknown",
-                "material": self.material or "unknown",
-                **self.extra_attrs,
-            },
+            attributes=attrs,
             affordances=affordances,
         )
 
@@ -144,6 +181,27 @@ class RawObjectPercept:
             if keyword in name_lower:
                 return list(affs)
         return [Affordance.GRASPABLE, Affordance.MOVABLE]
+
+    def _infer_class_hierarchy(self, label: Optional[str]) -> Tuple[Optional[str], Optional[str], List[str]]:
+        if not label:
+            return None, None, []
+        class_map: Dict[str, Tuple[Optional[str], Optional[str], List[str]]] = {
+            "cup": ("cup", "container", ["cup", "container"]),
+            "glass_cup": ("cup", "container", ["glass_cup", "cup", "container"]),
+            "bottle": ("bottle", "container", ["bottle", "container"]),
+            "tray": ("tray", "support_surface", ["tray", "support_surface"]),
+            "table": ("table", "support_surface", ["table", "support_surface"]),
+            "box": ("box", "container", ["box", "container"]),
+            "wooden_block": ("block", "object", ["wooden_block", "block", "object"]),
+            "cube": ("block", "object", ["cube", "block", "object"]),
+            "medicine_bottle": ("medicine_bottle", "container", ["medicine_bottle", "bottle", "container"]),
+            "ball": ("ball", "object", ["ball", "object"]),
+            "needle": ("needle", "object", ["needle", "object"]),
+            "device": ("device", "object", ["device", "object"]),
+            "rubber": ("rubber", "material", ["rubber", "material"]),
+            "metal": ("metal", "material", ["metal", "material"]),
+        }
+        return class_map.get(label, (label, None, [label]))
 
 
 # ============================================================
@@ -194,71 +252,72 @@ class SpatialReasoner:
         b: SceneObject,
         robot_origin: Tuple[float, float, float],
     ) -> List[SpatialRelation]:
-        """推断一对物体间的所有空间关系"""
+        """推断一对物体间的所有空间关系 (v2: 轴向死区 + 置信度过滤 + 规范顺序)"""
         results: List[SpatialRelation] = []
-        pa = a.position
-        pb = b.position
+        cfg = self.config
+        pa, pb = a.position, b.position
+        dx, dy, dz = pb.x - pa.x, pb.y - pa.y, pb.z - pa.z
 
-        # --- 水平方向 (X 轴) ---
-        dx = pb.x - pa.x
-        if abs(dx) > self.config.horizontal_threshold:
+        def _add_dir(subj, pred, axis_delta):
+            if abs(axis_delta) <= cfg.axis_deadband_m:
+                return
+            conf = self._clamp_confidence((abs(axis_delta) - cfg.axis_deadband_m) / cfg.confidence_full_scale_m)
+            if conf < cfg.min_relation_confidence:
+                return
+            results.append(SpatialRelation(subject=subj, predicate=pred, object=(b.id if subj==a.id else a.id),
+                           confidence=round(conf,3),
+                           metadata={"axis_delta_m": round(abs(axis_delta),4), "deadband_m": cfg.axis_deadband_m}))
+
+        # X轴: Pb.x > Pa.x → a LEFT_OF b, b RIGHT_OF a (规范: 只存 LEFT_OF)
+        if abs(dx) > cfg.axis_deadband_m:
             if dx > 0:
-                results.append(self._make_rel(a.id, SpatialPredicate.LEFT_OF, b.id, abs(dx)))
-                results.append(self._make_rel(b.id, SpatialPredicate.RIGHT_OF, a.id, abs(dx)))
+                _add_dir(a.id, SpatialPredicate.LEFT_OF, dx)
+                if cfg.bidirectional_relations:
+                    _add_dir(b.id, SpatialPredicate.RIGHT_OF, dx)
             else:
-                results.append(self._make_rel(a.id, SpatialPredicate.RIGHT_OF, b.id, abs(dx)))
-                results.append(self._make_rel(b.id, SpatialPredicate.LEFT_OF, a.id, abs(dx)))
+                _add_dir(b.id, SpatialPredicate.LEFT_OF, abs(dx))
+                if cfg.bidirectional_relations:
+                    _add_dir(a.id, SpatialPredicate.RIGHT_OF, abs(dx))
 
-        # --- 深度方向 (Y 轴) ---
-        dy = pb.y - pa.y
-        if abs(dy) > self.config.horizontal_threshold:
+        # Y轴: robot_base: y<0=右侧, y>0=左侧; in_front_of = y值更大
+        if abs(dy) > cfg.axis_deadband_m:
             if dy > 0:
-                results.append(self._make_rel(b.id, SpatialPredicate.IN_FRONT_OF, a.id, abs(dy)))
+                _add_dir(b.id, SpatialPredicate.IN_FRONT_OF, dy)
             else:
-                results.append(self._make_rel(a.id, SpatialPredicate.IN_FRONT_OF, b.id, abs(dy)))
+                _add_dir(a.id, SpatialPredicate.IN_FRONT_OF, abs(dy))
 
-        # --- 垂直方向 (Z 轴) ---
-        dz = pb.z - pa.z
-        z_mid_a = pa.z + a.bbox.height / 2
-        z_mid_b = pb.z + b.bbox.height / 2
-        if z_mid_b > z_mid_a + self.config.stacking_z_overlap_m:
-            results.append(self._make_rel(a.id, SpatialPredicate.BELOW, b.id, abs(z_mid_b - z_mid_a)))
-        elif z_mid_a > z_mid_b + self.config.stacking_z_overlap_m:
-            results.append(self._make_rel(a.id, SpatialPredicate.ABOVE, b.id, abs(z_mid_a - z_mid_b)))
+        # Z轴: above/below (基于中点比较)
+        z_mid_a, z_mid_b = pa.z + a.bbox.height/2, pb.z + b.bbox.height/2
+        dz_mid = z_mid_b - z_mid_a
+        if abs(dz_mid) > cfg.axis_deadband_m:
+            if dz_mid > 0:
+                _add_dir(a.id, SpatialPredicate.BELOW, dz_mid)
+            else:
+                _add_dir(a.id, SpatialPredicate.ABOVE, abs(dz_mid))
 
-        # --- Supporting (A 在 B 下方且 Z 方向接近) ---
-        bottom_a = pa.z
-        top_a = pa.z + a.bbox.height
-        bottom_b = pb.z
-        if abs(top_a - bottom_b) < self.config.stacking_z_overlap_m and self._xy_overlap(a, b):
-            results.append(self._make_rel(b.id, SpatialPredicate.SUPPORTING, a.id, 0.0))
+        # Supporting
+        if abs((pa.z + a.bbox.height) - pb.z) < cfg.stacking_z_overlap_m and self._xy_overlap(a, b):
+            results.append(SpatialRelation(subject=b.id, predicate=SpatialPredicate.SUPPORTING,
+                           object=a.id, confidence=0.85, metadata={"type": "supporting"}))
 
-        # --- Near (欧氏距离) ---
+        # Near
         dist = math.sqrt(dx**2 + dy**2 + dz**2)
-        if dist <= self.config.near_threshold_m:
-            results.append(self._make_rel(a.id, SpatialPredicate.NEAR, b.id, dist))
+        if dist <= cfg.near_threshold_m:
+            nc = self._clamp_confidence(1.0 - dist / cfg.near_threshold_m)
+            if nc >= cfg.min_relation_confidence:
+                results.append(SpatialRelation(subject=a.id, predicate=SpatialPredicate.NEAR, object=b.id,
+                               confidence=round(nc,3),
+                               metadata={"center_distance_m": round(dist,4), "threshold_m": cfg.near_threshold_m}))
 
-        # --- Blocking (A 在 robot→B 路径上, 或 B 在 robot→A 路径上) ---
+        # Blocking
         if self._is_blocking(a, b, robot_origin):
-            results.append(
-                SpatialRelation(
-                    subject=b.id,
-                    predicate=SpatialPredicate.BLOCKING,
-                    object=a.id,
-                    confidence=0.85,
-                    metadata={"description": f"{a.name} blocks path to {b.name}"},
-                )
-            )
+            results.append(SpatialRelation(subject=b.id, predicate=SpatialPredicate.BLOCKING,
+                           object=a.id, confidence=0.85,
+                           metadata={"description": f"{a.name} blocks path to {b.name}"}))
         if self._is_blocking(b, a, robot_origin):
-            results.append(
-                SpatialRelation(
-                    subject=a.id,
-                    predicate=SpatialPredicate.BLOCKING,
-                    object=b.id,
-                    confidence=0.85,
-                    metadata={"description": f"{b.name} blocks path to {a.name}"},
-                )
-            )
+            results.append(SpatialRelation(subject=a.id, predicate=SpatialPredicate.BLOCKING,
+                           object=b.id, confidence=0.85,
+                           metadata={"description": f"{b.name} blocks path to {a.name}"}))
 
         return results
 
@@ -266,15 +325,23 @@ class SpatialReasoner:
     # 辅助判断
     # ============================================================
 
+    @staticmethod
+    def _clamp_confidence(value: float) -> float:
+        import math
+        if not math.isfinite(value):
+            raise ValueError(f"confidence must be finite, got {value!r}")
+        return max(0.0, min(1.0, float(value)))
+
     def _make_rel(
         self, subject: str, predicate: SpatialPredicate, obj: str, distance: float
     ) -> SpatialRelation:
+        conf = self._clamp_confidence(1.0 - distance / self.config.near_threshold_m)
         return SpatialRelation(
             subject=subject,
             predicate=predicate,
             object=obj,
-            confidence=min(1.0, 1.0 - distance * 2),
-            metadata={"distance_m": round(distance, 4)},
+            confidence=conf,
+            metadata={"center_distance_m": round(distance, 4)},
         )
 
     def _xy_overlap(self, a: SceneObject, b: SceneObject) -> bool:

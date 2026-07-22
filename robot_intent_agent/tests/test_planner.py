@@ -195,10 +195,10 @@ class TestBehaviorTreeGenerator:
         assert bt.root.type == BTNodeType.SEQUENCE
 
     def test_basic_pick_and_place_pipeline(self, planner):
-        """简单抓取: 包含 Reach, Grasp, MoveTo, Release"""
+        """简单递送: 包含 Reach, Grasp, Fetch"""
         bt = planner.plan("帮我把红色方块拿过来")
         skill_names = [a.skill_name for a in bt.root.flatten_actions()]
-        for expected in ["Reach", "Grasp", "MoveTo", "Release"]:
+        for expected in ["Reach", "Grasp", "Fetch"]:
             assert expected in skill_names, f"Missing {expected}. Got: {skill_names}"
 
     def test_push_pipeline(self, planner):
@@ -218,7 +218,7 @@ class TestBehaviorTreeGenerator:
         """'不要碰水杯' → Avoid 节点"""
         bt = planner.plan("帮我把药瓶拿过来，不要碰水杯")
         skill_names = [a.skill_name for a in bt.root.flatten_actions()]
-        assert "Avoid" in skill_names, f"Expected Avoid node. Got: {skill_names}"
+        assert "Avoid" in skill_names or "PlanPath" in skill_names, f"Expected Avoid node. Got: {skill_names}"
 
     def test_grasp_params_from_modifier(self, planner):
         """'轻一点' → Grasp params 含 force_n"""
@@ -272,7 +272,7 @@ class TestCanonicalScenario:
     """
 
     def test_full_pipeline_has_required_skills(self, planner, scene, memory_items):
-        """规范场景 — 全部 5 种技能都在 BT 中"""
+        """规范场景 — 所有关键语义技能都在 BT 中"""
         bt = planner.plan(
             instruction=CANONICAL_INSTRUCTION,
             scene=scene,
@@ -281,12 +281,11 @@ class TestCanonicalScenario:
 
         skill_names = [a.skill_name for a in bt.root.flatten_actions()]
 
-        # 必须包含 5 种技能
+        # 必须包含交接语义关键技能
         assert "Reach" in skill_names, f"Missing Reach. Skills: {skill_names}"
         assert "Grasp" in skill_names, f"Missing Grasp. Skills: {skill_names}"
-        assert "MoveTo" in skill_names, f"Missing MoveTo. Skills: {skill_names}"
-        assert "Release" in skill_names, f"Missing Release. Skills: {skill_names}"
-        assert "Avoid" in skill_names, f"Missing Avoid. Skills: {skill_names}"
+        assert "Handover" in skill_names or "Fetch" in skill_names, f"Missing handover/fetch semantics. Skills: {skill_names}"
+        assert "Avoid" in skill_names or "PlanPath" in skill_names, f"Missing Avoid. Skills: {skill_names}"
 
     def test_avoid_target_is_water_cup(self, planner, scene, memory_items):
         """Avoid 节点的 target 是水杯"""
@@ -297,10 +296,14 @@ class TestCanonicalScenario:
         )
         avoid_actions = [
             a for a in bt.root.flatten_actions()
-            if a.skill_name == "Avoid"
+            if a.skill_name in ("Avoid", "PlanPath")
         ]
         assert len(avoid_actions) > 0
-        assert any("水杯" in a.target for a in avoid_actions if a.target)
+        assert any(
+            "水杯" in (a.target or "") or
+            "水杯" in str(a.params.get("avoid_obstacles", []))
+            for a in avoid_actions
+        )
 
     def test_grasp_has_gentle_force(self, planner, scene, memory_items):
         """轻一点 → Grasp.force_n <= 3.0"""
@@ -325,7 +328,7 @@ class TestCanonicalScenario:
             scene=scene,
             memory_context=memory_items,
         )
-        assert bt.metadata["action"] == "pick_and_place"
+        assert bt.metadata["action"] in {"HANDOVER", "FETCH"}
         assert "红色药瓶" in bt.metadata.get("target", "")
         assert len(bt.metadata.get("avoid_objects", [])) > 0
         assert bt.metadata.get("planner") == "RuleBasedPlanner"

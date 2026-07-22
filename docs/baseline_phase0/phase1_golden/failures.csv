@@ -1,0 +1,4 @@
+﻿case_id,category,instruction,severity,metric,expected,actual,detail,elapsed_ms
+G002,unknown,用5N力量把盒子放到桌子上,HIGH,numeric_operator_unit,0.2,not parsed,Velocity constraint not extracted from NL,4.0
+N003,unknown,把杯子放到桌子上,CRITICAL,role_extraction,none,桌,Support surface fabricated when not in scene,2.5
+R005,unknown,用5N力量把蓝色药瓶放到桌子上,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,2.0

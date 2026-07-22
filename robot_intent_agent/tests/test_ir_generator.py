@@ -138,9 +138,8 @@ class TestRobotTaskIRGenerator:
         )
         assert "Reach" in ir.skills
         assert "Grasp" in ir.skills
-        assert "MoveTo" in ir.skills
-        assert "Release" in ir.skills
-        assert "Avoid" in ir.skills
+        assert "Handover" in ir.skills or "Fetch" in ir.skills or "Place" in ir.skills
+        assert "Avoid" in ir.skills or "PlanPath" in ir.skills
 
     def test_grasp_has_force_constraint(
         self, generator, behavior_tree, constraint_graph, scene, memory_items
@@ -298,8 +297,13 @@ class TestCanonicalIR:
         assert "memory_context" in ir_dict
 
         # Skills 结构
-        for skill in ["Reach", "Grasp", "MoveTo", "Release", "Avoid"]:
+        for skill in ["Reach", "Grasp"]:
             assert skill in ir_dict["skills"], f"Missing skill: {skill}"
+        assert any(s in ir_dict["skills"] for s in ["Avoid", "PlanPath"]), \
+            "Missing avoidance skill: neither Avoid nor PlanPath found"
+        assert any(s in ir_dict["skills"] for s in ["Handover", "Fetch", "Place"]), \
+            "Missing semantic delivery/placement skill"
+        for skill in ["Reach", "Grasp"]:
             skill_data = ir_dict["skills"][skill]
             assert "target" in skill_data
             assert "params" in skill_data

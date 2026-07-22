@@ -71,9 +71,9 @@ class TestFullPipeline:
         skills = [a.skill_name for a in bt.root.flatten_actions()]
         assert "Reach" in skills
         assert "Grasp" in skills
-        assert "MoveTo" in skills
-        assert "Release" in skills
-        assert "Avoid" in skills
+        # v3.0: HANDOVER semantic replaces MoveTo+Release
+        assert ("Handover" in skills or "Fetch" in skills or "MoveTo" in skills)
+        assert "Avoid" in skills or "PlanPath" in skills
 
         # ===== Step 6: Constraints =====
         compiler = HybridConstraintCompiler()

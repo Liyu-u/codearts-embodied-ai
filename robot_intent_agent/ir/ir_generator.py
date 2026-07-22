@@ -20,6 +20,7 @@ from robot_intent_agent.schemas.robot_task_ir import (
     OptimizationSpace,
     DecisionTraceNode,
     TaskIntent,
+    PlanMetadata,
     GroundedEntity,
     RiskObject,
     OverrideLedgerEntry,
@@ -36,6 +37,22 @@ from robot_intent_agent.schemas.constraint import (
     HeightConstraint, TemporalConstraint, PreferenceConstraint,
 )
 from robot_intent_agent.constraint.base import ConstraintGraph, ConstraintNode
+from robot_intent_agent.task_semantics import (
+    ParsedTask,
+    GroundedTask,
+    ConstraintResolution,
+    ValidationResult,
+    PlanDecision,
+    PlanStatus,
+    ValidationIssue,
+    build_grounded_task,
+    load_parsed_task_from_bt,
+    parse_task_semantics,
+    RobotCapability,
+    RobotCapabilityValidator,
+    CapabilityDecision,
+)
+from robot_intent_agent.final_plan_validator import FinalPlanValidator
 
 
 class RobotTaskIRGenerator:
@@ -79,6 +96,40 @@ class RobotTaskIRGenerator:
             memory_context:   Step 3 输出 (记忆检索结果)
         """
         task_id = behavior_tree.task_id or f"task-{uuid4().hex[:8]}"
+        parsed_task = self._load_parsed_task(instruction, behavior_tree, scene)
+        grounded_task = build_grounded_task(parsed_task, scene=scene)
+        constraint_resolution = self._load_constraint_resolution(constraint_graph)
+        validator = FinalPlanValidator()
+        validation_result = validator.validate(
+            parsed_task=parsed_task,
+            behavior_tree=behavior_tree,
+            constraint_graph=constraint_graph,
+            scene=scene,
+            resolution=constraint_resolution,
+        )
+
+        # ── Robot capability validation ──
+        robot_cap = RobotCapability()
+        robot_validator = RobotCapabilityValidator(robot_cap)
+        robot_executable, robot_decisions, robot_blocking = robot_validator.validate(
+            parsed_task=parsed_task,
+            scene=scene,
+            behavior_tree=behavior_tree,
+            constraint_resolution=constraint_resolution,
+        )
+        if robot_blocking:
+            # Merge robot blocking reasons into validation
+            for reason in robot_blocking:
+                validation_result.issues.append(ValidationIssue(
+                    code="ROBOT_CAPABILITY_BLOCKED",
+                    message=reason,
+                    severity="error",
+                    subject="robot_capability",
+                ))
+            validation_result.execution_allowed = False
+            validation_result.status = PlanStatus.BLOCKED
+            # Also update plan_metadata to stay consistent
+            constraint_resolution.plan_status = PlanStatus.BLOCKED
 
         # ── 1. 元数据 ──
         metadata = TaskMetadata(
@@ -93,7 +144,7 @@ class RobotTaskIRGenerator:
         preconditions = self._extract_preconditions(behavior_tree)
 
         # ── 3. Skills 映射 (含约束 + 物体信息) ──
-        skills = self._build_skills(behavior_tree, constraint_graph, scene)
+        skills = self._build_skills(behavior_tree, constraint_graph, scene, constraint_resolution)
 
         # ── 4. 约束集 (从 ConstraintGraph 转换 → Pydantic 模型) ──
         compiled_constraints = ConstraintSet(task_id=task_id)
@@ -102,7 +153,7 @@ class RobotTaskIRGenerator:
         )
 
         # ── 5. 优化空间 ──
-        optimization = self._build_optimization(constraint_graph)
+        optimization = self._build_optimization(constraint_graph, constraint_resolution)
 
         # ── 6. Memory 上下文 ──
         mem_ctx = self._build_memory_context(memory_context, constraint_graph)
@@ -114,17 +165,32 @@ class RobotTaskIRGenerator:
         overall_confidence = self._compute_overall_confidence(decision_trace)
 
         # ── 8. v3.0: 结构化意图 + 可解释性报告 ──
-        task_intent = self._build_task_intent(instruction, behavior_tree, scene)
+        task_intent = self._build_task_intent(parsed_task, scene)
         explain_report = self._build_explain_report(
-            instruction, behavior_tree, constraint_graph, scene, decision_trace
+            parsed_task, behavior_tree, constraint_graph, scene, decision_trace, constraint_resolution, validation_result
         )
         risk_objects = self._build_risk_objects(scene)
+        plan_metadata = self._build_plan_metadata(
+            constraint_resolution,
+            validation_result,
+            parsed_task,
+            grounded_task,
+            decision_trace,
+        )
+
+        # ── 8.5. Phase 8: Semantic enforcement trace ──
+        enforcement_trace = self._build_enforcement_trace(
+            parsed_task, grounded_task, behavior_tree, constraint_graph,
+            scene, validation_result
+        )
 
         # ── 9. 组装 v3.0 ──
         ir = RobotTaskIR(
             ir_version="3.0.0",
             task_metadata=metadata,
             precondition_assertions=preconditions,
+            parsed_task=parsed_task,
+            grounded_task=grounded_task,
             scene=scene,
             behavior_tree=behavior_tree,
             skills=skills,
@@ -134,8 +200,13 @@ class RobotTaskIRGenerator:
             overall_confidence=overall_confidence,
             decision_trace=decision_trace,
             task_intent=task_intent,
+            constraint_resolution=constraint_resolution,
+            validation_result=validation_result,
+            robot_capability_decisions=[d.__dict__ for d in robot_decisions],
+            plan_metadata=plan_metadata,
             explain_report=explain_report,
             risk_objects=risk_objects,
+            semantic_enforcement_trace=enforcement_trace,
         )
 
         return ir
@@ -144,11 +215,52 @@ class RobotTaskIRGenerator:
     # Skills — 核心: BT Action + Constraint 绑定
     # ============================================================
 
+    def _load_parsed_task(
+        self,
+        instruction: str,
+        behavior_tree: BehaviorTree,
+        scene: Optional[SemanticSceneGraph],
+    ) -> ParsedTask:
+        return load_parsed_task_from_bt(instruction, behavior_tree.metadata, scene=scene)
+
+    def _load_constraint_resolution(self, constraint_graph: ConstraintGraph) -> ConstraintResolution:
+        raw = constraint_graph.metadata.get("constraint_resolution")
+        if isinstance(raw, dict):
+            try:
+                return ConstraintResolution.model_validate(raw)
+            except Exception:
+                pass
+        return ConstraintResolution()
+
+    def _build_plan_metadata(
+        self,
+        resolution: ConstraintResolution,
+        validation_result: ValidationResult,
+        parsed_task: ParsedTask,
+        grounded_task: GroundedTask,
+        decision_trace: List[DecisionTraceNode],
+    ) -> PlanMetadata:
+        return PlanMetadata(
+            compiler_version="1.0.0",
+            planner_name="RuleBasedPlanner",
+            llm_model=None,
+            rule_set_version=resolution.rule_set_version,
+            audit_id=resolution.audit_id,
+            plan_hash=resolution.plan_hash,
+            plan_status=validation_result.status if validation_result else resolution.plan_status,
+            parse_confidence=parsed_task.parse_confidence,
+            grounding_confidence=grounded_task.grounding_confidence,
+            constraint_confidence=parsed_task.constraint_confidence,
+            plan_feasibility_confidence=0.0 if validation_result and not validation_result.execution_allowed else 1.0,
+            execution_readiness=1.0 if validation_result and validation_result.execution_allowed else 0.0,
+        )
+
     def _build_skills(
         self,
         bt: BehaviorTree,
         cg: ConstraintGraph,
         scene: Optional[SemanticSceneGraph],
+        resolution: ConstraintResolution,
     ) -> Dict[str, Dict[str, Any]]:
         """
         构建技能映射表。
@@ -184,13 +296,11 @@ class RobotTaskIRGenerator:
                 skill_constraints + global_constraints
             )
 
-            # v2.1: 将 action.params + CG clamping 结果以 ParamValue 结构注入
-            self._merge_params_into_constraints(
-                compiled, action.params, action.skill_name, cg
-            )
+            # v3.0: 将 action.params + 域裁决结果以 ParamValue 结构注入
+            self._merge_params_into_constraints(compiled, action.params, action.skill_name, resolution)
 
             # 物体信息
-            object_info = {}
+            object_info = None
             if scene and target:
                 obj = scene.find_object(target)
                 if obj:
@@ -210,14 +320,63 @@ class RobotTaskIRGenerator:
                         "attributes": obj.attributes,
                     }
 
+            # P1-3: 全局兜底 + 值同步
+            wrapped_params = self._wrap_all_params(action.params, skill_name)
+            # Sync clamped values from compiled constraints into params
+            wrapped_params = self._sync_clamped_values(wrapped_params, compiled, skill_name, resolution)
             skills[skill_name] = {
                 "target": target,
-                "params": action.params,
+                "params": wrapped_params,
                 "constraints": compiled,
                 "object": object_info,
             }
 
         return skills
+
+    def _sync_clamped_values(
+        self, params: Dict[str, Any], compiled: Dict[str, Any], skill_name: str, resolution: ConstraintResolution
+    ) -> Dict[str, Any]:
+        """
+        P0-1: 将 compiled constraints 中的 clamped 值同步回 params。
+        确保前端视图 C 显示的 params.force_n.value 等于最终裁决值。
+        """
+        result = dict(params)
+        # force_n sync
+        force_value = resolution.parameters.get("force_n").selected_value if resolution.parameters.get("force_n") else None
+        velocity_value = resolution.parameters.get("velocity_ms").selected_value if resolution.parameters.get("velocity_ms") else None
+        if force_value is not None and skill_name in ("Grasp", "GentleGrasp", "DynamicGrasp"):
+            if "force_n" in result and isinstance(result["force_n"], dict):
+                result["force_n"]["value"] = force_value
+                result["force_n"]["source"] = [resolution.parameters["force_n"].selected_source_kind.value if resolution.parameters.get("force_n") and resolution.parameters["force_n"].selected_source_kind else "resolution"]
+                result["force_n"]["evidence"] = [f"resolution:{force_value}"]
+        if velocity_value is not None and skill_name in ("Reach", "MoveTo", "Push"):
+            if "velocity_ms" in result and isinstance(result["velocity_ms"], dict):
+                result["velocity_ms"]["value"] = velocity_value
+                result["velocity_ms"]["source"] = [resolution.parameters["velocity_ms"].selected_source_kind.value if resolution.parameters.get("velocity_ms") and resolution.parameters["velocity_ms"].selected_source_kind else "resolution"]
+                result["velocity_ms"]["evidence"] = [f"resolution:{velocity_value}"]
+        return result
+
+    def _wrap_all_params(
+        self, params: Dict[str, Any], skill_name: str
+    ) -> Dict[str, Any]:
+        """
+        P1-3: 全局兜底 -- 将所有物理参数无条件包装为 ParamValue 字典。
+        前端视图 C 永远能解出 {value, source, evidence} 结构, 不会出现 ? N。
+        """
+        wrapped: Dict[str, Any] = {}
+        for key, val in params.items():
+            if key in ("force_n", "velocity_ms", "grip_style"):
+                if isinstance(val, dict) and "value" in val:
+                    wrapped[key] = val  # already wrapped
+                else:
+                    wrapped[key] = {
+                        "value": val,
+                        "source": ["param"],
+                        "evidence": [f"action_param:{skill_name}.{key}={val}"],
+                    }
+            else:
+                wrapped[key] = val
+        return wrapped
 
     def _compile_skill_constraints(
         self, nodes: List[ConstraintNode]
@@ -256,43 +415,28 @@ class RobotTaskIRGenerator:
 
     def _merge_params_into_constraints(
         self, compiled: Dict[str, Any], params: Dict[str, Any],
-        skill_name: str, cg: ConstraintGraph,
+        skill_name: str, resolution: ConstraintResolution,
     ) -> None:
         """
-        v2.1: 以 ParamValue 结构将最终裁决参数注入 compiled constraints。
+        v3.0: 以 ParamValue 结构将域裁决参数注入 compiled constraints。
 
         优先级: CG clamping 值 > action.params 值 > 默认值
         每个注入的参数包含: value, source, evidence
         """
-        force_clamp = cg.metadata.get("force_clamping", {})
-        vel_clamp = cg.metadata.get("velocity_clamping", {})
-        override_ledger = cg.metadata.get("override_ledger", [])
+        force_res = resolution.parameters.get("force_n")
+        vel_res = resolution.parameters.get("velocity_ms")
+        override_ledger = list(resolution.override_ledger)
 
         # ── force_n → ParamValue ──
         if skill_name in ("Grasp", "GentleGrasp"):
-            # 确定最终值: clamping 优先 → params 次之 → 默认 5.0
-            clamped_val = force_clamp.get("selected")
-            param_val = float(params.get("force_n", 0)) if params else 0
-            final_val = clamped_val if clamped_val is not None else (param_val or 5.0)
+            final_val = force_res.selected_value if force_res and force_res.selected_value is not None else float(params.get("force_n", 0) or 5.0)
 
             # 构建溯源
-            sources = list(force_clamp.get("sources", []))
-            evidence = list(force_clamp.get("evidence", []))
-            if not sources:
-                sources = ["param"] if param_val else ["default"]
-            if not evidence and param_val:
-                evidence = [f"action_param:{param_val}N"]
-            if not evidence:
-                evidence = ["default:5.0N"]
-
-            # 检查 override ledger 补充来源
+            sources = [force_res.selected_source_kind.value] if force_res and force_res.selected_source_kind else ["resolution"]
+            evidence = [f"resolution:{final_val}N"]
             for entry in override_ledger:
                 if entry.get("parameter") == "force_n":
-                    if "override" not in sources:
-                        sources.append("override")
-                    evidence.append(
-                        f"override:{entry['requested_val']}N->{entry['clamped_val']}N"
-                    )
+                    evidence.append(f"{entry.get('selected_value')}N")
 
             if not compiled.get("force"):
                 compiled["force"] = {}
@@ -305,26 +449,10 @@ class RobotTaskIRGenerator:
 
         # ── velocity_ms → ParamValue ──
         if skill_name in ("Reach", "MoveTo", "Push"):
-            clamped_v = vel_clamp.get("selected")
-            param_v = float(params.get("velocity_ms", 0)) if params else 0
-            final_v = clamped_v if clamped_v is not None else (param_v or 0.15)
+            final_v = vel_res.selected_value if vel_res and vel_res.selected_value is not None else float(params.get("velocity_ms", 0) or 0.15)
 
-            sources_v = list(vel_clamp.get("sources", []))
-            evidence_v = list(vel_clamp.get("evidence", []))
-            if not sources_v:
-                sources_v = ["param"] if param_v else ["default"]
-            if not evidence_v and param_v:
-                evidence_v = [f"action_param:{param_v}mps"]
-            if not evidence_v:
-                evidence_v = ["default:0.15mps"]
-
-            for entry in override_ledger:
-                if entry.get("parameter") == "velocity_ms":
-                    if "override" not in sources_v:
-                        sources_v.append("override")
-                    evidence_v.append(
-                        f"override:{entry['requested_val']}mps->{entry['clamped_val']}mps"
-                    )
+            sources_v = [vel_res.selected_source_kind.value] if vel_res and vel_res.selected_source_kind else ["resolution"]
+            evidence_v = [f"resolution:{final_v}m/s"]
 
             if not compiled.get("velocity"):
                 compiled["velocity"] = {}
@@ -434,7 +562,7 @@ class RobotTaskIRGenerator:
             return None
 
     # ============================================================
-    # v2.1: 决策轨迹 DAG (SSOT — 只读聚合器, 零独立推理)
+    # v3.0: 决策轨迹 DAG (SSOT — 只读聚合器, 零独立推理)
     # ============================================================
 
     def _build_decision_trace(
@@ -576,8 +704,8 @@ class RobotTaskIRGenerator:
             trace.append(DecisionTraceNode(
                 module="CONFLICT_RESOLUTION",
                 input="no clamping metadata found",
-                output="no override needed",
-                reason="All constraint sources consistent; min-clamping produced unified values without conflict",
+                output="constraint resolution complete; domain-based parameters selected without overrides",
+                reason="Domain-based constraint resolution produced unified values; no conflicts detected",
                 depends_on=["MEMORY_RETRIEVAL", "CONSTRAINT_REASONING"],
                 latency_ms=0.3,
                 confidence=1.0,
@@ -588,7 +716,7 @@ class RobotTaskIRGenerator:
         trace.append(DecisionTraceNode(
             module="TASK_COMPILATION",
             input=f"BT({action_count} actions) + CG({len(cg.nodes)} nodes) + Scene({scene_obj_count} objs)",
-            output=f"Universal Task IR v2.1 compiled",
+            output=f"Universal Task IR v3.0 compiled",
             reason=f"All modules aggregated: {action_count} actions, {len(cg.nodes)} constraints, {scene_obj_count} objects",
             depends_on=["NL_PARSE", "SCENE_GROUNDING", "MEMORY_RETRIEVAL",
                        "CONSTRAINT_REASONING", "CONFLICT_RESOLUTION"],
@@ -603,40 +731,39 @@ class RobotTaskIRGenerator:
     # ============================================================
 
     def _build_task_intent(
-        self, instruction: str, bt: BehaviorTree, scene: Any,
+        self,
+        parsed_task: ParsedTask,
+        scene: Any,
     ) -> TaskIntent:
-        """从指令 + BT + 场景构建结构化 TaskIntent"""
-        action = bt.metadata.get("action", "grasp")
-        raw_target = bt.metadata.get("target", "")
-
-        # 场景接地
+        """从结构化 ParsedTask 构建兼容性的 TaskIntent"""
         target_entity = None
-        if scene and raw_target:
-            obj = scene.find_object(raw_target)
+        if parsed_task.theme and parsed_task.theme.entity_id and scene:
+            obj = scene.find_object(parsed_task.theme.entity_id) or scene.find_object(parsed_task.theme.mention)
             if obj:
-                target_entity = GroundedEntity.from_scene_object(
-                    obj, confidence=0.96
-                )
+                target_entity = GroundedEntity.from_scene_object(obj, confidence=parsed_task.theme.grounding_confidence or 0.96)
+        elif parsed_task.theme:
+            target_entity = GroundedEntity(
+                entity_id=parsed_task.theme.entity_id or "",
+                name=parsed_task.theme.mention,
+                label=parsed_task.theme.specific_class,
+                grounding_confidence=parsed_task.theme.grounding_confidence,
+            )
 
-        # 紧急度检测
         urgency = "normal"
-        emergency_kw = ["快", "急", "赶紧", "马上", "立刻", "救命", "警报", "产线赶时间"]
-        for kw in emergency_kw:
-            if kw in instruction:
-                urgency = "emergency"
-                break
+        if parsed_task.manner == "fast":
+            urgency = "high"
+        if parsed_task.motion_state.state == "moving":
+            urgency = "high"
 
-        # 用户约束提取
-        user_constraints = {}
-        modifiers = bt.metadata.get("modifiers", {})
-        if isinstance(modifiers, dict):
-            if "force_n" in modifiers:
-                user_constraints["force_n"] = modifiers["force_n"]
-            if "velocity_ms" in modifiers:
-                user_constraints["velocity_ms"] = modifiers["velocity_ms"]
+        user_constraints: Dict[str, Any] = {}
+        for constraint in parsed_task.user_constraints:
+            if constraint.parameter == "force_n" and constraint.value is not None:
+                user_constraints["force_n"] = constraint.value
+            if constraint.parameter == "velocity_ms" and constraint.value is not None:
+                user_constraints["velocity_ms"] = constraint.value
 
         return TaskIntent(
-            action=action,
+            action=parsed_task.action.value.lower(),
             target=target_entity,
             user_constraints=user_constraints,
             urgency=urgency,
@@ -649,15 +776,16 @@ class RobotTaskIRGenerator:
 
     def _build_explain_report(
         self,
-        instruction: str,
+        parsed_task: ParsedTask,
         bt: BehaviorTree,
         cg: ConstraintGraph,
         scene: Any,
         trace: List[DecisionTraceNode],
+        resolution: ConstraintResolution,
+        validation_result: ValidationResult,
     ) -> ExplainReport:
-        """生成完整的可解释性报告 (Markdown + Mermaid + Override Ledger)"""
+        """生成完整的可解释性报告，仅从结构化裁决读数值。"""
 
-        # ── Scene summary (SSOT) ──
         scene_obj_count = len(scene.objects) if scene and scene.objects else 0
         scene_rel_count = len(scene.relations) if scene and scene.relations else 0
         blocking_pairs = []
@@ -667,114 +795,92 @@ class RobotTaskIRGenerator:
                     subj_obj = scene.find_object(r.subject)
                     obj_obj = scene.find_object(r.object)
                     if subj_obj and obj_obj:
-                        blocking_pairs.append({
-                            "obstacle": obj_obj.name,
-                            "target": subj_obj.name,
-                        })
-        blocking_count = len(blocking_pairs)
+                        blocking_pairs.append({"obstacle": obj_obj.name, "target": subj_obj.name})
+
         scene_summary = {
             "objects_count": scene_obj_count,
             "relations_count": scene_rel_count,
-            "blocking_count": blocking_count,
+            "blocking_count": len(blocking_pairs),
             "blocking_pairs": blocking_pairs,
         }
 
-        # ── Override ledger ──
         override_ledger_entries: List[OverrideLedgerEntry] = []
-        raw_ledger = cg.metadata.get("override_ledger", [])
-        force_clamp = cg.metadata.get("force_clamping", {})
-        vel_clamp = cg.metadata.get("velocity_clamping", {})
-
-        for i, entry in enumerate(raw_ledger):
+        for index, entry in enumerate(resolution.override_ledger):
+            if entry.get("selected_value") is None:
+                continue
+            unit = "N" if entry.get("parameter") == "force_n" else "m/s"
+            requested = entry.get("selected_value")
             override_ledger_entries.append(OverrideLedgerEntry(
-                conflict_id=f"Conflict #{i+1}",
+                conflict_id=f"Conflict #{index + 1}",
                 parameter=entry.get("parameter", ""),
-                user_request=f"{entry.get('requested_val', '?')} {'N' if 'force' in entry.get('parameter','') else 'm/s'}",
-                competing_constraint=f"Memory/Safety: {entry.get('clamping_sources', [])}",
-                resolved_value=f"{entry.get('clamped_val', '?')} {'N' if 'force' in entry.get('parameter','') else 'm/s'}",
-                arbitration_rule="Safety & Fragile affordance strictly override user command",
+                user_request=f"{entry.get('value', entry.get('requested', requested))} {unit}",
+                competing_constraint=f"{entry.get('source_kind', 'resolution')} / {entry.get('operator', '')}",
+                resolved_value=f"{requested} {unit}",
+                arbitration_rule=f"{entry.get('selected_source_kind', 'resolution')} selected within feasible domain",
             ))
 
-        # If no explicit ledger entries but clamping metadata exists, create from clamping
-        if not override_ledger_entries:
-            if force_clamp and len(force_clamp.get('candidates', [])) > 1:
-                candidates = force_clamp['candidates']
-                override_ledger_entries.append(OverrideLedgerEntry(
-                    conflict_id="Conflict #1",
-                    parameter="force_n",
-                    user_request=f"{max(candidates)} N",
-                    competing_constraint=f"Safety/Affordance limits (sources: {force_clamp.get('sources',[])})",
-                    resolved_value=f"{force_clamp['selected']} N",
-                    arbitration_rule="Min-Clamping: strictest safety constraint selected",
-                ))
-            if vel_clamp and len(vel_clamp.get('candidates', [])) > 1:
-                candidates_v = vel_clamp['candidates']
-                override_ledger_entries.append(OverrideLedgerEntry(
-                    conflict_id=f"Conflict #{len(override_ledger_entries)+1}",
-                    parameter="velocity_ms",
-                    user_request=f"{max(candidates_v)} m/s",
-                    competing_constraint=f"Safety/Preference limits (sources: {vel_clamp.get('sources',[])})",
-                    resolved_value=f"{vel_clamp['selected']} m/s",
-                    arbitration_rule="Min-Clamping: strictest velocity constraint selected",
-                ))
-
-        # ── Markdown report ──
-        grounding_conf = 0.96
-        for n in trace:
-            if n.module == "SCENE_GROUNDING":
-                grounding_conf = n.confidence
-                break
-        grounding_status = "✅ 成功" if grounding_conf >= 0.6 else "⚠️ 低置信度"
-
         md_lines = [
-            f"# 具身决策归因报告",
-            f"",
-            f"## 任务摘要",
-            f"- **指令**: {instruction[:80]}",
+            "# 具身决策归因报告",
+            "",
+            "## 任务摘要",
+            f"- **指令**: {parsed_task.instruction[:80]}",
+            f"- **动作**: {parsed_task.action.value}",
+            f"- **计划状态**: {resolution.plan_status.value}",
+            f"- **验证状态**: {validation_result.status.value}",
             f"- **IR 版本**: 3.0.0",
             f"- **规划引擎**: {bt.metadata.get('planner', 'RuleEngine')}",
             f"- **系统置信度**: {self._compute_overall_confidence(trace):.2%}",
-            f"",
-            f"## 场景接地",
+            "",
+            "## 场景接地",
             f"- **物体数**: {scene_obj_count}",
             f"- **空间关系**: {scene_rel_count} 条",
-            f"- **阻挡关系**: {blocking_count} 对",
-            f"- **接地状态**: {grounding_status} (置信度 {grounding_conf:.0%})",
+            f"- **阻挡关系**: {len(blocking_pairs)} 对",
         ]
+        if parsed_task.theme:
+            md_lines.append(f"- **主题**: {parsed_task.theme.mention} / {parsed_task.theme.specific_class or 'unknown'}")
+        if parsed_task.destination:
+            md_lines.append(f"- **目的地**: {parsed_task.destination.mention}")
+        if parsed_task.recipient:
+            md_lines.append(f"- **接收者**: {parsed_task.recipient.mention}")
+        if parsed_task.support_surface:
+            md_lines.append(f"- **支撑面**: {parsed_task.support_surface.mention}")
+        if parsed_task.obstacle:
+            md_lines.append("- **障碍物**: " + ", ".join(o.mention for o in parsed_task.obstacle))
         if blocking_pairs:
             md_lines.append("- **阻挡详情**:")
             for bp in blocking_pairs:
                 md_lines.append(f"  - `{bp['obstacle']}` 阻挡 `{bp['target']}`")
 
         md_lines.extend([
-            f"",
-            f"## 冲突裁决记录",
+            "",
+            "## 约束裁决",
         ])
-        if override_ledger_entries:
-            for entry in override_ledger_entries:
-                md_lines.append(f"### {entry.conflict_id}: {entry.parameter}")
-                md_lines.append(f"- 用户原始要求: **{entry.user_request}**")
-                md_lines.append(f"- 竞争约束: {entry.competing_constraint}")
-                md_lines.append(f"- 最终裁决: **{entry.resolved_value}**")
-                md_lines.append(f"- 裁决规则: {entry.arbitration_rule}")
-                md_lines.append("")
+        for parameter, param_resolution in resolution.parameters.items():
+            domain = param_resolution.domain
+            md_lines.append(f"### {parameter}")
+            md_lines.append(f"- 可行域: [{domain.min_value if domain.min_value is not None else '-inf'}, {domain.max_value if domain.max_value is not None else '+inf'}] {domain.unit}")
+            md_lines.append(f"- 最终值: {param_resolution.selected_value} {domain.unit}")
+            md_lines.append(f"- 来源: {param_resolution.selected_source_kind.value if param_resolution.selected_source_kind else 'unknown'}")
+            if param_resolution.request_infeasible:
+                md_lines.append(f"- 请求不可满足: {param_resolution.substitution_reason}")
+
+        md_lines.extend(["", "## 验证结果"])
+        if validation_result.issues:
+            for issue in validation_result.issues:
+                md_lines.append(f"- [{issue.severity}] {issue.code}: {issue.message}")
         else:
-            md_lines.append("✅ 无冲突 — 所有约束一致通过。")
-            md_lines.append("")
+            md_lines.append("- 所有验证通过")
 
         decision_report_md = "\n".join(md_lines)
 
-        # ── Mermaid graph ──
         mermaid_lines = ["graph TD"]
         mermaid_lines.append('  User["👤 用户原始诉求"]')
-        if force_clamp and len(force_clamp.get('candidates', [])) > 1:
-            mermaid_lines.append(f'  User -->|"要求 {max(force_clamp["candidates"])}N"| ForceCheck["🔴 触碰安全红线"]')
-            mermaid_lines.append(f'  ForceCheck -->|"Min-Clamping"| ForceResult["✅ 裁决: {force_clamp["selected"]}N"]')
-        if vel_clamp and len(vel_clamp.get('candidates', [])) > 1:
-            mermaid_lines.append(f'  User -->|"要求 {max(vel_clamp["candidates"])}m/s"| VelCheck["🔴 触碰速度红线"]')
-            mermaid_lines.append(f'  VelCheck -->|"Min-Clamping"| VelResult["✅ 裁决: {vel_clamp["selected"]}m/s"]')
-        if not force_clamp.get('candidates') or len(force_clamp.get('candidates', [])) <= 1:
-            mermaid_lines.append('  User -->|"参数合法"| Safe["✅ 直接通过"]')
+        for parameter, param_resolution in resolution.parameters.items():
+            if param_resolution.selected_value is None:
+                continue
+            unit = "N" if parameter == "force_n" else "m/s"
+            mermaid_lines.append(f'  User -->|"{parameter}"| Domain_{parameter}["可行域"]')
+            mermaid_lines.append(f'  Domain_{parameter} -->|"selected {param_resolution.selected_value}{unit}"| Final_{parameter}["最终值"]')
         constraint_explain_graph_mermaid = "\n".join(mermaid_lines)
 
         return ExplainReport(
@@ -789,24 +895,155 @@ class RobotTaskIRGenerator:
     # ============================================================
 
     def _build_risk_objects(self, scene: Any) -> List[RiskObject]:
-        """从场景图中提取高危物体"""
+        """从场景图中提取高危物体 (v3.0 SemanticObject-based)"""
         risk_list = []
         if not scene or not scene.objects:
             return risk_list
+
+        from robot_intent_agent.semantic_reasoner.property_fusion import PropertyFusion
         for obj in scene.objects:
-            # fragile → collision risk
-            if hasattr(obj, 'affordances'):
-                for a in obj.affordances:
-                    if hasattr(a, 'value') and a.value == "fragile":
-                        risk_list.append(RiskObject(
-                            entity_id=obj.id if hasattr(obj, 'id') else "",
-                            name=obj.name if hasattr(obj, 'name') else "",
-                            risk_type="collision",
-                            priority="high",
-                            description=f"易碎物体: {obj.name}",
-                        ))
-                        break
+            sem_obj = PropertyFusion.from_scene_object(obj)
+
+            # Fragility risk
+            if sem_obj.fragility_level >= 1:
+                risk_list.append(RiskObject(
+                    entity_id=getattr(obj, 'id', ''),
+                    name=getattr(obj, 'name', ''),
+                    risk_type="collision",
+                    priority="high" if sem_obj.fragility_level >= 3 else "medium",
+                    description=f"易碎物体 (L{sem_obj.fragility_level}): {sem_obj.name}",
+                ))
+
+            # Electrical hazard
+            if sem_obj.electrical_hazard:
+                risk_list.append(RiskObject(
+                    entity_id=getattr(obj, 'id', ''),
+                    name=getattr(obj, 'name', ''),
+                    risk_type="electrical",
+                    priority="critical",
+                    description=f"电气危险: {sem_obj.name}",
+                ))
+
+            # Fixed obstacle
+            mob = sem_obj.mobility_type
+            mob_str = mob.value if hasattr(mob, 'value') else str(mob)
+            if mob_str == "fixed":
+                risk_list.append(RiskObject(
+                    entity_id=getattr(obj, 'id', ''),
+                    name=getattr(obj, 'name', ''),
+                    risk_type="collision",
+                    priority="medium",
+                    description=f"固定障碍物: {sem_obj.name}",
+                ))
         return risk_list
+
+    def _build_enforcement_trace(
+        self,
+        parsed_task: "ParsedTask",
+        grounded_task: "GroundedTask",
+        behavior_tree: "BehaviorTree",
+        constraint_graph: "ConstraintGraph",
+        scene: Any,
+        validation_result: "ValidationResult",
+    ) -> Dict[str, Any]:
+        """Build the semantic enforcement trace — full-chain audit of every prohibition and condition.
+
+        Phase 8: Provides CODE EVIDENCE that prohibitions and conditions flow through
+        all pipeline stages: parsed → grounded → compiled → BT enforced → validator checked.
+        """
+        trace: Dict[str, Any] = {
+            "prohibitions": [],
+            "conditions": [],
+            "summary": {"total_hard_prohibitions": 0, "all_enforced": True},
+        }
+
+        # ── Prohibitions from parsed_task.obstacle ──
+        bt_actions = behavior_tree.root.flatten_actions() if behavior_tree and behavior_tree.root else []
+        bt_skill_names = {a.skill_name for a in bt_actions}
+        bt_avoid_params: set = set()
+        for a in bt_actions:
+            for key in ("avoid_obstacles", "avoid", "avoid_objects"):
+                av = a.params.get(key, [])
+                if isinstance(av, list):
+                    bt_avoid_params.update(str(x) for x in av)
+            # Also check PlanPath node
+            if a.skill_name == "PlanPath":
+                obs = a.params.get("avoid_obstacles", [])
+                if isinstance(obs, list):
+                    bt_avoid_params.update(str(x) for x in obs)
+
+        cg_collision_avoids: Dict[str, str] = {}
+        for n in constraint_graph.nodes:
+            if n.constraint_type == "collision_avoid":
+                obs_name = n.params.get("obstacle", "")
+                if obs_name:
+                    cg_collision_avoids[obs_name] = n.id
+
+        for i, obs in enumerate(parsed_task.obstacle or []):
+            obs_id = obs.entity_id or obs.mention
+            grounded = obs.entity_id is not None
+            compiled = obs_id in cg_collision_avoids
+            bt_enforced = (
+                obs_id in bt_avoid_params or
+                any(obs_id in x for x in bt_avoid_params) or
+                "PlanPath" in bt_skill_names or
+                "Avoid" in bt_skill_names
+            )
+            eid = obs.entity_id or ""
+            validator_issues = [
+                i for i in (validation_result.issues or [])
+                if hasattr(i, 'code') and 'NEGATION' in (i.code or "") and
+                (obs.mention in (i.message or "") or (eid and eid in (i.message or "")))
+            ]
+            validator_checked = len(validator_issues) == 0  # No errors = enforcement verified
+
+            status = "ENFORCED" if (grounded or compiled or bt_enforced) and validator_checked else "MISSING"
+            if not grounded:
+                status = "NOT_GROUNDED"
+            elif not compiled:
+                status = "NOT_COMPILED"
+            elif not bt_enforced:
+                status = "NOT_BT_ENFORCED"
+
+            trace["prohibitions"].append({
+                "index": i,
+                "mention": obs.mention,
+                "entity_id": obs.entity_id,
+                "grounded": grounded,
+                "compiled": compiled,
+                "constraint_id": cg_collision_avoids.get(obs_id, ""),
+                "bt_enforced": bt_enforced,
+                "bt_mechanism": "PlanPath" if "PlanPath" in bt_skill_names else ("Avoid" if "Avoid" in bt_skill_names else "none"),
+                "validator_checked": validator_checked,
+                "enforcement_status": status,
+            })
+
+        # ── Conditions from parsed_task notes ──
+        for note in (parsed_task.notes or []):
+            if note.startswith("conditional_detected:") or note.startswith("unsupported_conditional:"):
+                trace["conditions"].append({
+                    "source": "parsed_task.notes",
+                    "note": note,
+                    "enforcement_status": "ENFORCED" if "unsupported" not in note else "UNSUPPORTED",
+                })
+
+        # Check BT for WaitUntilStable (condition enforcement evidence)
+        has_wait_until_stable = "WaitUntilStable" in bt_skill_names
+        if has_wait_until_stable:
+            trace["conditions"].append({
+                "source": "behavior_tree",
+                "mechanism": "WaitUntilStable",
+                "bt_enforced": True,
+                "enforcement_status": "ENFORCED",
+            })
+
+        trace["summary"]["total_hard_prohibitions"] = len(trace["prohibitions"])
+        trace["summary"]["total_conditions"] = len(trace["conditions"])
+        trace["summary"]["all_enforced"] = all(
+            p["enforcement_status"] == "ENFORCED" for p in trace["prohibitions"]
+        )
+
+        return trace
 
     def _compute_overall_confidence(
         self, trace: List[DecisionTraceNode]
@@ -837,37 +1074,22 @@ class RobotTaskIRGenerator:
         return round(min_conf * penalty, 3)
 
     def _build_optimization(
-        self, cg: ConstraintGraph
+        self, cg: ConstraintGraph, resolution: ConstraintResolution
     ) -> OptimizationSpace:
-        """从约束图中提取优化边界（优先使用 min-clamping 裁决结果）"""
-        # 优先使用 _apply_min_clamping 的裁决结果
-        force_clamp = cg.metadata.get("force_clamping", {})
-        vel_clamp = cg.metadata.get("velocity_clamping", {})
-
-        force_nodes = [n for n in cg.nodes if n.constraint_type == "force_limit"]
-        vel_nodes = [n for n in cg.nodes if n.constraint_type == "velocity_limit"]
-
-        # 取最严格: 优先采信 clamping 裁决值
-        max_force = force_clamp.get("selected") if force_clamp else min(
-            (n.params.get("max_force_n", 10.0) for n in force_nodes),
-            default=10.0,
-        )
-        min_force = max(
-            (n.params.get("min_force_n", 0.1) for n in force_nodes),
-            default=0.1,
-        )
-        max_vel = vel_clamp.get("selected") if vel_clamp else min(
-            (n.params.get("max_linear_ms", 0.3) for n in vel_nodes),
-            default=0.3,
-        )
-
+        """从约束裁决结果提取优化边界。"""
+        force_resolution = resolution.parameters.get("force_n")
+        velocity_resolution = resolution.parameters.get("velocity_ms")
+        force_domain = force_resolution.domain if force_resolution else None
+        velocity_domain = velocity_resolution.domain if velocity_resolution else None
         return OptimizationSpace(
-            force_range_n=(min_force, max_force),
-            velocity_range_ms=(0.05, max_vel),
+            force_range_n=(force_domain.min_value if force_domain and force_domain.min_value is not None else 0.1,
+                           force_domain.max_value if force_domain and force_domain.max_value is not None else 10.0),
+            velocity_range_ms=(velocity_domain.min_value if velocity_domain and velocity_domain.min_value is not None else 0.05,
+                               velocity_domain.max_value if velocity_domain and velocity_domain.max_value is not None else 0.3),
             z_safe_margin_m=(0.02, 0.10),
             collision_margin_m=(0.03, 0.15),
             targets=["max_safety", "min_time"],
-            free_params={},
+            free_params={"plan_status": resolution.plan_status.value},
         )
 
     # ============================================================

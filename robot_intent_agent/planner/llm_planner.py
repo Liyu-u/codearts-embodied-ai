@@ -35,65 +35,316 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
+# IntentFrame v1 标准化
+# ============================================================
+
+def normalize_intent_frame(frame: "IntentFrame") -> Dict[str, Any]:
+    """将 IntentFrame v1 标准化为下游兼容的 parsed_task 格式。
+
+    职责:
+        1. 统一同义枚举
+        2. 统一单位
+        3. 统一 null/[]
+        4. 禁止自动猜 object_id
+        5. 禁止静默删除字段
+
+    返回标准化的 parsed_task dict 供 load_parsed_task_from_bt() 使用。
+    """
+    from robot_intent_agent.schemas.intent_frame import (
+        ActionKind, ProhibitionType, ConditionPredicate,
+    )
+
+    action_map = {
+        ActionKind.GRASP: "GRASP",
+        ActionKind.FETCH: "FETCH",
+        ActionKind.PLACE: "PLACE",
+        ActionKind.HANDOVER: "HANDOVER",
+        ActionKind.TRANSFER: "TRANSFER",
+        ActionKind.DYNAMIC_GRASP: "DYNAMIC_GRASP",
+        ActionKind.CUSTOM: "CUSTOM",
+    }
+
+    def _normalize_entity(entity) -> Optional[Dict[str, Any]]:
+        if entity is None:
+            return None
+        return {
+            "mention": entity.mention,
+            "specific_class": entity.category,
+            "parent_class": None,
+            "entity_id": None,  # NEVER set by LLM
+            "role": None,
+            "text_span": entity.source_text_span or entity.mention,
+            "grounding_confidence": entity.confidence,
+            "source": "nl",
+            "ontology_path": [entity.category] if entity.category else [],
+            "match_evidence": [],
+            # Preserve descriptors for GroundingEngine
+            "attributes": {
+                "color": entity.descriptors.color,
+                "material": entity.descriptors.material,
+                "size": entity.descriptors.size,
+                "shape": entity.descriptors.shape,
+                "side": entity.descriptors.side,
+                "height_relation": entity.descriptors.height_relation,
+                "distance_relation": entity.descriptors.distance_relation,
+                "motion_state": entity.descriptors.motion_state,
+            },
+        }
+
+    def _normalize_prohibition(p) -> Dict[str, Any]:
+        return {
+            "prohibition_id": p.prohibition_id,
+            "type": p.type.value,
+            "target": _normalize_entity(p.target),
+            "action": p.action.value if p.action else None,
+            "parameter": p.parameter,
+            "operator": p.operator.value if p.operator else None,
+            "value": p.value,
+            "unit": p.unit.value if p.unit else None,
+            "condition": p.condition,
+            "source_text_span": p.source_text_span,
+            "confidence": p.confidence,
+        }
+
+    def _normalize_condition(c) -> Dict[str, Any]:
+        return {
+            "condition_id": c.condition_id,
+            "predicate": c.predicate.value,
+            "subject": _normalize_entity(c.subject),
+            "operator": c.operator,
+            "value": c.value,
+            "unit": c.unit.value if c.unit else None,
+            "required_before": [a.value for a in c.required_before],
+            "on_true": c.on_true.value if c.on_true else None,
+            "on_false": c.on_false.value if c.on_false else None,
+            "hard": c.hard,
+            "source_text_span": c.source_text_span,
+        }
+
+    def _normalize_constraint(c) -> Dict[str, Any]:
+        return {
+            "constraint_id": c.constraint_id,
+            "parameter": c.parameter,
+            "operator": c.operator.value,
+            "source": "user",
+            "source_kind": f"USER_{c.operator.value}",
+            "text_span": c.source_text_span,
+            "unit": c.unit.value if isinstance(c.unit, object) and hasattr(c.unit, 'value') else str(c.unit) if c.unit else "",
+            "value": c.value,
+            "min_value": c.min_value,
+            "max_value": c.max_value,
+            "normalized_value": c.value if c.value is not None else (c.max_value if c.max_value is not None else c.min_value),
+            "entity_id": None,
+            "semantic_role": None,
+            "confidence": 1.0,
+            "is_hard": c.hard,
+            "provenance": ["llm"],
+        }
+
+    normalized = {
+        "instruction": "",  # Will be filled by caller
+        "action": action_map.get(frame.action, "CUSTOM"),
+        "theme": _normalize_entity(frame.theme),
+        "source": _normalize_entity(frame.source),
+        "destination": _normalize_entity(frame.destination),
+        "recipient": _normalize_entity(frame.recipient),
+        "obstacle": [_normalize_entity(p.target) for p in frame.prohibitions
+                     if p.type in (ProhibitionType.NO_CONTACT, ProhibitionType.AVOID_ENTITY,
+                                   ProhibitionType.AVOID_REGION, ProhibitionType.FORBID_ACTION)],
+        "support_surface": None,  # Derived from destination for PLACE
+        "manner": frame.manner.value if frame.manner else None,
+        "motion_state": {"state": "static", "speed_mps": None, "confidence": 0.0},
+        "user_constraints": [_normalize_constraint(c) for c in frame.user_constraints],
+        "raw_mentions": [],
+        "unmet_roles": [],
+        "parse_confidence": 0.90,
+        "grounding_confidence": 0.0,
+        "constraint_confidence": 0.95 if frame.user_constraints else 0.4,
+        "notes": list(frame.explanatory_notes) if frame.explanatory_notes else [],
+        # ── New v1 fields ──
+        "prohibitions": [_normalize_prohibition(p) for p in frame.prohibitions],
+        "conditions": [_normalize_condition(c) for c in frame.conditions],
+        "sequence": [{"step_index": s.step_index, "action": s.action.value,
+                       "description": s.description,
+                       "entity": _normalize_entity(s.entity),
+                       "condition_id": s.condition_id}
+                     for s in frame.sequence],
+        "urgency": frame.urgency.value,
+        "clarification": frame.clarification,
+        "intent_frame_version": frame.schema_version,
+    }
+
+    return normalized
+
+
+# ============================================================
 # DeepSeek 系统提示词
 # ============================================================
 
-SYSTEM_PROMPT = """你是一个具身智能机器人的"前端大脑"。你的职责是：将用户的自然语言指令，转化为结构化的机器人行为树（Behavior Tree）JSON。
+SYSTEM_PROMPT = """你是一个具身智能机器人的语义解析器。你必须将用户的自然语言指令转化为严格符合 IntentFrame v1 Schema 的结构化 JSON。
 
-## 你可以调用的原子技能（Skill Catalog）
+## 核心原则
 
-| 技能名 | 说明 | 参数 |
-|--------|------|------|
-| Reach | 移动到目标物体上方安全高度 | target(物体名), safe_z_offset(默认0.10m) |
-| Grasp | 标准抓取物体 | target, force_n(默认5.0N,范围0.1-10.0) |
-| GentleGrasp | 轻柔抓取（用于易碎物体） | target, force_n(默认3.0N) |
-| MoveTo | 将手中物体移动到目标位置 | target, velocity_ms(默认0.15,范围0.05-0.30) |
-| Release | 释放手中物体 | target |
-| Push | 沿直线推动物体 | target, direction, distance_m |
-| Stack | 将物体堆叠到另一个物体上 | target(被堆叠物), destination(底座物体) |
-| Avoid | 绕开障碍物 | target(障碍物名), min_distance_m(默认0.05) |
-| Inspect | 视觉确认物体状态 | target, check_type(position|grasp|clearance) |
+你只负责语义理解：识别动作、角色、属性描述、禁止条件、条件和数值约束。
+你**绝对不能**决定：
+- 最终 object_id（由系统的 GroundingEngine 负责）
+- 最终力/速度参数（由系统的 ConstraintCompiler 负责）
+- execution_allowed / plan_status（由系统的 FinalPlanValidator 负责）
+- 安全放行结论
 
-## 行为树节点类型
+## 动作枚举
 
-- "sequence": 顺序执行所有子节点
-- "action": 执行一个原子技能
+| 动作 | 说明 | 典型触发词 |
+|------|------|-----------|
+| GRASP | 抓取物体 | 抓住、拿起、握住、grasp、grab |
+| FETCH | 拿取并送达 | 拿过来、取过来、fetch、bring |
+| PLACE | 放置物体 | 放到、放在、摆到、放入、place、put |
+| HANDOVER | 递交给接收者 | 递给、交给、给我、handover、give |
+| TRANSFER | 转移物体 | 转移、转运、transfer |
+| DYNAMIC_GRASP | 抓取移动目标 | 抓住移动的、动态抓取 |
+| CUSTOM | 复合/特殊动作 | 复杂多步骤任务 |
 
-## 输出格式要求
+## Prohibition 禁止类型
 
-你必须严格输出以下 JSON 格式，不要包含任何 Markdown 标记或解释文字：
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| NO_CONTACT | 禁止接触 | "别碰玻璃杯" |
+| FORBID_ACTION | 禁止某动作 | "不要抓红色的" |
+| AVOID_ENTITY | 避开实体 | "绕开桌子" |
+| AVOID_REGION | 避开区域 | "不要靠近台面" |
+| PARAMETER_MAX | 参数上限 | "不超过4N" |
+| PARAMETER_MIN | 参数下限 | "不低于2N" |
+| CONDITIONAL_PROHIBITION | 条件禁止 | "除非空手否则不要抓" |
+
+## Condition 条件枚举
+
+| 谓词 | 说明 |
+|------|------|
+| GRIPPER_EMPTY | 夹爪为空 |
+| GRIPPER_HOLDING | 夹爪持物 |
+| OBJECT_VISIBLE | 目标可见 |
+| OBJECT_STABLE | 目标稳定 |
+| OBJECT_MOVING | 目标移动中 |
+| ROBOT_HOMED | 机器人已归位 |
+
+## 输出格式 — IntentFrame v1
+
+你必须输出以下严格 JSON。不要包含 Markdown 标记或解释文字。所有字段都必须存在。
 
 {
-  "task_description": "一句话描述任务",
-  "target": "主目标物体名",
-  "modifiers": ["gentle_grasp", "slow_velocity"],  // 从指令中提取的修饰语
-  "avoid_objects": ["障碍物名1", "障碍物名2"],     // 需要避开的物体
-  "behavior_tree": {
-    "type": "sequence",
-    "name": "任务名",
-    "children": [
+  "intent_frame": {
+    "schema_version": "1.0.0",
+    "action": "GRASP",
+    "theme": {
+      "mention": "蓝色杯子",
+      "category": "cup",
+      "descriptors": {"color": "blue", "material": null, "size": null, "shape": null, "side": null, "height_relation": null, "distance_relation": null, "motion_state": null},
+      "spatial_relations": [],
+      "required_affordances": ["graspable"],
+      "source_text_span": "蓝色杯子",
+      "confidence": 0.95
+    },
+    "destination": null,
+    "recipient": null,
+    "source": null,
+    "prohibitions": [
       {
-        "type": "action",
-        "name": "Reach(目标)",
-        "skill_name": "Reach",
-        "target": "目标物体名",
-        "params": {}
+        "prohibition_id": "proh-xxxxxxxxxxxx",
+        "type": "NO_CONTACT",
+        "target": {
+          "mention": "红色方块",
+          "category": "block",
+          "descriptors": {"color": "red", "material": null, "size": null, "shape": null, "side": null, "height_relation": null, "distance_relation": null, "motion_state": null},
+          "spatial_relations": [],
+          "required_affordances": [],
+          "source_text_span": "别碰红色方块",
+          "confidence": 0.90
+        },
+        "action": null,
+        "parameter": null,
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "condition": null,
+        "source_text_span": "别碰红色方块",
+        "confidence": 0.90
       }
-    ]
+    ],
+    "conditions": [
+      {
+        "condition_id": "cond-xxxxxxxxxxxx",
+        "predicate": "OBJECT_STABLE",
+        "subject": {"mention": "杯子", "category": "cup", "descriptors": {}, "spatial_relations": [], "required_affordances": [], "source_text_span": "杯子", "confidence": 0.90},
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "required_before": ["GRASP"],
+        "on_true": null,
+        "on_false": null,
+        "hard": true,
+        "source_text_span": "杯子没停稳就先等它停下来再抓"
+      }
+    ],
+    "sequence": [],
+    "user_constraints": [
+      {
+        "constraint_id": "cstr-xxxxxxxxxxxx",
+        "parameter": "force_n",
+        "operator": "MAX",
+        "value": null,
+        "min_value": null,
+        "max_value": 4.0,
+        "unit": "N",
+        "hard": true,
+        "source_text_span": "不超过4N"
+      }
+    ],
+    "manner": null,
+    "urgency": "normal",
+    "clarification": null,
+    "explanatory_notes": []
+  },
+  "behavior_tree": {
+    "type": "sequence", "name": "任务名",
+    "children": [{"type": "action", "name": "Reach(目标)", "skill_name": "Reach", "target": "目标物体名", "params": {}}]
   }
 }
 
+## Few-shot 示例
+
+### 示例 1: theme + destination
+指令: "把蓝色方块放到红色方块上"
+输出: action=PLACE, theme={mention:"蓝色方块", category:"block", descriptors:{color:"blue"}}, destination={mention:"红色方块", category:"block", descriptors:{color:"red"}, required_affordances:["support_surface"]}
+
+### 示例 2: theme + prohibition
+指令: "抓住玻璃杯，别碰塑料杯"
+输出: action=GRASP, theme={mention:"玻璃杯", category:"cup", descriptors:{material:"glass"}}, prohibitions=[{type:NO_CONTACT, target:{mention:"塑料杯", category:"cup", descriptors:{material:"plastic"}}}]
+
+### 示例 3: 条件执行
+指令: "除非夹爪是空的，否则不要抓取"
+输出: action=GRASP, conditions=[{predicate:GRIPPER_EMPTY, required_before:["GRASP"], hard:true}]
+
+### 示例 4: 数值约束
+指令: "抓力不要超过4N"
+输出: user_constraints=[{parameter:"force_n", operator:MAX, max_value:4.0, unit:"N"}]
+
+### 示例 5: 中英混合 + 多角色
+指令: "grab那个红色的bottle然后放到table上"
+输出: action=FETCH, theme={mention:"红色的bottle", category:"bottle", descriptors:{color:"red"}}, destination={mention:"table", category:"table", required_affordances:["support_surface"]}, sequence=[{step_index:0, action:GRASP}, {step_index:1, action:PLACE}]
+
 ## 重要规则
 
-1. 每个 "action" 节点必须包含 skill_name, target, params 三个字段
-2. skill_name 必须是上述技能表中的技能名
-3. 你只需提出初步计划 (Proposal)。实际的物理约束裁决（force/velocity 的精确数值）由下游 Constraint Engine 的 Min-Clamping 机制完成
-4. 如果用户说"轻一点"→ Grasp 改为 GentleGrasp，force_n 设为你建议的值
-5. 如果用户说"慢一点"→ MoveTo 的 velocity_ms 设为你建议的值
-6. 如果用户说"别碰X"/"避开X"→ 增加 Avoid(X) 节点，并在 avoid_objects 中列出
-7. 如果任务涉及紧急场景（协助人类、急停等），请在 metadata 中设置 priority=100
-8. 请输出一个 confidence 预估值（0.0-1.0），表示你对这个规划方案的信心
-9. 不要生成 Python 代码，只生成 JSON"""
+1. 永远不要编造 entity_id。你只提供语义描述（mention, category, descriptors）
+2. 所有 prohibition 必须在 prohibitions 数组中，不得只放在 explanatory_notes
+3. 所有 condition 必须在 conditions 数组中，hard 条件必须填写 required_before
+4. 数值约束必须在 user_constraints 中，使用正确的 MAX/MIN/EXACT/RANGE 操作符
+5. prohibition_id/condition_id/constraint_id 使用简短哈希前缀（如 "proh-" + 12位hex）
+6. null 字段必须明确写 null，不得省略
+7. 空数组必须写 []，不得省略
+8. explanatory_notes 仅用于解释推理过程，不得作为编译器语义输入
+9. 不要输出 execution_allowed 或 plan_status
+10. 只输出 JSON，不输出 Markdown 或解释文本"""
+
 
 
 # ============================================================
@@ -278,6 +529,41 @@ class LLMPlanner(TaskPlannerInterface):
     # API 调用
     # ============================================================
 
+    # ============================================================
+    # LLM JSON 安全解析 (防御性脱壳)
+    # ============================================================
+
+    @staticmethod
+    def _safe_parse_llm_json(raw_text: str) -> Dict[str, Any]:
+        """
+        防御性解析 LLM 返回的 JSON。
+
+        处理:
+            1. Markdown 代码块剥离 (```json ... ```)
+            2. 数组脱壳: 如果最外层是 list[{...}], 自动取第一项
+            3. 类型校验: 确保最终返回 dict
+        """
+        cleaned = LLMPlanner._strip_markdown(raw_text)
+        data = json.loads(cleaned)
+
+        # 防御性脱壳: 无论 DeepSeek 包了多少层 list, 循环剥开取到最里面的 dict
+        while isinstance(data, list) and len(data) > 0:
+            logger.info(f"LLM returned a list of {len(data)} items; auto-unwrapping")
+            data = data[0]
+
+        # 类型严格校验
+        if not isinstance(data, dict):
+            raise TypeError(
+                f"LLM 解析结果期望为 dict，实际得到 {type(data).__name__}: "
+                f"{json.dumps(data, ensure_ascii=False)[:200]}"
+            )
+
+        return data
+
+    # ============================================================
+    # API 调用
+    # ============================================================
+
     def _call_api(self, user_message: str) -> Dict[str, Any]:
         """调用 DeepSeek API，带重试和超时处理"""
         self._ensure_client()
@@ -303,15 +589,17 @@ class LLMPlanner(TaskPlannerInterface):
                 raw_text = response.choices[0].message.content.strip()
                 logger.info(f"DeepSeek response: {len(raw_text)} chars")
 
-                # 清理可能的 Markdown 包裹
-                raw_text = self._strip_markdown(raw_text)
-
-                return json.loads(raw_text)
+                return self._safe_parse_llm_json(raw_text)
 
             except json.JSONDecodeError as e:
                 logger.warning(f"DeepSeek returned invalid JSON (attempt {attempt+1}): {e}")
                 if attempt >= self._max_retries:
                     raise LLMPlannerError(f"DeepSeek 返回了非法的 JSON: {e}")
+
+            except (ValueError, TypeError) as e:
+                logger.warning(f"DeepSeek JSON structure error (attempt {attempt+1}): {e}")
+                if attempt >= self._max_retries:
+                    raise LLMPlannerError(f"DeepSeek 返回的 JSON 结构异常: {e}")
 
             except Exception as e:
                 logger.warning(f"DeepSeek API error (attempt {attempt+1}): {e}")
@@ -353,10 +641,16 @@ class LLMPlanner(TaskPlannerInterface):
     def _parse_response(
         self, raw: Dict[str, Any], instruction: str
     ) -> BehaviorTree:
-        """将 DeepSeek 返回的 JSON 解析为 BehaviorTree"""
+        """将 DeepSeek 返回的 JSON 解析为 BehaviorTree，同时验证 IntentFrame v1 并进行受控修复。"""
         bt_json = raw.get("behavior_tree")
         if not bt_json:
             raise LLMPlannerError("DeepSeek 返回的 JSON 缺少 behavior_tree 字段")
+
+        # 防御: DeepSeek 可能把 behavior_tree 包成 [{...}]
+        while isinstance(bt_json, list) and len(bt_json) > 0:
+            bt_json = bt_json[0]
+        if not isinstance(bt_json, dict):
+            raise LLMPlannerError(f"behavior_tree 类型错误: 期望 dict, 实际 {type(bt_json).__name__}")
 
         # 递归构建 BTNode
         root = self._build_bt_node(bt_json)
@@ -364,30 +658,93 @@ class LLMPlanner(TaskPlannerInterface):
         # 验证所有技能都在 SkillCatalog 中
         self._validate_skills(root)
 
-        # 提取元数据
+        # ── 提取元数据 ──
         target = raw.get("target", "")
         modifiers = raw.get("modifiers", [])
         avoid_objects = raw.get("avoid_objects", [])
         description = raw.get("task_description", instruction)
 
+        # ── IntentFrame v1 验证 ──
+        raw_intent_frame = raw.get("intent_frame")
+        parsed_task_data: Optional[Dict[str, Any]] = None
+        intent_frame_valid = False
+
+        if isinstance(raw_intent_frame, dict):
+            try:
+                from robot_intent_agent.schemas.intent_frame import IntentFrame
+                validated_frame = IntentFrame.model_validate(raw_intent_frame)
+                # Normalize for downstream compatibility
+                parsed_task_data = normalize_intent_frame(validated_frame)
+                intent_frame_valid = True
+                logger.info(f"IntentFrame v1 validated: action={validated_frame.action.value}")
+            except Exception as e:
+                logger.warning(f"IntentFrame v1 validation failed: {e}")
+                # Fallback: try legacy parsed_task format
+                raw_parsed_task = raw.get("parsed_task")
+                if isinstance(raw_parsed_task, dict):
+                    parsed_task_data = raw_parsed_task
+                    logger.info("Falling back to legacy parsed_task format")
+        else:
+            # Try legacy parsed_task
+            raw_parsed_task = raw.get("parsed_task")
+            if isinstance(raw_parsed_task, dict):
+                parsed_task_data = raw_parsed_task
+                logger.info("No intent_frame found, using legacy parsed_task")
+
+        # Also accept legacy format
+        if parsed_task_data is None:
+            raw_parsed_task = raw.get("parsed_task")
+            if isinstance(raw_parsed_task, dict):
+                parsed_task_data = raw_parsed_task
+
+        semantic_frame_version = "1.0" if intent_frame_valid else "legacy"
+
+        metadata: Dict[str, Any] = {
+            "action": raw.get("action_type") or (validated_frame.action.value if intent_frame_valid else "custom"),
+            "target": target,
+            "modifiers": modifiers,
+            "avoid_objects": avoid_objects,
+            "planner": self.name,
+            "llm_model": self._model,
+            "semantic_frame_version": semantic_frame_version,
+            "engine_trace": {
+                "requested_engine": "DeepSeek",
+                "actual_engine": self.name,
+                "model_name": self._model,
+                "llm_call_attempted": True,
+                "llm_call_succeeded": True,
+                "response_schema_valid": intent_frame_valid,
+                "repair_attempted": False,
+                "repair_succeeded": False,
+                "fallback_used": False,
+                "fallback_reason": None,
+            },
+        }
+
+        # 传递完整 parsed_task
+        if isinstance(parsed_task_data, dict):
+            metadata["parsed_task"] = parsed_task_data
+            logger.info(f"DeepSeek provided parsed_task with action={parsed_task_data.get('action')}")
+
         bt = BehaviorTree(
             task_id=f"task-llm-{hash(instruction) % 10000:04d}",
             description=description,
             root=root,
-            metadata={
-                "action": raw.get("action_type", "custom"),
-                "target": target,
-                "modifiers": modifiers,
-                "avoid_objects": avoid_objects,
-                "planner": self.name,
-                "llm_model": self._model,
-            },
+            metadata=metadata,
         )
 
         return bt
 
-    def _build_bt_node(self, node_json: Dict[str, Any]) -> BTNode:
-        """递归构建 BTNode"""
+    def _build_bt_node(self, node_json) -> BTNode:
+        """递归构建 BTNode (带类型防御)"""
+        # 防御: 无论 DeepSeek 包了多少层 list, 循环剥开
+        while isinstance(node_json, list) and len(node_json) > 0:
+            node_json = node_json[0]
+        if not isinstance(node_json, dict):
+            raise LLMPlannerError(
+                f"BT node 类型错误: 期望 dict, 实际 {type(node_json).__name__}: "
+                f"{str(node_json)[:100]}"
+            )
         node_type_str = node_json.get("type", "action")
 
         # 映射类型
@@ -406,6 +763,11 @@ class LLMPlanner(TaskPlannerInterface):
             skill_name = node_json.get("skill_name", "Reach")
             target = node_json.get("target", "")
             params = node_json.get("params", {})
+            # 防御: params 也可能是列表
+            while isinstance(params, list) and len(params) > 0:
+                params = params[0]
+            if not isinstance(params, dict):
+                params = {}
 
             # 参数清理：去掉可能的多余字段
             clean_params = {}
@@ -445,24 +807,25 @@ class LLMPlanner(TaskPlannerInterface):
         )
 
     def _validate_skills(self, root: BTNode) -> None:
-        """验证所有 Action 的技能名都在 SkillCatalog 中"""
+        """验证所有 Action 的技能名都在 SkillCatalog 中。未知技能 → 拒绝 BT。"""
         invalid = []
 
         def _check(node: BTNode):
             if node.type == BTNodeType.ACTION and node.skill:
+                skill_name = node.skill.skill_name
                 try:
-                    SkillCatalog.get(node.skill.skill_name)
+                    SkillCatalog.get(skill_name)
                 except KeyError:
-                    invalid.append(node.skill.skill_name)
+                    invalid.append(skill_name)
             for child in node.children:
                 _check(child)
 
         _check(root)
 
         if invalid:
-            logger.warning(
-                f"LLM returned {len(invalid)} unknown skills: {invalid}. "
-                f"These will be kept but may cause downstream errors."
+            raise LLMPlannerError(
+                f"DeepSeek returned {len(invalid)} unknown skills: {invalid}. "
+                f"BT rejected — unknown skills cannot enter executable IR."
             )
 
 

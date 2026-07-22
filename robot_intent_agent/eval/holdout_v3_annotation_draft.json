@@ -1,0 +1,6032 @@
+{
+  "_meta": {
+    "generated_by": "eval_hardening_phase",
+    "generated_at": "2026-07-22",
+    "dataset": "holdout_v3.json",
+    "dataset_usage": "REGRESSION_AFTER_REVIEW",
+    "total_cases": 150,
+    "theme_grounded": 73,
+    "destination_grounded": 26,
+    "recipient_grounded": 25,
+    "obstacle_grounded": 34,
+    "ambiguity_detected": 77,
+    "reviewer_status": "UNREVIEWED",
+    "golden_review_required": true,
+    "warning": "ALL PROPOSED LABELS ARE FROM PIPELINE OUTPUT. DO NOT USE AS GROUND TRUTH WITHOUT HUMAN REVIEW."
+  },
+  "cases": [
+    {
+      "case_id": "HV0001",
+      "category": "simple_action",
+      "instruction": "抓住杯子",
+      "scene_objects": [
+        {
+          "id": "obj-7bd020",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-7bd020",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0002",
+      "category": "simple_action",
+      "instruction": "把盒子拿过来",
+      "scene_objects": [
+        {
+          "id": "obj-9f16f0",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-9f16f0",
+      "proposed_theme_mention": "盒子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0003",
+      "category": "simple_action",
+      "instruction": "把杯子放到桌子上",
+      "scene_objects": [
+        {
+          "id": "obj-aca4d3",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-c91d12",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-aca4d3",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-c91d12",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0004",
+      "category": "simple_action",
+      "instruction": "把药瓶递给用户",
+      "scene_objects": [
+        {
+          "id": "obj-3bc8bb",
+          "name": "medicine_bottle",
+          "label": "medicine_bottle",
+          "specific_class": "medicine_bottle",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "bottle-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-3bc8bb",
+      "proposed_theme_mention": "药瓶",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "recipient_pose_or_handover_zone"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0005",
+      "category": "simple_action",
+      "instruction": "抓住正在移动的红色小球",
+      "scene_objects": [
+        {
+          "id": "obj-58ee79",
+          "name": "ball",
+          "label": "ball",
+          "specific_class": "ball",
+          "attributes": {
+            "color": "red",
+            "material": "rubber",
+            "_perception_object_id": "ball-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-58ee79",
+      "proposed_theme_mention": "红色小球",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0006",
+      "category": "simple_action",
+      "instruction": "抓住蓝色的方块",
+      "scene_objects": [
+        {
+          "id": "obj-8eca77",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-8eca77",
+      "proposed_theme_mention": "方块",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0007",
+      "category": "simple_action",
+      "instruction": "把托盘上的杯子拿过来",
+      "scene_objects": [
+        {
+          "id": "obj-4b8336",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-619d21",
+          "name": "tray",
+          "label": "tray",
+          "specific_class": "tray",
+          "attributes": {
+            "color": "gray",
+            "material": "plastic",
+            "_perception_object_id": "tray-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [
+        "obj-4b8336",
+        "obj-619d21"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup",
+        "tray"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0008",
+      "category": "simple_action",
+      "instruction": "把书放到书架上",
+      "scene_objects": [
+        {
+          "id": "obj-360866",
+          "name": "book",
+          "label": null,
+          "specific_class": null,
+          "attributes": {
+            "color": "blue",
+            "material": "paper",
+            "_perception_object_id": "book-1"
+          }
+        },
+        {
+          "id": "obj-878e1b",
+          "name": "shelf",
+          "label": null,
+          "specific_class": null,
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "shelf-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "support_surface",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0009",
+      "category": "simple_action",
+      "instruction": "抓住瓶子",
+      "scene_objects": [
+        {
+          "id": "obj-952a36",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "glass",
+            "_perception_object_id": "bottle-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-952a36",
+      "proposed_theme_mention": "瓶子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0010",
+      "category": "simple_action",
+      "instruction": "把设备推过来",
+      "scene_objects": [
+        {
+          "id": "obj-b9c5b6",
+          "name": "device",
+          "label": "device",
+          "specific_class": "device",
+          "attributes": {
+            "color": "gray",
+            "material": "metal",
+            "_perception_object_id": "device-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-b9c5b6",
+      "proposed_theme_mention": "设备",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone"
+      ],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0011",
+      "category": "simple_action",
+      "instruction": "抓住金属零件",
+      "scene_objects": [
+        {
+          "id": "obj-1198cb",
+          "name": "metal_part",
+          "label": "metal",
+          "specific_class": "metal",
+          "attributes": {
+            "color": "silver",
+            "material": "metal",
+            "_perception_object_id": "metal-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-1198cb",
+      "proposed_theme_mention": "金属",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0012",
+      "category": "simple_action",
+      "instruction": "把针捡起来",
+      "scene_objects": [
+        {
+          "id": "obj-8877b1",
+          "name": "needle",
+          "label": "needle",
+          "specific_class": "needle",
+          "attributes": {
+            "color": "silver",
+            "material": "metal",
+            "_perception_object_id": "needle-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-8877b1",
+      "proposed_theme_mention": "针",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0013",
+      "category": "role_binding",
+      "instruction": "把蓝色方块放到红色方块上面",
+      "scene_objects": [
+        {
+          "id": "obj-232705",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-blue"
+          }
+        },
+        {
+          "id": "obj-fb28fd",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-red"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-fb28fd",
+      "proposed_theme_mention": "红色方块",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "support_surface"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0014",
+      "category": "role_binding",
+      "instruction": "把杯子从托盘上拿过来交给用户",
+      "scene_objects": [
+        {
+          "id": "obj-05a7c3",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-c5d894",
+          "name": "tray",
+          "label": "tray",
+          "specific_class": "tray",
+          "attributes": {
+            "color": "gray",
+            "material": "plastic",
+            "_perception_object_id": "tray-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [
+        "obj-05a7c3",
+        "obj-c5d894"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup",
+        "tray"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "recipient_pose_or_handover_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0015",
+      "category": "role_binding",
+      "instruction": "把杯子放到桌子左边",
+      "scene_objects": [
+        {
+          "id": "obj-c30599",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-368f10",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-c30599",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-368f10",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0016",
+      "category": "role_binding",
+      "instruction": "把红色药瓶递给用户",
+      "scene_objects": [
+        {
+          "id": "obj-d36f03",
+          "name": "medicine_bottle",
+          "label": "medicine_bottle",
+          "specific_class": "medicine_bottle",
+          "attributes": {
+            "color": "red",
+            "material": "plastic",
+            "_perception_object_id": "bottle-red"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-d36f03",
+      "proposed_theme_mention": "红色药瓶",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "recipient_pose_or_handover_zone"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0017",
+      "category": "role_binding",
+      "instruction": "抓住桌上的杯子",
+      "scene_objects": [
+        {
+          "id": "obj-5f3280",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-43a68e",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-5f3280",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-43a68e",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0018",
+      "category": "role_binding",
+      "instruction": "把柜子里的设备搬出来",
+      "scene_objects": [
+        {
+          "id": "obj-eefa6a",
+          "name": "device",
+          "label": "device",
+          "specific_class": "device",
+          "attributes": {
+            "color": "gray",
+            "material": "metal",
+            "_perception_object_id": "device-1"
+          }
+        },
+        {
+          "id": "obj-1f86fe",
+          "name": "cabinet",
+          "label": null,
+          "specific_class": null,
+          "attributes": {
+            "color": "gray",
+            "material": "metal",
+            "_perception_object_id": "cabinet-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-eefa6a",
+      "proposed_theme_mention": "设备",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0019",
+      "category": "role_binding",
+      "instruction": "把托盘端到厨房",
+      "scene_objects": [
+        {
+          "id": "obj-d5564f",
+          "name": "tray",
+          "label": "tray",
+          "specific_class": "tray",
+          "attributes": {
+            "color": "gray",
+            "material": "plastic",
+            "_perception_object_id": "tray-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-d5564f",
+      "proposed_theme_mention": "托盘",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0020",
+      "category": "role_binding",
+      "instruction": "把杯子端给客人",
+      "scene_objects": [
+        {
+          "id": "obj-e843b5",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-e843b5",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0021",
+      "category": "role_binding",
+      "instruction": "把药瓶放回架子上",
+      "scene_objects": [
+        {
+          "id": "obj-80ed07",
+          "name": "medicine_bottle",
+          "label": "medicine_bottle",
+          "specific_class": "medicine_bottle",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "bottle-1"
+          }
+        },
+        {
+          "id": "obj-a5ffd1",
+          "name": "shelf",
+          "label": null,
+          "specific_class": null,
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "shelf-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-80ed07",
+      "proposed_theme_mention": "药瓶",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "support_surface"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0022",
+      "category": "role_binding",
+      "instruction": "帮我拿一下那个盒子",
+      "scene_objects": [
+        {
+          "id": "obj-66ef8a",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-66ef8a",
+      "proposed_theme_mention": "盒子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0023",
+      "category": "role_binding",
+      "instruction": "请把杯子放到台面上",
+      "scene_objects": [
+        {
+          "id": "obj-68f263",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-775ebf",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-68f263",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-775ebf",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0024",
+      "category": "role_binding",
+      "instruction": "递一下那个玻璃杯",
+      "scene_objects": [
+        {
+          "id": "obj-9a7c90",
+          "name": "glass_cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "transparent",
+            "material": "glass",
+            "_perception_object_id": "cup-glass"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-9a7c90",
+      "proposed_theme_mention": "玻璃杯",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0025",
+      "category": "multi_object",
+      "instruction": "抓住红色杯子",
+      "scene_objects": [
+        {
+          "id": "obj-75d83c",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "red",
+            "material": "plastic",
+            "_perception_object_id": "cup-red"
+          }
+        },
+        {
+          "id": "obj-369f61",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "blue",
+            "material": "plastic",
+            "_perception_object_id": "cup-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-75d83c",
+      "proposed_theme_mention": "红色杯",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0026",
+      "category": "multi_object",
+      "instruction": "抓住蓝色杯子",
+      "scene_objects": [
+        {
+          "id": "obj-cd2fef",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "red",
+            "material": "plastic",
+            "_perception_object_id": "cup-red"
+          }
+        },
+        {
+          "id": "obj-7583ef",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "blue",
+            "material": "plastic",
+            "_perception_object_id": "cup-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-7583ef",
+      "proposed_theme_mention": "蓝色杯",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0027",
+      "category": "multi_object",
+      "instruction": "把大盒子拿过来",
+      "scene_objects": [
+        {
+          "id": "obj-5ed9e4",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-big"
+          }
+        },
+        {
+          "id": "obj-040546",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-small"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-5ed9e4",
+      "proposed_theme_mention": "盒子",
+      "proposed_destination_entity_id": "obj-040546",
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0028",
+      "category": "multi_object",
+      "instruction": "抓住那个小的",
+      "scene_objects": [
+        {
+          "id": "obj-be9f45",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-big"
+          }
+        },
+        {
+          "id": "obj-5fc013",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-small"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0029",
+      "category": "multi_object",
+      "instruction": "抓住左边的杯子",
+      "scene_objects": [
+        {
+          "id": "obj-2beb52",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-left"
+          }
+        },
+        {
+          "id": "obj-81cc19",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-right"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-81cc19",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-2beb52",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0030",
+      "category": "multi_object",
+      "instruction": "抓住右边的瓶子",
+      "scene_objects": [
+        {
+          "id": "obj-9a79e6",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "glass",
+            "_perception_object_id": "bottle-left"
+          }
+        },
+        {
+          "id": "obj-e4213c",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "glass",
+            "_perception_object_id": "bottle-right"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-9a79e6",
+      "proposed_theme_mention": "瓶子",
+      "proposed_destination_entity_id": "obj-e4213c",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0031",
+      "category": "multi_object",
+      "instruction": "抓住那个红色的方块，不要蓝色的",
+      "scene_objects": [
+        {
+          "id": "obj-1ef526",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-red"
+          }
+        },
+        {
+          "id": "obj-00de6a",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-00de6a",
+      "proposed_theme_mention": "方块",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-1ef526"
+      ],
+      "proposed_obstacle_mentions": [
+        "蓝色",
+        "block"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0032",
+      "category": "multi_object",
+      "instruction": "抓住前面那个瓶子",
+      "scene_objects": [
+        {
+          "id": "obj-75e658",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "glass",
+            "_perception_object_id": "bottle-front"
+          }
+        },
+        {
+          "id": "obj-a2dabb",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "glass",
+            "_perception_object_id": "bottle-back"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-75e658",
+      "proposed_theme_mention": "瓶子",
+      "proposed_destination_entity_id": "obj-a2dabb",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0033",
+      "category": "multi_object",
+      "instruction": "抓住近处的杯子",
+      "scene_objects": [
+        {
+          "id": "obj-1157b3",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-near"
+          }
+        },
+        {
+          "id": "obj-7f63e5",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-far"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-1157b3",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-7f63e5",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0034",
+      "category": "multi_object",
+      "instruction": "抓住远处的盒子",
+      "scene_objects": [
+        {
+          "id": "obj-3c157f",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-near"
+          }
+        },
+        {
+          "id": "obj-8cb2fc",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-far"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-8cb2fc",
+      "proposed_theme_mention": "盒子",
+      "proposed_destination_entity_id": "obj-3c157f",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0035",
+      "category": "multi_object",
+      "instruction": "抓住那个玻璃杯，不是塑料的",
+      "scene_objects": [
+        {
+          "id": "obj-68dca5",
+          "name": "glass_cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "transparent",
+            "material": "glass",
+            "_perception_object_id": "cup-glass"
+          }
+        },
+        {
+          "id": "obj-555db3",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-plastic"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-68dca5",
+        "obj-555db3"
+      ],
+      "proposed_obstacle_mentions": [
+        "glass_cup",
+        "cup"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0036",
+      "category": "multi_object",
+      "instruction": "抓住移动中的球，不是静止的",
+      "scene_objects": [
+        {
+          "id": "obj-98c2ea",
+          "name": "ball",
+          "label": "ball",
+          "specific_class": "ball",
+          "attributes": {
+            "color": "red",
+            "material": "rubber",
+            "_perception_object_id": "ball-moving"
+          }
+        },
+        {
+          "id": "obj-49f2c4",
+          "name": "ball",
+          "label": "ball",
+          "specific_class": "ball",
+          "attributes": {
+            "color": "blue",
+            "material": "rubber",
+            "_perception_object_id": "ball-static"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0037",
+      "category": "size_color_spatial",
+      "instruction": "抓住最大的瓶子",
+      "scene_objects": [
+        {
+          "id": "obj-00b6a5",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "plastic",
+            "_perception_object_id": "bottle-s"
+          }
+        },
+        {
+          "id": "obj-50eb19",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "plastic",
+            "_perception_object_id": "bottle-m"
+          }
+        },
+        {
+          "id": "obj-b4e2f4",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "plastic",
+            "_perception_object_id": "bottle-l"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-b4e2f4",
+        "obj-50eb19",
+        "obj-00b6a5"
+      ],
+      "proposed_obstacle_mentions": [
+        "bottle",
+        "bottle",
+        "bottle"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0038",
+      "category": "size_color_spatial",
+      "instruction": "抓住最小的瓶子",
+      "scene_objects": [
+        {
+          "id": "obj-d18c5f",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "plastic",
+            "_perception_object_id": "bottle-s"
+          }
+        },
+        {
+          "id": "obj-2c3385",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "plastic",
+            "_perception_object_id": "bottle-m"
+          }
+        },
+        {
+          "id": "obj-4ecf76",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "plastic",
+            "_perception_object_id": "bottle-l"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-d18c5f",
+      "proposed_theme_mention": "瓶子",
+      "proposed_destination_entity_id": "obj-2c3385",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-4ecf76"
+      ],
+      "proposed_obstacle_mentions": [
+        "bottle"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0039",
+      "category": "size_color_spatial",
+      "instruction": "抓住那个又大又红的方块",
+      "scene_objects": [
+        {
+          "id": "obj-c554a6",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-big-red"
+          }
+        },
+        {
+          "id": "obj-08077c",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-small-red"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-c554a6",
+      "proposed_theme_mention": "方块",
+      "proposed_destination_entity_id": "obj-08077c",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0040",
+      "category": "size_color_spatial",
+      "instruction": "抓住高处的那个杯子",
+      "scene_objects": [
+        {
+          "id": "obj-dca29e",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-high"
+          }
+        },
+        {
+          "id": "obj-04d83a",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-low"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-dca29e",
+        "obj-04d83a"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup",
+        "cup"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0041",
+      "category": "size_color_spatial",
+      "instruction": "抓住最前面的方块",
+      "scene_objects": [
+        {
+          "id": "obj-4ebe6c",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-front"
+          }
+        },
+        {
+          "id": "obj-6ecd0c",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-back"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-4ebe6c",
+      "proposed_theme_mention": "方块",
+      "proposed_destination_entity_id": "obj-6ecd0c",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0042",
+      "category": "size_color_spatial",
+      "instruction": "把透明的杯子拿过来",
+      "scene_objects": [
+        {
+          "id": "obj-a9f50f",
+          "name": "glass_cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "transparent",
+            "material": "glass",
+            "_perception_object_id": "cup-clear"
+          }
+        },
+        {
+          "id": "obj-a0366a",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-opaque"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-a9f50f",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0043",
+      "category": "size_color_spatial",
+      "instruction": "抓住深色的那个瓶子",
+      "scene_objects": [
+        {
+          "id": "obj-af9f3b",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "black",
+            "material": "glass",
+            "_perception_object_id": "bottle-dark"
+          }
+        },
+        {
+          "id": "obj-334451",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "bottle-light"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-af9f3b",
+        "obj-334451"
+      ],
+      "proposed_obstacle_mentions": [
+        "bottle",
+        "bottle"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0044",
+      "category": "size_color_spatial",
+      "instruction": "抓住那个白色的方块",
+      "scene_objects": [
+        {
+          "id": "obj-e43298",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "white",
+            "material": "wood",
+            "_perception_object_id": "block-white"
+          }
+        },
+        {
+          "id": "obj-05b6bd",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "black",
+            "material": "wood",
+            "_perception_object_id": "block-black"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-e43298",
+      "proposed_theme_mention": "方块",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0045",
+      "category": "size_color_spatial",
+      "instruction": "抓住那个金属的而不是塑料的",
+      "scene_objects": [
+        {
+          "id": "obj-acaf9a",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "silver",
+            "material": "metal",
+            "_perception_object_id": "cup-metal"
+          }
+        },
+        {
+          "id": "obj-f2001b",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-plastic"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0046",
+      "category": "size_color_spatial",
+      "instruction": "抓住最远的那个杯子",
+      "scene_objects": [
+        {
+          "id": "obj-0675d1",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-near"
+          }
+        },
+        {
+          "id": "obj-476aa8",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-mid"
+          }
+        },
+        {
+          "id": "obj-a0e15d",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-far"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-a0e15d",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-476aa8",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-0675d1"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0047",
+      "category": "size_color_spatial",
+      "instruction": "抓住低处最近的那个杯子",
+      "scene_objects": [
+        {
+          "id": "obj-9afbf1",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-low-near"
+          }
+        },
+        {
+          "id": "obj-d7480b",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-high-far"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-9afbf1",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-d7480b",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0048",
+      "category": "size_color_spatial",
+      "instruction": "把黄色杯子放到蓝色杯子旁边",
+      "scene_objects": [
+        {
+          "id": "obj-a6b876",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "yellow",
+            "material": "plastic",
+            "_perception_object_id": "cup-yellow"
+          }
+        },
+        {
+          "id": "obj-19e37e",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "blue",
+            "material": "plastic",
+            "_perception_object_id": "cup-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-19e37e",
+      "proposed_theme_mention": "蓝色杯",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "support_surface"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0049",
+      "category": "ordinal_reference",
+      "instruction": "抓住第一个杯子",
+      "scene_objects": [
+        {
+          "id": "obj-3ce2d0",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-048da7",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-2"
+          }
+        },
+        {
+          "id": "obj-e5ec70",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-3"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-e5ec70",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-048da7",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-3ce2d0"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0050",
+      "category": "ordinal_reference",
+      "instruction": "抓住第二个杯子",
+      "scene_objects": [
+        {
+          "id": "obj-c79ecc",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-32cbeb",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-2"
+          }
+        },
+        {
+          "id": "obj-531ac0",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-3"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-32cbeb",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-c79ecc",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-531ac0"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0051",
+      "category": "ordinal_reference",
+      "instruction": "抓住第三个杯子",
+      "scene_objects": [
+        {
+          "id": "obj-8d0615",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-b310b3",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-2"
+          }
+        },
+        {
+          "id": "obj-b13858",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-3"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-8d0615",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-b310b3",
+        "obj-b13858"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup",
+        "cup"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0052",
+      "category": "ordinal_reference",
+      "instruction": "抓住中间那个杯子",
+      "scene_objects": [
+        {
+          "id": "obj-c98908",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-8a80be",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-2"
+          }
+        },
+        {
+          "id": "obj-28a204",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-3"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-8a80be",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0053",
+      "category": "ordinal_reference",
+      "instruction": "抓住最后一个盒子",
+      "scene_objects": [
+        {
+          "id": "obj-442a0c",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        },
+        {
+          "id": "obj-6cdecd",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-2"
+          }
+        },
+        {
+          "id": "obj-91cbc9",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-3"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-442a0c",
+      "proposed_theme_mention": "盒子",
+      "proposed_destination_entity_id": "obj-6cdecd",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-91cbc9"
+      ],
+      "proposed_obstacle_mentions": [
+        "box"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0054",
+      "category": "ordinal_reference",
+      "instruction": "把第一个方块放到第二个方块上面",
+      "scene_objects": [
+        {
+          "id": "obj-5c7165",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-1"
+          }
+        },
+        {
+          "id": "obj-7008d4",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-2"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-5c7165",
+        "obj-7008d4"
+      ],
+      "proposed_obstacle_mentions": [
+        "block",
+        "block"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "support_surface",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0055",
+      "category": "ordinal_reference",
+      "instruction": "抓住右数第二个瓶子",
+      "scene_objects": [
+        {
+          "id": "obj-86d869",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "glass",
+            "_perception_object_id": "bottle-1"
+          }
+        },
+        {
+          "id": "obj-2724d6",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "glass",
+            "_perception_object_id": "bottle-2"
+          }
+        },
+        {
+          "id": "obj-260901",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "glass",
+            "_perception_object_id": "bottle-3"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-2724d6",
+        "obj-86d869",
+        "obj-260901"
+      ],
+      "proposed_obstacle_mentions": [
+        "bottle",
+        "bottle",
+        "bottle"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0056",
+      "category": "ordinal_reference",
+      "instruction": "抓住中间的方块",
+      "scene_objects": [
+        {
+          "id": "obj-aa4026",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-l"
+          }
+        },
+        {
+          "id": "obj-ad55f4",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-m"
+          }
+        },
+        {
+          "id": "obj-d7c986",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-r"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-ad55f4",
+      "proposed_theme_mention": "方块",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0057",
+      "category": "ordinal_reference",
+      "instruction": "抓住首个遇到的瓶子",
+      "scene_objects": [
+        {
+          "id": "obj-fbeb60",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "glass",
+            "_perception_object_id": "bottle-near"
+          }
+        },
+        {
+          "id": "obj-93696a",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "green",
+            "material": "glass",
+            "_perception_object_id": "bottle-far"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-93696a",
+      "proposed_theme_mention": "瓶子",
+      "proposed_destination_entity_id": "obj-fbeb60",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0058",
+      "category": "ordinal_reference",
+      "instruction": "把最后面的那个盒子递给我",
+      "scene_objects": [
+        {
+          "id": "obj-198854",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-front"
+          }
+        },
+        {
+          "id": "obj-6ac39f",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-back"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-6ac39f",
+      "proposed_theme_mention": "盒子",
+      "proposed_destination_entity_id": "obj-198854",
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "recipient_pose_or_handover_zone"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0059",
+      "category": "negation",
+      "instruction": "把盒子拿过来，别碰玻璃杯",
+      "scene_objects": [
+        {
+          "id": "obj-7eb862",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        },
+        {
+          "id": "obj-41da5b",
+          "name": "glass_cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "transparent",
+            "material": "glass",
+            "_perception_object_id": "cup-glass"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [
+        "obj-41da5b",
+        "obj-7eb862",
+        "obj-41da5b",
+        "obj-41da5b"
+      ],
+      "proposed_obstacle_mentions": [
+        "glass_cup",
+        "box",
+        "glass_cup",
+        "glass_cup"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0060",
+      "category": "negation",
+      "instruction": "不要碰玻璃杯，把盒子拿过来",
+      "scene_objects": [
+        {
+          "id": "obj-b74c24",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        },
+        {
+          "id": "obj-c8f68b",
+          "name": "glass_cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "transparent",
+            "material": "glass",
+            "_perception_object_id": "cup-glass"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [
+        "obj-c8f68b",
+        "obj-b74c24",
+        "obj-b74c24",
+        "obj-b74c24"
+      ],
+      "proposed_obstacle_mentions": [
+        "glass_cup",
+        "box",
+        "box",
+        "box"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0061",
+      "category": "negation",
+      "instruction": "千万别碰玻璃杯，去拿盒子",
+      "scene_objects": [
+        {
+          "id": "obj-938f55",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        },
+        {
+          "id": "obj-25245d",
+          "name": "glass_cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "transparent",
+            "material": "glass",
+            "_perception_object_id": "cup-glass"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-25245d",
+        "obj-938f55",
+        "obj-938f55",
+        "obj-938f55"
+      ],
+      "proposed_obstacle_mentions": [
+        "glass_cup",
+        "box",
+        "box",
+        "box"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0062",
+      "category": "negation",
+      "instruction": "绕开玻璃杯，把盒子取过来",
+      "scene_objects": [
+        {
+          "id": "obj-c95f2e",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        },
+        {
+          "id": "obj-3ab3f8",
+          "name": "glass_cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "transparent",
+            "material": "glass",
+            "_perception_object_id": "cup-glass"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [
+        "obj-3ab3f8",
+        "obj-c95f2e",
+        "obj-c95f2e",
+        "obj-c95f2e"
+      ],
+      "proposed_obstacle_mentions": [
+        "glass_cup",
+        "box",
+        "box",
+        "box"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0063",
+      "category": "negation",
+      "instruction": "避开玻璃杯抓盒子",
+      "scene_objects": [
+        {
+          "id": "obj-85a9ca",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        },
+        {
+          "id": "obj-28faa3",
+          "name": "glass_cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "transparent",
+            "material": "glass",
+            "_perception_object_id": "cup-glass"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-28faa3",
+        "obj-85a9ca",
+        "obj-85a9ca",
+        "obj-85a9ca"
+      ],
+      "proposed_obstacle_mentions": [
+        "glass_cup",
+        "box",
+        "box",
+        "box"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0064",
+      "category": "negation",
+      "instruction": "不要碰那个红色的，把蓝色的拿过来",
+      "scene_objects": [
+        {
+          "id": "obj-3a860d",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-red"
+          }
+        },
+        {
+          "id": "obj-85d1d0",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-85d1d0",
+      "proposed_theme_mention": "block",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [
+        "obj-3a860d"
+      ],
+      "proposed_obstacle_mentions": [
+        "block",
+        "那个红色的,把蓝",
+        "那个红色的,"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone"
+      ],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0065",
+      "category": "negation",
+      "instruction": "别碰红色的方块，拿蓝色的",
+      "scene_objects": [
+        {
+          "id": "obj-6f7b3a",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-red"
+          }
+        },
+        {
+          "id": "obj-cbc7c7",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-cbc7c7",
+      "proposed_theme_mention": "方块",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-6f7b3a",
+        "obj-6f7b3a"
+      ],
+      "proposed_obstacle_mentions": [
+        "block",
+        "block"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0066",
+      "category": "negation",
+      "instruction": "禁止接触红色方块，只拿蓝色的",
+      "scene_objects": [
+        {
+          "id": "obj-210956",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-red"
+          }
+        },
+        {
+          "id": "obj-278cfb",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-278cfb",
+      "proposed_theme_mention": "方块",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-210956",
+        "obj-210956"
+      ],
+      "proposed_obstacle_mentions": [
+        "block",
+        "block"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0067",
+      "category": "negation",
+      "instruction": "抓住杯子，但我不想让你碰桌子",
+      "scene_objects": [
+        {
+          "id": "obj-493e06",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-7e36c6",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-493e06",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-7e36c6",
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [
+        "obj-7e36c6",
+        "obj-7e36c6"
+      ],
+      "proposed_obstacle_mentions": [
+        "table",
+        "table"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0068",
+      "category": "negation",
+      "instruction": "把杯子拿过来，但不要碰桌子",
+      "scene_objects": [
+        {
+          "id": "obj-2e681e",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-72db58",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-2e681e",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-72db58",
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [
+        "obj-72db58",
+        "obj-72db58"
+      ],
+      "proposed_obstacle_mentions": [
+        "table",
+        "table"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0069",
+      "category": "negation",
+      "instruction": "移动时避开桌子抓杯子",
+      "scene_objects": [
+        {
+          "id": "obj-75dc9d",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-69793a",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-75dc9d",
+        "obj-75dc9d",
+        "obj-69793a"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup",
+        "cup",
+        "table"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0070",
+      "category": "negation",
+      "instruction": "抓住杯子，禁止触碰桌子",
+      "scene_objects": [
+        {
+          "id": "obj-020887",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-7f513b",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-020887",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-7f513b",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-7f513b"
+      ],
+      "proposed_obstacle_mentions": [
+        "table"
+      ],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0071",
+      "category": "if_else",
+      "instruction": "如果看到红色药瓶就先拿它，否则拿蓝色盒子",
+      "scene_objects": [
+        {
+          "id": "obj-b78121",
+          "name": "medicine_bottle",
+          "label": "medicine_bottle",
+          "specific_class": "medicine_bottle",
+          "attributes": {
+            "color": "red",
+            "material": "plastic",
+            "_perception_object_id": "bottle-red"
+          }
+        },
+        {
+          "id": "obj-6763b7",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "blue",
+            "material": "cardboard",
+            "_perception_object_id": "box-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-6763b7",
+      "proposed_theme_mention": "蓝色盒",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0072",
+      "category": "if_else",
+      "instruction": "如果杯子在桌子上就抓取，否则不抓",
+      "scene_objects": [
+        {
+          "id": "obj-270b97",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-f5559b",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-270b97",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-f5559b",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0073",
+      "category": "if_else",
+      "instruction": "如果看到红色药瓶就抓取",
+      "scene_objects": [
+        {
+          "id": "obj-8699c1",
+          "name": "medicine_bottle",
+          "label": "medicine_bottle",
+          "specific_class": "medicine_bottle",
+          "attributes": {
+            "color": "red",
+            "material": "plastic",
+            "_perception_object_id": "bottle-red"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-8699c1",
+      "proposed_theme_mention": "红色药瓶",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0074",
+      "category": "if_else",
+      "instruction": "看到红色方块就抓，要不就抓蓝色的",
+      "scene_objects": [
+        {
+          "id": "obj-fdb9b9",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-red"
+          }
+        },
+        {
+          "id": "obj-a7c753",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-a7c753",
+      "proposed_theme_mention": "方块",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0075",
+      "category": "if_else",
+      "instruction": "如果夹爪为空就抓杯子",
+      "scene_objects": [
+        {
+          "id": "obj-4e8a2a",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-4e8a2a",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0076",
+      "category": "if_else",
+      "instruction": "只有杯子可见时才抓取",
+      "scene_objects": [
+        {
+          "id": "obj-1c3449",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-1c3449",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0077",
+      "category": "if_else",
+      "instruction": "如果红色药瓶可见就递给我，否则递蓝色盒子",
+      "scene_objects": [
+        {
+          "id": "obj-0f824a",
+          "name": "medicine_bottle",
+          "label": "medicine_bottle",
+          "specific_class": "medicine_bottle",
+          "attributes": {
+            "color": "red",
+            "material": "plastic",
+            "_perception_object_id": "bottle-red"
+          }
+        },
+        {
+          "id": "obj-152b1a",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "blue",
+            "material": "cardboard",
+            "_perception_object_id": "box-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-152b1a",
+      "proposed_theme_mention": "蓝色盒",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "recipient_pose_or_handover_zone"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0078",
+      "category": "if_else",
+      "instruction": "如果设备已经归位就抓取零件",
+      "scene_objects": [
+        {
+          "id": "obj-a4d5bd",
+          "name": "metal_part",
+          "label": "metal",
+          "specific_class": "metal",
+          "attributes": {
+            "color": "silver",
+            "material": "metal",
+            "_perception_object_id": "metal-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0079",
+      "category": "if_else",
+      "instruction": "如果目标在移动就不要抓，否则抓取",
+      "scene_objects": [
+        {
+          "id": "obj-60fe05",
+          "name": "ball",
+          "label": "ball",
+          "specific_class": "ball",
+          "attributes": {
+            "color": "red",
+            "material": "rubber",
+            "_perception_object_id": "ball-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [
+        ",否则抓取"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0080",
+      "category": "if_else",
+      "instruction": "如果前面没有障碍就移动到目标",
+      "scene_objects": [
+        {
+          "id": "obj-8d843b",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0081",
+      "category": "unless",
+      "instruction": "除非夹爪是空的，否则不要抓取",
+      "scene_objects": [
+        {
+          "id": "obj-a67783",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [
+        "取"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0082",
+      "category": "unless",
+      "instruction": "除非夹爪已抓取，否则继续尝试",
+      "scene_objects": [
+        {
+          "id": "obj-dbad59",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0083",
+      "category": "unless",
+      "instruction": "除非设备已归位，否则不能移动",
+      "scene_objects": [
+        {
+          "id": "obj-b008fe",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0084",
+      "category": "unless",
+      "instruction": "除非确认安全，否则不要执行",
+      "scene_objects": [
+        {
+          "id": "obj-fc09f0",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [
+        "执行"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0085",
+      "category": "unless",
+      "instruction": "除非看到目标，要不然不要动",
+      "scene_objects": [
+        {
+          "id": "obj-474933",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [
+        "动"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0086",
+      "category": "unless",
+      "instruction": "除非已经定位，不然先搜索",
+      "scene_objects": [
+        {
+          "id": "obj-823766",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0087",
+      "category": "unless",
+      "instruction": "除非夹爪为空，否则不要抓任何东西",
+      "scene_objects": [
+        {
+          "id": "obj-59999b",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [
+        "任何东西"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0088",
+      "category": "unless",
+      "instruction": "除非目标静止，否则等待",
+      "scene_objects": [
+        {
+          "id": "obj-02f9d2",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0089",
+      "category": "unless",
+      "instruction": "除非工作区域已清理，否则先清理",
+      "scene_objects": [
+        {
+          "id": "obj-c3dcd3",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0090",
+      "category": "unless",
+      "instruction": "除非收到确认信号，否则保持等待",
+      "scene_objects": [
+        {
+          "id": "obj-38897c",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0091",
+      "category": "sequence",
+      "instruction": "先抓住杯子再放到桌子上",
+      "scene_objects": [
+        {
+          "id": "obj-dcb28a",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-72d4e9",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-dcb28a",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-72d4e9",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0092",
+      "category": "sequence",
+      "instruction": "抓住杯子然后放到桌子上",
+      "scene_objects": [
+        {
+          "id": "obj-aab7ce",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-09454b",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-aab7ce",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": "obj-09454b",
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0093",
+      "category": "sequence",
+      "instruction": "先确认位置再抓取",
+      "scene_objects": [
+        {
+          "id": "obj-1e0a61",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-8685ff",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0094",
+      "category": "sequence",
+      "instruction": "拿起杯子然后递给我",
+      "scene_objects": [
+        {
+          "id": "obj-4c0756",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-a19b84",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-4c0756",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "recipient_pose_or_handover_zone"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0095",
+      "category": "sequence",
+      "instruction": "打开夹爪以后再抓取",
+      "scene_objects": [
+        {
+          "id": "obj-627630",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-3205a1",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0096",
+      "category": "sequence",
+      "instruction": "先检查状态然后执行任务",
+      "scene_objects": [
+        {
+          "id": "obj-266fcc",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-9d1d37",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0097",
+      "category": "sequence",
+      "instruction": "等待目标稳定后再抓取",
+      "scene_objects": [
+        {
+          "id": "obj-63eed7",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-d43def",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0098",
+      "category": "sequence",
+      "instruction": "抓住方块并堆叠到另一个上面",
+      "scene_objects": [
+        {
+          "id": "obj-8b6cbf",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-757115",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0099",
+      "category": "sequence",
+      "instruction": "先移动到安全高度再接近目标",
+      "scene_objects": [
+        {
+          "id": "obj-e59a5f",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-345e89",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0100",
+      "category": "sequence",
+      "instruction": "把杯子拿起来以后放到托盘上",
+      "scene_objects": [
+        {
+          "id": "obj-f82737",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-45cbb3",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-f82737",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "support_surface"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0101",
+      "category": "numeric_constraints",
+      "instruction": "用5N抓住杯子",
+      "scene_objects": [
+        {
+          "id": "obj-c0f0e5",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "glass",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-c0f0e5",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0102",
+      "category": "numeric_constraints",
+      "instruction": "以不超过3N的力度抓取玻璃杯",
+      "scene_objects": [
+        {
+          "id": "obj-6b74d7",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "glass",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-6b74d7",
+      "proposed_theme_mention": "玻璃杯",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0103",
+      "category": "numeric_constraints",
+      "instruction": "至少用2N的力量抓住物体",
+      "scene_objects": [
+        {
+          "id": "obj-da747b",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "glass",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0104",
+      "category": "numeric_constraints",
+      "instruction": "用0.15m/s的速度移动杯子",
+      "scene_objects": [
+        {
+          "id": "obj-eb8ae1",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "glass",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-eb8ae1",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0105",
+      "category": "numeric_constraints",
+      "instruction": "以不超过0.2m/s的速度搬运",
+      "scene_objects": [
+        {
+          "id": "obj-977061",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "glass",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0106",
+      "category": "numeric_constraints",
+      "instruction": "用3N到8N的力量抓取",
+      "scene_objects": [
+        {
+          "id": "obj-6dd3d5",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "glass",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0107",
+      "category": "numeric_constraints",
+      "instruction": "轻轻地抓住杯子",
+      "scene_objects": [
+        {
+          "id": "obj-0003c5",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "glass",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-0003c5",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0108",
+      "category": "numeric_constraints",
+      "instruction": "慢慢移动到目标",
+      "scene_objects": [
+        {
+          "id": "obj-200ac9",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "glass",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0109",
+      "category": "numeric_constraints",
+      "instruction": "快速抓取物体",
+      "scene_objects": [
+        {
+          "id": "obj-5737aa",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "glass",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0110",
+      "category": "numeric_constraints",
+      "instruction": "以最大力度抓取",
+      "scene_objects": [
+        {
+          "id": "obj-4e88f5",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "glass",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0111",
+      "category": "robot_state",
+      "instruction": "先确认夹爪是空的，然后抓住杯子",
+      "scene_objects": [
+        {
+          "id": "obj-02e723",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-02e723",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0112",
+      "category": "robot_state",
+      "instruction": "确认夹爪已张开再抓取",
+      "scene_objects": [
+        {
+          "id": "obj-501070",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0113",
+      "category": "robot_state",
+      "instruction": "只有归位后才能执行任务",
+      "scene_objects": [
+        {
+          "id": "obj-72177f",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0114",
+      "category": "robot_state",
+      "instruction": "检查夹爪是否已经抓住物体",
+      "scene_objects": [
+        {
+          "id": "obj-bc0401",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0115",
+      "category": "robot_state",
+      "instruction": "确认目标静止后再抓取",
+      "scene_objects": [
+        {
+          "id": "obj-35eff3",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0116",
+      "category": "robot_state",
+      "instruction": "等目标停止移动再抓",
+      "scene_objects": [
+        {
+          "id": "obj-f2cc8a",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0117",
+      "category": "robot_state",
+      "instruction": "确认能力可用后执行",
+      "scene_objects": [
+        {
+          "id": "obj-53428e",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0118",
+      "category": "robot_state",
+      "instruction": "检查工作空间是否安全",
+      "scene_objects": [
+        {
+          "id": "obj-c48666",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0119",
+      "category": "robot_state",
+      "instruction": "确认夹爪为空并且已归位",
+      "scene_objects": [
+        {
+          "id": "obj-17f133",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0120",
+      "category": "robot_state",
+      "instruction": "等所有条件满足后再执行",
+      "scene_objects": [
+        {
+          "id": "obj-1fab28",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0121",
+      "category": "ambiguity",
+      "instruction": "抓住杯子",
+      "scene_objects": [
+        {
+          "id": "obj-2725aa",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-379502",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-2"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-2725aa",
+        "obj-379502"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup",
+        "cup"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0122",
+      "category": "ambiguity",
+      "instruction": "抓住那个杯子",
+      "scene_objects": [
+        {
+          "id": "obj-fb14dc",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-43b053",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-2"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-fb14dc",
+        "obj-43b053"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup",
+        "cup"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0123",
+      "category": "ambiguity",
+      "instruction": "把盒子拿过来",
+      "scene_objects": [
+        {
+          "id": "obj-18113e",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        },
+        {
+          "id": "obj-058133",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-2"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [
+        "obj-18113e",
+        "obj-058133"
+      ],
+      "proposed_obstacle_mentions": [
+        "box",
+        "box"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0124",
+      "category": "ambiguity",
+      "instruction": "抓住那个方块",
+      "scene_objects": [
+        {
+          "id": "obj-dee72e",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-1"
+          }
+        },
+        {
+          "id": "obj-8cba3c",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-2"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-dee72e",
+        "obj-8cba3c"
+      ],
+      "proposed_obstacle_mentions": [
+        "block",
+        "block"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0125",
+      "category": "ambiguity",
+      "instruction": "抓住那个东西",
+      "scene_objects": [
+        {
+          "id": "obj-77b4f4",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-c561d0",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0126",
+      "category": "ambiguity",
+      "instruction": "把这个拿过来",
+      "scene_objects": [
+        {
+          "id": "obj-bf249d",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-93a35d",
+          "name": "box",
+          "label": "box",
+          "specific_class": "box",
+          "attributes": {
+            "color": "brown",
+            "material": "cardboard",
+            "_perception_object_id": "box-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0127",
+      "category": "ambiguity",
+      "instruction": "抓住中间那个",
+      "scene_objects": [
+        {
+          "id": "obj-6c62ff",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-86b514",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-2"
+          }
+        },
+        {
+          "id": "obj-8aeeb4",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-3"
+          }
+        },
+        {
+          "id": "obj-e454ea",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-4"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0128",
+      "category": "ambiguity",
+      "instruction": "把那个拿给我",
+      "scene_objects": [
+        {
+          "id": "obj-2df309",
+          "name": "bottle",
+          "label": "bottle",
+          "specific_class": "bottle",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "bottle-1"
+          }
+        },
+        {
+          "id": "obj-1b14f7",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "recipient_pose_or_handover_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0129",
+      "category": "ambiguity",
+      "instruction": "抓住那边的那个",
+      "scene_objects": [
+        {
+          "id": "obj-f7e437",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "red",
+            "material": "wood",
+            "_perception_object_id": "block-1"
+          }
+        },
+        {
+          "id": "obj-55f7bc",
+          "name": "block",
+          "label": "cube",
+          "specific_class": "block",
+          "attributes": {
+            "color": "blue",
+            "material": "wood",
+            "_perception_object_id": "block-2"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0130",
+      "category": "ambiguity",
+      "instruction": "随便拿一个杯子过来",
+      "scene_objects": [
+        {
+          "id": "obj-b41d01",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "red",
+            "material": "plastic",
+            "_perception_object_id": "cup-red"
+          }
+        },
+        {
+          "id": "obj-5eeef0",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "blue",
+            "material": "plastic",
+            "_perception_object_id": "cup-blue"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-b41d01",
+        "obj-5eeef0"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup",
+        "cup"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0131",
+      "category": "missing_role",
+      "instruction": "把杯子放到上面",
+      "scene_objects": [
+        {
+          "id": "obj-4c499f",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-0ea449",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-4c499f",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "support_surface"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0132",
+      "category": "missing_role",
+      "instruction": "把东西递给他",
+      "scene_objects": [
+        {
+          "id": "obj-8074bf",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "recipient_pose_or_handover_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0133",
+      "category": "missing_role",
+      "instruction": "放到桌子上",
+      "scene_objects": [
+        {
+          "id": "obj-c18aa5",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "support_surface",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0134",
+      "category": "missing_role",
+      "instruction": "抓住它",
+      "scene_objects": [
+        {
+          "id": "obj-9ea3d8",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0135",
+      "category": "missing_role",
+      "instruction": "移动一下",
+      "scene_objects": [
+        {
+          "id": "obj-2dc656",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0136",
+      "category": "missing_role",
+      "instruction": "把它放好",
+      "scene_objects": [
+        {
+          "id": "obj-841f23",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-c1a859",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0137",
+      "category": "missing_role",
+      "instruction": "拿过来",
+      "scene_objects": [
+        {
+          "id": "obj-eceac4",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "delivery_pose_or_fetch_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0138",
+      "category": "missing_role",
+      "instruction": "递给用户",
+      "scene_objects": [
+        {
+          "id": "obj-ca0974",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "recipient_pose_or_handover_zone",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0139",
+      "category": "missing_role",
+      "instruction": "搬到那边去",
+      "scene_objects": [
+        {
+          "id": "obj-68a212",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-437a19",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0140",
+      "category": "missing_role",
+      "instruction": "帮我放一下",
+      "scene_objects": [
+        {
+          "id": "obj-af234b",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-85cd24",
+          "name": "table",
+          "label": "table",
+          "specific_class": "table",
+          "attributes": {
+            "color": "brown",
+            "material": "wood",
+            "_perception_object_id": "table-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": "user",
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0141",
+      "category": "conflicting_input",
+      "instruction": "用100N的力量抓住玻璃杯",
+      "scene_objects": [
+        {
+          "id": "obj-81d072",
+          "name": "glass_cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "transparent",
+            "material": "glass",
+            "_perception_object_id": "cup-glass"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-81d072",
+      "proposed_theme_mention": "玻璃杯",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0142",
+      "category": "conflicting_input",
+      "instruction": "用50N抓住精密仪器",
+      "scene_objects": [
+        {
+          "id": "obj-70af9f",
+          "name": "device",
+          "label": "device",
+          "specific_class": "device",
+          "attributes": {
+            "color": "gray",
+            "material": "metal",
+            "_perception_object_id": "device-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-70af9f",
+      "proposed_theme_mention": "仪器",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "BLOCKED",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0143",
+      "category": "conflicting_input",
+      "instruction": "把杯子放到杯子上",
+      "scene_objects": [
+        {
+          "id": "obj-e93329",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-492654",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-2"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-e93329",
+        "obj-492654"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup",
+        "cup"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "support_surface",
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0144",
+      "category": "conflicting_input",
+      "instruction": "抓住杯子并避开杯子",
+      "scene_objects": [
+        {
+          "id": "obj-ed7065",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        },
+        {
+          "id": "obj-049f65",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-2"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [
+        "obj-ed7065",
+        "obj-049f65",
+        "obj-ed7065",
+        "obj-ed7065"
+      ],
+      "proposed_obstacle_mentions": [
+        "cup",
+        "cup",
+        "cup",
+        "cup"
+      ],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0145",
+      "category": "conflicting_input",
+      "instruction": "以0.5m/s的速度抓取",
+      "scene_objects": [
+        {
+          "id": "obj-8097a2",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0146",
+      "category": "conflicting_input",
+      "instruction": "把重物放到精密仪器旁边",
+      "scene_objects": [
+        {
+          "id": "obj-45fb3f",
+          "name": "weight",
+          "label": null,
+          "specific_class": null,
+          "attributes": {
+            "color": "black",
+            "material": "metal",
+            "_perception_object_id": "weight-1"
+          }
+        },
+        {
+          "id": "obj-f59b14",
+          "name": "device",
+          "label": "device",
+          "specific_class": "device",
+          "attributes": {
+            "color": "gray",
+            "material": "metal",
+            "_perception_object_id": "device-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-f59b14",
+      "proposed_theme_mention": "仪器",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [
+        "support_surface"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0147",
+      "category": "conflicting_input",
+      "instruction": "抓住不存在的物体",
+      "scene_objects": [],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0148",
+      "category": "conflicting_input",
+      "instruction": "用-5N的力量抓取",
+      "scene_objects": [
+        {
+          "id": "obj-8c804b",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0149",
+      "category": "conflicting_input",
+      "instruction": "用NaN牛顿抓取",
+      "scene_objects": [
+        {
+          "id": "obj-8a3e8f",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": null,
+      "proposed_theme_mention": null,
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": true,
+      "unmet_roles": [
+        "theme"
+      ],
+      "pipeline_plan_status": "NEEDS_CLARIFICATION",
+      "pipeline_execution_allowed": false,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    },
+    {
+      "case_id": "HV0150",
+      "category": "conflicting_input",
+      "instruction": "同时抓住和释放同一个杯子",
+      "scene_objects": [
+        {
+          "id": "obj-c1af4c",
+          "name": "cup",
+          "label": "cup",
+          "specific_class": "cup",
+          "attributes": {
+            "color": "white",
+            "material": "plastic",
+            "_perception_object_id": "cup-1"
+          }
+        }
+      ],
+      "proposed_theme_entity_id": "obj-c1af4c",
+      "proposed_theme_mention": "杯子",
+      "proposed_destination_entity_id": null,
+      "proposed_recipient_entity_id": null,
+      "proposed_obstacle_entity_ids": [],
+      "proposed_obstacle_mentions": [],
+      "has_ambiguity": false,
+      "unmet_roles": [],
+      "pipeline_plan_status": "READY",
+      "pipeline_execution_allowed": true,
+      "reviewer_status": "UNREVIEWED",
+      "golden_review_required": true
+    }
+  ]
+}

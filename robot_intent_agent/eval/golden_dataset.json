@@ -1,0 +1,181 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "description": "Golden test dataset for intent understanding accuracy evaluation",
+    "total_cases": 28
+  },
+  "cases": [
+    {
+      "case_id": "G001",
+      "instruction": "把杯子拿过来",
+      "objects": [{"object_id": "obj-001", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.10, "depth": 0.07}}, "appearance": {"color": "white", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "FETCH", "theme_entity_id": "obj-001", "theme_category": "cup", "theme_material": "plastic", "missing_roles": ["delivery_pose_or_fetch_zone"], "user_constraint_count": 0}
+    },
+    {
+      "case_id": "G002",
+      "instruction": "用5N力量把盒子放到桌子上",
+      "objects": [{"object_id": "obj-002", "category_candidates": [{"name": "box", "score": 0.91}], "pose": {"position": {"x": 0.3, "y": 0.05, "z": 0.05}}, "geometry": {"size": {"width": 0.10, "height": 0.08, "depth": 0.10}}, "appearance": {"color": "brown", "material": "cardboard"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.95, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "PLACE", "theme_entity_id": "obj-002", "theme_category": "box", "user_constraint_count": 2, "force_n": 5.0, "velocity_ms": 0.2, "missing_roles": ["support_surface"]}
+    },
+    {
+      "case_id": "G003",
+      "instruction": "快点！用50N力量把玻璃杯抓过来！",
+      "objects": [{"object_id": "obj-003", "category_candidates": [{"name": "cup", "score": 0.91}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.12, "depth": 0.07}}, "appearance": {"color": "transparent", "material": "glass"}, "affordances": ["graspable", "fragile", "movable"], "tracking": {"state": "stationary", "confidence": 0.98, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "FETCH", "theme_entity_id": "obj-003", "theme_material": "glass", "force_n": 50.0, "force_op": "exact", "manner": "fast", "missing_roles": ["delivery_pose_or_fetch_zone"], "resolved_force_le": 2.0}
+    },
+    {
+      "case_id": "G004",
+      "instruction": "用不超过2N的力量抓住杯子",
+      "objects": [{"object_id": "obj-004", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.06, "height": 0.12, "depth": 0.06}}, "appearance": {"color": "transparent", "material": "glass"}, "affordances": ["graspable", "movable", "fragile"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "GRASP", "theme_entity_id": "obj-004", "force_n": 2.0, "force_op": "max", "user_constraint_count": 1}
+    },
+    {
+      "case_id": "G005",
+      "instruction": "把红色药瓶递给我",
+      "objects": [{"object_id": "obj-005", "category_candidates": [{"name": "bottle", "score": 0.88}], "pose": {"position": {"x": 0.2, "y": 0.08, "z": 0.04}}, "geometry": {"size": {"width": 0.04, "height": 0.09, "depth": 0.04}}, "appearance": {"color": "red", "material": "plastic"}, "affordances": ["graspable", "fragile", "movable"], "tracking": {"state": "stationary", "confidence": 0.97, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "HANDOVER", "theme_entity_id": "obj-005", "theme_material": "plastic", "recipient_identified": true, "recipient_entity_id": "user", "missing_roles": ["recipient_pose_or_handover_zone"], "user_constraint_count": 0}
+    },
+    {
+      "case_id": "G006",
+      "instruction": "用50N力量抓住玻璃杯",
+      "objects": [{"object_id": "obj-006", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.12, "depth": 0.07}}, "appearance": {"color": "transparent", "material": "glass"}, "affordances": ["graspable", "fragile", "movable"], "tracking": {"state": "stationary", "confidence": 0.98, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "GRASP", "theme_entity_id": "obj-006", "theme_material": "glass", "force_n": 50.0, "force_op": "exact", "resolved_force_le": 2.0, "plan_status": "READY_WITH_SAFE_SUBSTITUTION"}
+    },
+    {
+      "case_id": "G007",
+      "instruction": "抓住正在移动的杯子",
+      "objects": [{"object_id": "obj-007", "category_candidates": [{"name": "cup", "score": 0.91}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.06, "height": 0.12, "depth": 0.06}}, "appearance": {"color": "transparent", "material": "glass"}, "affordances": ["graspable", "movable", "fragile"], "tracking": {"state": "moving", "confidence": 0.96, "velocity": {"x": 0.15, "y": 0.02, "z": 0.0}, "velocity_confidence": 0.92}}],
+      "expected": {"action": "DYNAMIC_GRASP", "theme_entity_id": "obj-007", "motion_state": "moving", "requires_stability_gate": true}
+    },
+    {
+      "case_id": "G008",
+      "instruction": "用5N力量抓住杯子",
+      "objects": [{"object_id": "obj-008", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.10, "depth": 0.07}}, "appearance": {"color": "white", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "GRASP", "theme_entity_id": "obj-008", "theme_material": "plastic", "force_n": 5.0, "force_op": "exact", "user_constraint_count": 1}
+    },
+    {
+      "case_id": "G009",
+      "instruction": "轻一点，把玻璃杯拿过来",
+      "objects": [{"object_id": "obj-009", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.12, "depth": 0.07}}, "appearance": {"color": "transparent", "material": "glass"}, "affordances": ["graspable", "fragile", "movable"], "tracking": {"state": "stationary", "confidence": 0.98, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "FETCH", "theme_entity_id": "obj-009", "manner": "gentle", "missing_roles": ["delivery_pose_or_fetch_zone"]}
+    },
+    {
+      "case_id": "G010",
+      "instruction": "抓住杯子",
+      "objects": [{"object_id": "obj-010", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.10, "depth": 0.07}}, "appearance": {"color": "white", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "GRASP", "theme_entity_id": "obj-010", "user_constraint_count": 0}
+    },
+    {
+      "case_id": "N001",
+      "instruction": "把杯子拿过来",
+      "objects": [{"object_id": "obj-n01", "category_candidates": [{"name": "wooden_block", "score": 0.9}], "pose": {"position": {"x": 0.3, "y": 0.1, "z": 0.05}}, "geometry": {"size": {"width": 0.05, "height": 0.05, "depth": 0.05}}, "appearance": {"color": "brown", "material": "wood"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.9, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"theme_not_in_scene": true, "execution_allowed": false}
+    },
+    {
+      "case_id": "N002",
+      "instruction": "把杯子拿过来",
+      "objects": [
+        {"object_id": "obj-n02a", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.20, "z": 0.075}}, "geometry": {"size": {"width": 0.06, "height": 0.12, "depth": 0.06}}, "appearance": {"color": "transparent", "material": "glass"}, "affordances": ["graspable", "movable", "fragile"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}},
+        {"object_id": "obj-n02b", "category_candidates": [{"name": "cup", "score": 0.91}], "pose": {"position": {"x": 0.35, "y": -0.20, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.10, "depth": 0.07}}, "appearance": {"color": "blue", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.95, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}
+      ],
+      "expected": {"multiple_candidates": true}
+    },
+    {
+      "case_id": "N003",
+      "instruction": "把杯子放到桌子上",
+      "objects": [{"object_id": "obj-n03", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.10, "depth": 0.07}}, "appearance": {"color": "white", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "PLACE", "support_surface_not_in_scene": true, "missing_roles": ["support_surface"]}
+    },
+    {
+      "case_id": "N004",
+      "instruction": "把红色玻璃杯拿过来",
+      "objects": [{"object_id": "obj-n04", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.12, "depth": 0.07}}, "appearance": {"color": "blue", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"color_mismatch": true}
+    },
+    {
+      "case_id": "C001",
+      "instruction": "用NaN力量抓住杯子",
+      "objects": [{"object_id": "obj-c01", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.10, "depth": 0.07}}, "appearance": {"color": "white", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "GRASP", "theme_entity_id": "obj-c01", "no_nan_parsed": true}
+    },
+    {
+      "case_id": "C002",
+      "instruction": "用-5N力量抓住杯子",
+      "objects": [{"object_id": "obj-c02", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.10, "depth": 0.07}}, "appearance": {"color": "white", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "GRASP", "theme_entity_id": "obj-c02", "no_negative_force": true}
+    },
+    {
+      "case_id": "C003",
+      "instruction": "用1000N力量抓住杯子",
+      "objects": [{"object_id": "obj-c03", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.10, "depth": 0.07}}, "appearance": {"color": "white", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "GRASP", "theme_entity_id": "obj-c03", "force_parsed": 1000.0, "resolved_force_le_global_max": 10.0}
+    },
+    {
+      "case_id": "M001",
+      "instruction": "把红色药瓶递给我",
+      "objects": [{"object_id": "obj-m01", "category_candidates": [{"name": "medicine_bottle", "score": 0.88}], "pose": {"position": {"x": 0.15, "y": 0.05, "z": 0.03}}, "geometry": {"size": {"width": 0.03, "height": 0.08, "depth": 0.03}}, "appearance": {"color": "red", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.97, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "HANDOVER", "theme_entity_id": "obj-m01", "theme_specific_class": "medicine_bottle", "recipient_identified": true, "missing_roles": ["recipient_pose_or_handover_zone"], "support_surface": null}
+    },
+    {
+      "case_id": "M002",
+      "instruction": "把杯子拿过来",
+      "objects": [{"object_id": "obj-m02", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.10, "depth": 0.07}}, "appearance": {"color": "white", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "FETCH", "theme_entity_id": "obj-m02", "output_schema_valid": true}
+    },
+    {
+      "case_id": "M003",
+      "instruction": "抓住杯子",
+      "objects": [{"object_id": "obj-m03", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.35, "y": 0.12, "z": 0.075}}, "geometry": {"size": {"width": 0.07, "height": 0.10, "depth": 0.07}}, "appearance": {"color": "white", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.96, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "GRASP", "theme_entity_id": "obj-m03", "output_schema_valid": true}
+    },
+    {
+      "case_id": "M004",
+      "instruction": "把杯子放到桌子上",
+      "objects": [{"object_id": "obj-m04a", "category_candidates": [{"name": "cup", "score": 0.93}], "pose": {"position": {"x": 0.25, "y": 0.10, "z": 0.06}}, "geometry": {"size": {"width": 0.07, "height": 0.12, "depth": 0.07}}, "appearance": {"color": "white", "material": "ceramic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.95, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}},
+        {"object_id": "obj-m04b", "category_candidates": [{"name": "table", "score": 0.94}], "pose": {"position": {"x": 0.4, "y": 0.0, "z": 0.0}}, "geometry": {"size": {"width": 0.6, "height": 0.03, "depth": 0.4}}, "appearance": {"color": "brown", "material": "wood"}, "affordances": ["support_surface"], "tracking": {"state": "stationary", "confidence": 1.0, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "PLACE", "theme_entity_id": "obj-m04a", "support_surface_entity_id": "obj-m04b", "output_schema_valid": true}
+    },
+    {
+      "case_id": "E001",
+      "instruction": "",
+      "objects": [],
+      "expected": {"error_expected": true}
+    },
+    {
+      "case_id": "E002",
+      "instruction": "把杯子拿过来",
+      "objects": [],
+      "expected": {"empty_scene": true, "execution_allowed": false}
+    },
+    {
+      "case_id": "R001",
+      "instruction": "用5N力量把红色药瓶放到桌子上",
+      "objects": [{"object_id": "obj-r01", "category_candidates": [{"name": "medicine_bottle", "score": 0.88}], "pose": {"position": {"x": 0.15, "y": 0.05, "z": 0.03}}, "geometry": {"size": {"width": 0.03, "height": 0.08, "depth": 0.03}}, "appearance": {"color": "red", "material": "plastic"}, "affordances": ["graspable", "fragile", "movable"], "tracking": {"state": "stationary", "confidence": 0.97, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "PLACE", "theme_entity_id": "obj-r01", "theme_specific_class": "medicine_bottle", "force_n": 5.0, "missing_roles": ["support_surface"]}
+    },
+    {
+      "case_id": "R002",
+      "instruction": "用5N力量把红色药瓶递给我",
+      "objects": [{"object_id": "obj-r02", "category_candidates": [{"name": "medicine_bottle", "score": 0.88}], "pose": {"position": {"x": 0.15, "y": 0.05, "z": 0.03}}, "geometry": {"size": {"width": 0.03, "height": 0.08, "depth": 0.03}}, "appearance": {"color": "red", "material": "plastic"}, "affordances": ["graspable", "fragile", "movable"], "tracking": {"state": "stationary", "confidence": 0.97, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "HANDOVER", "theme_entity_id": "obj-r02", "theme_specific_class": "medicine_bottle", "force_n": 5.0, "force_op": "exact", "missing_roles": ["recipient_pose_or_handover_zone"]}
+    },
+    {
+      "case_id": "R003",
+      "instruction": "把红色药瓶拿过来",
+      "objects": [{"object_id": "obj-r03", "category_candidates": [{"name": "medicine_bottle", "score": 0.88}], "pose": {"position": {"x": 0.15, "y": 0.05, "z": 0.03}}, "geometry": {"size": {"width": 0.03, "height": 0.08, "depth": 0.03}}, "appearance": {"color": "red", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.97, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "FETCH", "theme_entity_id": "obj-r03", "theme_specific_class": "medicine_bottle", "missing_roles": ["delivery_pose_or_fetch_zone"]}
+    },
+    {
+      "case_id": "R004",
+      "instruction": "抓住红色药瓶",
+      "objects": [{"object_id": "obj-r04", "category_candidates": [{"name": "medicine_bottle", "score": 0.88}], "pose": {"position": {"x": 0.15, "y": 0.05, "z": 0.03}}, "geometry": {"size": {"width": 0.03, "height": 0.08, "depth": 0.03}}, "appearance": {"color": "red", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.97, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "GRASP", "theme_entity_id": "obj-r04", "theme_specific_class": "medicine_bottle"}
+    },
+    {
+      "case_id": "R005",
+      "instruction": "用5N力量把蓝色药瓶放到桌子上",
+      "objects": [{"object_id": "obj-r05", "category_candidates": [{"name": "medicine_bottle", "score": 0.88}], "pose": {"position": {"x": 0.15, "y": 0.05, "z": 0.03}}, "geometry": {"size": {"width": 0.03, "height": 0.08, "depth": 0.03}}, "appearance": {"color": "red", "material": "plastic"}, "affordances": ["graspable", "movable"], "tracking": {"state": "stationary", "confidence": 0.97, "velocity": {"x": 0, "y": 0, "z": 0}, "velocity_confidence": 0}}],
+      "expected": {"action": "PLACE", "theme_entity_id": "obj-r05", "color_mismatch": true}
+    }
+  ]
+}

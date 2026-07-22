@@ -1,0 +1,200 @@
+{
+  "dataset": "blind_dataset.json",
+  "total": 110,
+  "passed": 82,
+  "failed": 28,
+  "severe_veto_count": 14,
+  "pass_rate": 0.7455,
+  "dimensions": {
+    "action_recognition": {
+      "name": "action_recognition",
+      "applicable": 2,
+      "correct": 0,
+      "accuracy": 0.0,
+      "critical_errors": 0,
+      "high_errors": 2
+    },
+    "role_extraction": {
+      "name": "role_extraction",
+      "applicable": 4,
+      "correct": 2,
+      "accuracy": 0.5,
+      "critical_errors": 1,
+      "high_errors": 1
+    },
+    "entity_grounding": {
+      "name": "entity_grounding",
+      "applicable": 9,
+      "correct": 0,
+      "accuracy": 0.0,
+      "critical_errors": 9,
+      "high_errors": 0
+    },
+    "multi_object_disambiguation": {
+      "name": "multi_object_disambiguation",
+      "applicable": 110,
+      "correct": 110,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0
+    },
+    "negation_constraint_retention": {
+      "name": "negation_constraint_retention",
+      "applicable": 15,
+      "correct": 0,
+      "accuracy": 0.0,
+      "critical_errors": 11,
+      "high_errors": 4
+    },
+    "conditional_sequential_understanding": {
+      "name": "conditional_sequential_understanding",
+      "applicable": 8,
+      "correct": 1,
+      "accuracy": 0.125,
+      "critical_errors": 0,
+      "high_errors": 7
+    },
+    "numeric_operator_unit": {
+      "name": "numeric_operator_unit",
+      "applicable": 110,
+      "correct": 110,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0
+    },
+    "perception_factual_fidelity": {
+      "name": "perception_factual_fidelity",
+      "applicable": 110,
+      "correct": 110,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0
+    },
+    "robot_capability_constraint": {
+      "name": "robot_capability_constraint",
+      "applicable": 110,
+      "correct": 110,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0
+    },
+    "bt_ir_cross_field_consistency": {
+      "name": "bt_ir_cross_field_consistency",
+      "applicable": 110,
+      "correct": 110,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0
+    },
+    "schema_validity": {
+      "name": "schema_validity",
+      "applicable": 110,
+      "correct": 110,
+      "accuracy": 1.0,
+      "critical_errors": 0,
+      "high_errors": 0
+    },
+    "dangerous_error_pass_through": {
+      "name": "dangerous_error_pass_through",
+      "applicable": 3,
+      "correct": 0,
+      "accuracy": 0.0,
+      "critical_errors": 3,
+      "high_errors": 0
+    }
+  },
+  "severity_counts": {
+    "CRITICAL": 24,
+    "HIGH": 14,
+    "MEDIUM": 3,
+    "LOW": 0,
+    "INFO": 0
+  },
+  "latency": {
+    "avg_ms": 2.6,
+    "p50_ms": 2.0,
+    "p95_ms": 4.0,
+    "p99_ms": 5.0
+  },
+  "by_category": {
+    "simple_action": {
+      "total": 10,
+      "passed": 9,
+      "critical": 1,
+      "high": 0
+    },
+    "disambiguation": {
+      "total": 10,
+      "passed": 7,
+      "critical": 3,
+      "high": 1
+    },
+    "spatial_descriptive": {
+      "total": 10,
+      "passed": 10,
+      "critical": 0,
+      "high": 0
+    },
+    "roles": {
+      "total": 10,
+      "passed": 6,
+      "critical": 3,
+      "high": 2
+    },
+    "negation_condition": {
+      "total": 10,
+      "passed": 4,
+      "critical": 7,
+      "high": 3
+    },
+    "numeric_constraints": {
+      "total": 10,
+      "passed": 9,
+      "critical": 0,
+      "high": 1
+    },
+    "robot_state": {
+      "total": 10,
+      "passed": 9,
+      "critical": 0,
+      "high": 1
+    },
+    "missing_target": {
+      "total": 10,
+      "passed": 9,
+      "critical": 1,
+      "high": 0
+    },
+    "conflict": {
+      "total": 10,
+      "passed": 7,
+      "critical": 4,
+      "high": 2
+    },
+    "invalid_input": {
+      "total": 10,
+      "passed": 7,
+      "critical": 0,
+      "high": 3
+    },
+    "mixed_colloquial": {
+      "total": 10,
+      "passed": 5,
+      "critical": 5,
+      "high": 1
+    }
+  },
+  "legacy": {
+    "action_accuracy": 0.9796,
+    "action_cases": 98,
+    "entity_grounding_accuracy": 0.9022,
+    "entity_cases": 92,
+    "force_parsing_accuracy": 1.0,
+    "force_cases": 8,
+    "role_detection_accuracy": 0.9783,
+    "role_cases": 92,
+    "schema_pass_rate": 1.0,
+    "overall_pass_rate": 0.7455,
+    "avg_elapsed_ms": 2.6
+  }
+}

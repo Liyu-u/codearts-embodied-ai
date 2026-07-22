@@ -61,6 +61,29 @@ from .robot_task_ir import (
     ExplainReport,
 )
 
+# ── IntentFrame v1 (Phase 1) ──
+from .intent_frame import (
+    ActionKind as IntentActionKind,
+    ProhibitionType,
+    ConditionPredicate,
+    ConstraintOperator as IntentConstraintOperator,
+    ConstraintUnit,
+    MannerKind,
+    UrgencyKind,
+    EntityDescriptors,
+    EntityReference as IntentEntityReference,
+    Prohibition as IntentProhibition,
+    Condition as IntentCondition,
+    UserConstraint as IntentUserConstraint,
+    SequenceStep,
+    IntentFrame,
+    EngineTrace,
+    intent_frame_json_schema,
+    make_prohibition_id,
+    make_condition_id,
+    make_constraint_id,
+)
+
 __all__ = [
     # Scene
     "SpatialPredicate", "Affordance",

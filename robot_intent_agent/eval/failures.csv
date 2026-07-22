@@ -1,0 +1,27 @@
+﻿run_id,case_id,category,instruction,severity,metric,expected,actual,detail,elapsed_ms
+eval-adeaebea8578,B07,simple_action,把蓝色积木放到托盘上,HIGH,role_extraction,obj-b07b,None,Support surface not identified,4.5
+eval-adeaebea8578,B09,simple_action,拿起那个东西,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,3.0
+eval-adeaebea8578,B19,disambiguation,把那个小的拿过来,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,3.5
+eval-adeaebea8578,B20,disambiguation,抓住玻璃杯，别碰塑料杯,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,3.5
+eval-adeaebea8578,B25,spatial_descriptive,抓住高处那个瓶子,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,2.0
+eval-adeaebea8578,B29,spatial_descriptive,抓住那个又大又红的方块,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,3.5
+eval-adeaebea8578,B33,roles,把盒子拿过来，别碰玻璃杯,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,3.5
+eval-adeaebea8578,B35,roles,把蓝色方块放到红色方块上面,CRITICAL,entity_grounding,obj-b35a,grounded to obj-b35b (scene=obj-3cb249),"Theme grounded to wrong object: expected obj-b35a, got obj-b35b",4.5
+eval-adeaebea8578,B37,roles,把这个拿给用户,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,2.5
+eval-adeaebea8578,B38,roles,把杯子放到支撑面上,HIGH,role_extraction,obj-b38b,None,Support surface not identified,4.5
+eval-adeaebea8578,B39,roles,抓住杯子，避开那个盒子,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,4.0
+eval-adeaebea8578,B41,negation_condition,把盒子拿过来，千万别碰玻璃杯,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,2.5
+eval-adeaebea8578,B44,negation_condition,不要碰那个红色的，把蓝色的拿过来,CRITICAL,entity_grounding,red,blue,Color mismatch in grounding,4.3
+eval-adeaebea8578,B45,negation_condition,除非夹爪是空的，否则不要抓取,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,4.7
+eval-adeaebea8578,B48,negation_condition,如果看到红色药瓶就先拿它，否则拿蓝色盒子,HIGH,action_recognition,FETCH,CUSTOM,"Action mismatch: expected FETCH, got CUSTOM",5.0
+eval-adeaebea8578,B48,negation_condition,如果看到红色药瓶就先拿它，否则拿蓝色盒子,MEDIUM,role_extraction,missing_role:delivery_pose_or_fetch_zone,[],Expected missing role 'delivery_pose_or_fetch_zone' not detected,5.0
+eval-adeaebea8578,B48,negation_condition,如果看到红色药瓶就先拿它，否则拿蓝色盒子,CRITICAL,entity_grounding,obj-b48a,grounded to obj-b48b (scene=obj-78e1bb),"Theme grounded to wrong object: expected obj-b48a, got obj-b48b",5.0
+eval-adeaebea8578,B48,negation_condition,如果看到红色药瓶就先拿它，否则拿蓝色盒子,CRITICAL,entity_grounding,red,blue,Color mismatch in grounding,5.0
+eval-adeaebea8578,B70,robot_state,把杯子夹住并翻转过来,HIGH,action_recognition,CUSTOM,GRASP,"Action mismatch: expected CUSTOM, got GRASP",5.5
+eval-adeaebea8578,B86,conflict,把杯子放到桌子上,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,3.5
+eval-adeaebea8578,B87,conflict,把重物放到精密仪器旁边,CRITICAL,entity_grounding,obj-b87a,grounded to obj-b87b (scene=obj-008813),"Theme grounded to wrong object: expected obj-b87a, got obj-b87b",6.0
+eval-adeaebea8578,B87,conflict,把重物放到精密仪器旁边,CRITICAL,negation_constraint_retention,obj-b87b,['device'],Negation/avoid 'obj-b87b' not propagated to BT/CG,6.0
+eval-adeaebea8578,B87,conflict,把重物放到精密仪器旁边,HIGH,negation_constraint_retention,PlanPath in BT,"['Reach', 'Place']",Obstacles present but no PlanPath in BT,6.0
+eval-adeaebea8578,B103,mixed_colloquial,grab那个红色的bottle然后放到table上,HIGH,role_extraction,obj-b103b,None,Support surface not identified,3.5
+eval-adeaebea8578,B103,mixed_colloquial,grab那个红色的bottle然后放到table上,HIGH,conditional_sequential_understanding,READY or READY_WITH_SAFE_SUBSTITUTION,NEEDS_CLARIFICATION,Plan status inconsistent with execution_allowed,3.5
+eval-adeaebea8578,B104,mixed_colloquial,把那玩意儿拿过来,CRITICAL,entity_grounding,grounded in scene,None,Theme not grounded to any scene object,3.5

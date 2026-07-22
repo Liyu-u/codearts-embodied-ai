@@ -90,7 +90,11 @@ class SceneObject(BaseModel):
     """
     id: str = Field(default_factory=lambda: f"obj-{uuid4().hex[:6]}")
     name: str = Field(..., description="物体名称")
+    original_mention: str = Field(default="", description="用户原始提及或感知原始名")
     label: Optional[str] = Field(default=None, description="语义标签 (bottle, cup, cube...)")
+    specific_class: Optional[str] = Field(default=None, description="具体类别 (cup, tray, bottle...)")
+    parent_class: Optional[str] = Field(default=None, description="父类别 (container, support_surface...)")
+    parent_classes: List[str] = Field(default_factory=list, description="完整父类链")
     position: Position = Field(..., description="3D 世界坐标")
     orientation: Orientation = Field(default_factory=Orientation)
     bbox: BoundingBox = Field(..., description="包围盒尺寸")
@@ -175,7 +179,13 @@ class SemanticSceneGraph(BaseModel):
     def find_object(self, name: str) -> Optional[SceneObject]:
         """按名称查找物体"""
         for obj in self.objects:
-            if obj.name == name or obj.id == name:
+            if (
+                obj.name == name
+                or obj.original_mention == name
+                or obj.label == name
+                or obj.specific_class == name
+                or obj.id == name
+            ):
                 return obj
         return None
 

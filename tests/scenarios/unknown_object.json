@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "scene_id": "test_unknown",
+  "timestamp": 1723456789123,
+  "coordinate_system": "robot_base",
+  "objects": [
+    {
+      "object_id": "obj_999",
+      "category_candidates": [
+        {"name": "unknown_thing", "score": 0.3}
+      ],
+      "pose": {"x": 0.0, "y": 0.0, "z": 0.75},
+      "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0},
+      "geometry": {"width": 0.10, "height": 0.10, "depth": 0.10},
+      "appearance": {"color": "gray", "shape": "irregular", "texture": "rough"}
+    }
+  ]
+}

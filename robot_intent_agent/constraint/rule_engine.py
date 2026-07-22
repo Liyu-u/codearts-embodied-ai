@@ -130,7 +130,7 @@ class ConstraintRuleEngine:
                     max_force_n=matched_params.get("force_n_max", 10.0),
                     min_force_n=matched_params.get("force_n_min", 0.1),
                     applies_to_skill="Grasp",
-                    priority=ConstraintPriority.HARD,
+                    priority=ConstraintPriority.SOFT,
                 )
             )
 
@@ -153,44 +153,55 @@ class ConstraintRuleEngine:
         从自然语言指令 + 场景图中提取碰撞避免约束。
 
         策略 (Entity Grounding):
-            1. 遍历场景中所有物体，若其 name 或 label 在指令中出现
-               且不是当前抓取目标 → 加入规避列表
-            2. 若用户使用泛指 ("别碰周围/前边的东西") 而物体名不在指令中，
-               遍历 scene.relations，找出与目标有 blocking/near 关系的物体
+            1. 遍历场景中所有物体，若其 name/label/specific_class 在指令中出现
+               或通过跨语言别名匹配，且不是当前抓取目标 → 加入规避列表
+            2. 若用户使用泛指 ("别碰周围/前边的东西")，遍历 scene.relations，
+               找出与目标有 blocking/near 关系的物体
             3. 废弃原有的正则盲切 (避免 "到前边正" 等碎片)
         """
+        from robot_intent_agent.task_semantics import _CN_CATEGORY_ALIASES as CAT_ALIASES
         constraints: List[ConstraintNode] = []
         seen_obstacles: set = set()
 
-        # --- 策略 1: 场景物体名精准匹配 ---
+        # --- 策略 1: 场景物体名 + 跨语言别名匹配 ---
         if scene:
             target_obj = scene.find_object(target) if target else None
-            target_name = target_obj.name if target_obj else target
+            target_id = target_obj.id if target_obj else None
 
             for obj in scene.objects:
-                # 跳过的条件: 就是目标自己、已处理过、名字太短
-                if obj.name == target_name:
+                # Skip target by ID (not name — two objects can share a name)
+                if target_id is not None and getattr(obj, "id", None) == target_id:
                     continue
                 if obj.name in seen_obstacles:
                     continue
                 if len(obj.name) < 1:
                     continue
 
-                # 检查物体名是否出现在指令中 (中文子串匹配)
-                if obj.name in text:
-                    seen_obstacles.add(obj.name)
+                # 构建匹配名列表: name + label + specific_class
+                names = [
+                    getattr(obj, "name", ""),
+                    getattr(obj, "label", "") or "",
+                    getattr(obj, "specific_class", "") or "",
+                ]
+                # 跨语言别名
+                specific_class = getattr(obj, "specific_class", "") or ""
+                aliases = CAT_ALIASES.get(specific_class, [])
+                all_names = [n for n in names if n] + aliases
+
+                if any(n and n in text for n in all_names):
+                    obstacle_name = obj.name
+                    seen_obstacles.add(obstacle_name)
                     constraints.append(
                         SpatialConstraint.collision_avoid(
-                            obstacle=obj.name,
+                            obstacle=obstacle_name,
                             min_distance_m=0.05,
                             applies_to_skill="",
                         )
                     )
 
         # --- 策略 2: 几何关系兜底 ---
-        # 如果用户说了"别碰"/"避开"等关键词，但策略 1 未匹配到任何具体物体，
-        # 则自动将 blocking 和 near 关系的物体加入规避列表
-        if not seen_obstacles and AVOID_KEYWORDS.search(text) and scene and target:
+        # 如果用户说了"别碰"/"避开"等关键词，自动将 blocking 和 near 关系的物体加入规避列表
+        if AVOID_KEYWORDS.search(text) and scene and target:
             target_obj = scene.find_object(target)
             if target_obj:
                 blocking_ids = scene.blocking_objects(target_obj.id)
@@ -250,23 +261,44 @@ class ConstraintRuleEngine:
     def _extract_object_constraints(
         self, scene: SemanticSceneGraph, target: str
     ) -> List[ConstraintNode]:
-        """从物体属性 (affordance) 提取约束"""
+        """从物体语义属性 (SemanticObject) 提取约束 (v3.0 fragility_level-based)"""
         constraints: List[ConstraintNode] = []
 
         target_obj = scene.find_object(target)
         if not target_obj:
             return constraints
 
-        # fragile → 降低抓取力
-        if Affordance.FRAGILE in target_obj.affordances:
+        # v3.0: 使用 SemanticObject 的 fragility_level 推导约束
+        from robot_intent_agent.semantic_reasoner.property_fusion import PropertyFusion
+        sem_obj = PropertyFusion.from_scene_object(target_obj)
+
+        if sem_obj.fragility_level >= 1:  # SENSITIVE or above
+            max_f = sem_obj.max_grasp_force_n
+            max_v = sem_obj.max_velocity_ms
             constraints.append(
                 PhysicalConstraint.force_limit(
                     target=target,
-                    max_force_n=3.0,
+                    max_force_n=max_f,
+                    min_force_n=0.1,
                     applies_to_skill="Grasp",
                     priority=ConstraintPriority.HARD,
                 )
             )
+            constraints.append(
+                PhysicalConstraint.velocity_limit(
+                    max_linear_ms=max_v,
+                    applies_to_skill="",
+                    priority=ConstraintPriority.SOFT,
+                )
+            )
+
+        # container → pour constraints (reserved)
+        if sem_obj.container:
+            pass
+
+        # fixed obstacle → collision risk tag
+        if sem_obj.mobility_type.value == "fixed" if hasattr(sem_obj.mobility_type, 'value') else str(sem_obj.mobility_type) == "fixed":
+            pass  # Marked as blocking by SpatialReasoner
 
         # container → 需要 pour 约束
         if Affordance.CONTAINER in target_obj.affordances:

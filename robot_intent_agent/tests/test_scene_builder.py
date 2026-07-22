@@ -258,6 +258,75 @@ class TestSemanticSceneBuilder:
 
 
 # ============================================================
+# Phase 2: Object ID preservation through scene builder
+# ============================================================
+
+class TestObjectIdPreservation:
+    """Verify that RawObjectPercept.object_id is preserved in SceneObject."""
+
+    def test_object_id_stored_in_attributes(self):
+        """object_id should be stored in SceneObject.attributes['_perception_object_id']."""
+        raw = RawObjectPercept(
+            name="测试物体", x=0.0, y=0.0, z=0.0,
+            object_id="obj-test-001",
+        )
+        obj = raw.to_scene_object()
+        assert obj.attributes.get("_perception_object_id") == "obj-test-001"
+
+    def test_no_object_id_when_none(self):
+        """When object_id is None, _perception_object_id should not be set."""
+        raw = RawObjectPercept(name="测试物体", x=0.0, y=0.0, z=0.0)
+        obj = raw.to_scene_object()
+        assert "_perception_object_id" not in obj.attributes
+
+    def test_scene_builder_preserves_object_ids(self):
+        """Full scene builder pipeline should preserve object_ids."""
+        raw1 = RawObjectPercept(name="杯子", x=0.1, y=0.0, z=0.05, object_id="obj-001")
+        raw2 = RawObjectPercept(name="盒子", x=0.2, y=0.1, z=0.05, object_id="obj-002")
+        builder = SemanticSceneBuilder()
+        scene = builder.build([raw1, raw2])
+        assert len(scene.objects) == 2
+        ids_found = set()
+        for obj in scene.objects:
+            pid = (obj.attributes or {}).get("_perception_object_id")
+            if pid:
+                ids_found.add(pid)
+        assert ids_found == {"obj-001", "obj-002"}
+
+    def test_scene_id_map_builds_correctly(self):
+        """_build_scene_id_map should map dataset object_id → scene UUID."""
+        from robot_intent_agent.eval.upgraded_runner import UpgradedEvalRunner
+        raw1 = RawObjectPercept(name="杯子", x=0.1, y=0.0, z=0.05, object_id="obj-001")
+        raw2 = RawObjectPercept(name="盒子", x=0.2, y=0.1, z=0.05, object_id="obj-002")
+        builder = SemanticSceneBuilder()
+        scene = builder.build([raw1, raw2])
+        mapping = UpgradedEvalRunner._build_scene_id_map(scene)
+        assert len(mapping) == 2
+        assert "obj-001" in mapping
+        assert "obj-002" in mapping
+        # Mapped values should be valid scene UUIDs (start with "obj-")
+        for pid, sid in mapping.items():
+            assert sid.startswith("obj-"), f"Scene ID '{sid}' should start with 'obj-'"
+
+    def test_scene_id_map_empty_when_no_object_ids(self):
+        """Empty mapping when no objects have _perception_object_id."""
+        from robot_intent_agent.eval.upgraded_runner import UpgradedEvalRunner
+        raw = RawObjectPercept(name="杯子", x=0.1, y=0.0, z=0.05)
+        builder = SemanticSceneBuilder()
+        scene = builder.build([raw])
+        mapping = UpgradedEvalRunner._build_scene_id_map(scene)
+        assert len(mapping) == 0
+
+    def test_raw_object_percept_accepts_object_id(self):
+        """RawObjectPercept should accept optional object_id parameter."""
+        raw = RawObjectPercept(
+            name="test", x=0.0, y=0.0, z=0.0,
+            object_id="obj-custom-123",
+        )
+        assert raw.object_id == "obj-custom-123"
+
+
+# ============================================================
 # 集成测试 — 规范场景
 # ============================================================
 
