@@ -1,4 +1,0 @@
-- [IntentFrame v1 Schema](intentframe-v1-delivered.md) — Phase 1: Delivered strict Pydantic IntentFrame v1 schema
-- [DeepSeek Output Standardization](deepseek-output-standardized.md) — Phase 2: Updated SYSTEM_PROMPT, normalize_intent_frame(), engine_trace
-- [Critical Semantic Extraction](critical-semantic-reconciliation.md) — Phase 3: CriticalSemanticExtractor + SemanticReconciler delivered
-- [Role-Aware Grounding Reground](role-aware-grounding-reground.md) — Phase 4: _reground_llm_parsed_task() forces GroundingEngine re-run

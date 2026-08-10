@@ -1,153 +1,98 @@
-# 🤖 言出必行：基于 CodeArts 代码智能体的具身智能指令生成系统
+# 具身智能系统统一联调仓库
 
-> **华为揭榜挂帅 · 具身智能机械臂操作系统**
->
-> 说得出，就做得到 —— 操作者说一句话，机械臂在仿真中真实完成动作。
+本仓库用于把各成员的模块接入同一条可复现的机器人闭环：
 
----
-
-在工业制造、仓储物流等具身智能场景中，机器人完成抓取、搬运等任务依赖工程师手工编写控制指令，需求转化效率低、调试成本高，且大模型应用多停留在"生成代码"的单点工具层面，缺乏全流程闭环。
-
-本系统以**"言出必行"**为目标：操作者用一句自然语言下达任务，系统即自动理解需求、生成驱动机器人的可执行指令，并在仿真中真实完成动作——**说得出，就做得到**。系统基于华为云码道 (CodeArts) 代码智能体全流程开发，贯通 **"需求理解 → 多智能体协同生成指令 → 仿真执行 → 反馈纠错"** 闭环，以执行过程为可信判据，确保指令必能执行、执行必准。
-
----
-
-## 🌳 仓库全局目录树
-
-```
-huaweijiebangguashuai/
-├── docs/             # 📑 [文档] JSON规范、API说明、项目进度
-│   ├── intent_schema_v1.json         # [A]结构化需求 JSON 模板规范 (T001-T010)
-│   ├── robot_meta_api_whitepaper.md   # [C/B] 机器人元 API 说明书
-│   ├── sprint1_plan.md               # [组长] 本周规划与阶段目标纪要
-│   └── weekly_reports/               # 各周进度汇报与文献调研备份
-│
-├── prompts/          # 💬 [提示词库] CodeArts与意图解析的System Prompt与Few-shot
-│   ├── intent_parser_prompt.md       # [A] 口语→JSON 解析 (内置转换样例)
-│   └── codearts_system_prompt.md     # [B]策略生成 (内置代码样例)
-│
-├── src/              # 💻 [核心源代码] 按模块解耦的工程代码
-│   ├── ui/           # 🎨 前端交互界面 (A)
-│   │   └── app.py                    # Gradio 应用 (输入框+预设下拉+JSON渲染器)
-│   ├── agent/        # 🧠 大模型调用与安全校验 (B)
-│   │   └── code_validator.py         # 代码沙盒校验器 (黑/白名单 + 安全断言检查)
-│   ├── isaac/        # 🤖 Isaac Sim 物理仿真与元API (C)
-│   │   ├── exec_wrapper.py           # 【核心】元 API 底层驱动 + IK + 防撞断言
-│   │   ├── get_scene_json.py         # 场景感知脚本 (物体 3D 坐标 + BBox)
-│   │   └── scenes/                   # Isaac Sim 场景存档文件 (.usd)
-│   ├── backend/      # 🔗 后端中央中转转发服务 (D)
-│   │   └── server.py                 # FastAPI 中转服务器 (HTTP + Socket)
-│   └── monitor/      # 🚨 运行态探针与异常监听 (D)
-│       └── trace_probe.py            # 【闭环亮点】探针 + error_report 生成器
-│
-├── tests/            # 🧪 [测试脚本] 各角色的独立 Mock 测试用例
-│   ├── test_ui_json_display.py       # [A] 前端 JSON 渲染测试
-│   ├── test_codearts_generation.py   # [B] 策略生成 + 安全校验测试
-│   ├── test_isaac_api_motion.py      # [C] 机械臂运动 + 安全断言测试
-│   └── test_probe_interception.py    # [D] 探针异常拦截 + 报告生成测试
-│
-├── logs/             # 📊 [运行日志] 自动生成的感知JSON与报错JSON ("黑匣子")
-│   ├── scene_state.json              # (自动生成) 实体坐标快照
-│   └── error_report_*.json           # (自动生成) 异常现场报告 → 触发反思闭环
-│
-├── .gitignore
-├── .env.example
-├── requirements.txt
-├── environment.yml
-└── README.md         # 📖 项目全局说明文档
+```text
+自然语言 + 感知 JSON
+        ↓
+意图理解与实体绑定
+        ↓ task.v1
+CodeArts 策略生成
+        ↓ strategy.v1
+Isaac Sim / 真机执行
+        ↓ execution.v1
+TraceCoder / TraceProbe 反馈
+        ↓ feedback.v1
+回归测试与策略修正
 ```
 
----
+## 一、仓库原则
 
-## 🔄 系统闭环流程
+1. `contracts/` 是唯一接口标准；模块不得私自约定字段。
+2. 模块通过适配器连接，不直接引用其他模块的内部代码。
+3. 先 Mock，后仿真，最后真机；每一步都保留可追踪的 `task_id`。
+4. 危险、缺字段或无法执行的任务必须明确阻断，不能静默猜测。
 
+## 二、目录结构和任务
+
+```text
+.
+├─ contracts/                 # 模块间 JSON Schema 和版本说明
+│  └─ v1/                     # perception/task/strategy/execution/feedback
+├─ modules/                   # 各成员模块的接入位置
+│  ├─ perception/             # 感知：输出真实物体、位姿、能力信息
+│  ├─ intent_understanding/   # A：语言理解、目标绑定、安全门禁
+│  ├─ strategy_generation/    # B：CodeArts 生成可执行策略
+│  ├─ executor/               # C：Isaac Sim 或真机执行
+│  └─ evaluator/              # D：TraceCoder、TraceProbe、评测
+├─ integration/               # 跨模块编排，不放业务实现
+│  ├─ adapters/               # 每个模块的 run()/health() 适配器
+│  ├─ config/                 # local/sim/real 环境配置
+│  └─ pipeline.py             # 端到端调用顺序
+├─ testdata/                  # 脱敏、可复现的联调输入
+│  ├─ daily/                  # 日常场景
+│  └─ industrial/             # 工业场景
+├─ tests/                     # 分层测试
+│  ├─ contract/               # JSON Schema 和版本兼容
+│  ├─ integration/            # 两个或多个模块联调
+│  └─ e2e/                    # 全链路验收
+├─ docs/                      # 联调手册、会议决议、故障记录
+├─ .github/workflows/         # 自动化契约检查
+├─ Makefile                   # 统一开发命令
+└─ .env.example               # 环境变量模板，禁止提交真实密钥
 ```
-用户自然语言
-    ↓
-[意图解析器]  (prompts/intent_parser_prompt.md + LLM)
-    ↓  规范 JSON
-[CodeArts 策略生成]  (prompts/codearts_system_prompt.md + CaP)
-    ↓  控制代码
-[代码安全校验]  (src/agent/code_validator.py)
-    ↓  通过
-[Isaac Sim 物理执行]  (src/isaac/exec_wrapper.py + Franka Panda)
-    ↓
-    ├─ 成功 → ✅ 返回结果给前端
-    │
-    └─ 失败 → 🚨 探针截获 (src/monitor/trace_probe.py)
-                ↓  error_report.json → logs/
-                ↓  触发 Reflexion 反思闭环
-                ↓  重新生成修正策略 → 重试 (最多 3 次)
+
+## 三、每个模块应该放在哪里
+
+成员只维护对应的 `modules/<模块名>/` 和 `integration/adapters/`。如果模块已有独立仓库，可以作为外部代码引入，但对外仍必须实现统一适配器：
+
+```text
+run(input_json: dict) -> output_json: dict
+health() -> dict
 ```
 
----
+输入和输出必须分别符合 `contracts/v1` 中的 Schema。接口修改时，同时修改 Schema、示例和契约测试，并说明兼容策略。
 
-## 🚀 快速启动
+## 四、日常使用
 
 ```bash
-# 1. 克隆
-git clone https://github.com/Liyu-u/codearts-embodied-ai.git
-cd codearts-embodied-ai/huaweijiebangguashuai
-
-# 2. 安装依赖
-pip install -r requirements.txt
-# 或: conda env create -f environment.yml
-
-# 3. 配置
-cp .env.example .env
-# 编辑 .env 填入 API Keys
-
-# 4. 启动后端
-cd src/backend && python server.py &
-
-# 5. 启动前端
-cd src/ui && python app.py
-# 打开 http://localhost:7860
+make contract-test   # 检查所有协议 JSON
+make integration-test # 运行模块联调测试
+make e2e              # 运行完整闭环测试
 ```
 
----
+推荐开发顺序：
 
-## 👥 团队分工与职责
+1. 用 `testdata/` 的 Mock 感知数据打通五段 JSON；
+2. 接入真实意图理解和策略生成；
+3. 接入 Isaac Sim，核对执行轨迹和安全事件；
+4. 接入 TraceCoder 的失败诊断与重试；
+5. 最后接真机，并增加急停、权限、超时和人工确认。
 
-| 角色 | 姓名 | 职责定位 | 模块 | 本周核心产出 |
-|------|------|----------|------|-------------|
-| **A** | 王翊航 / 郭家腾 | 意图解析与交互 | `src/ui/` + `prompts/` + `docs/` | `app.py`, `intent_parser_prompt.md`, `intent_schema_v1.json` |
-| **B** | 冯海 | CodeArts 智能体与策略代码 | `src/agent/` + `prompts/` | `code_validator.py`, `codearts_system_prompt.md` |
-| **C** | 吴昌庆 | 物理仿真与环境感知 | `src/isaac/` + `docs/` | `exec_wrapper.py`, `get_scene_json.py`, `robot_meta_api_whitepaper.md` |
-| **D** | 王翊航 / 郭家腾 | 闭环纠错 | `src/backend/` + `src/monitor/` | `server.py`, `trace_probe.py` |
+## 五、提交和联调规则
 
----
+- 分支命名：`feature/<模块>-<功能>`。
+- Pull Request 必须写明：输入协议、输出协议、测试命令和结果。
+- CI 未通过契约测试时不得合并。
+- 不提交 API 密钥、真机地址、个人路径和大体积日志。
+- 每个失败都要能用 `task_id` 在 `testdata/` 中复现。
 
-## 📋 第一周阶段性成果
+## 六、后续研讨重点
 
-1. 建立了最前沿的 **Isaac Sim 6.0.1 + Franka Panda 7-DOF** GPU 物理仿真环境；高质量完成了 `T001-T010` 共 10 个典型任务的结构化 JSON Schema 契约初稿。
-2. 深度学习了《Code as Policies》《SayCan》《TraceCoder》《Voyager》等 8 篇 CCF A/B 类顶会方法论，将"排序、条件筛选、形状匹配"等复杂逻辑融入赛题要求，确立了系统的三阶段处理架构。
+1. 冻结 `v1` 字段和错误码，明确谁负责每个字段。
+2. 完成 Mock 闭环，再进行 Isaac Sim 联调。
+3. 统一执行结果、轨迹、耗时和安全事件格式。
+4. 建立“感知 → 理解 → 策略 → 执行 → 反馈”的端到端回归集。
+5. 仿真通过后再进行真机小范围验证，禁止直接跳过安全门禁。
 
----
-
-## 🎯 第二周核心目标
-
-实现**自然语言 → Isaac Sim 仿真机器人的闭环控制**。
-
-### 里程碑
-
-| 里程碑 | 目标 | 说明 |
-|--------|------|------|
-| **M1** | 接口契约定稿 | 确定《需求 JSON 规范》、《机器人元 API 说明书》、《诊断日志 JSON 规范》的格式和字段接口 |
-| **M2** | 四模块独立跑通 | 四个模块各自独立通过 Mock 测试 |
-| **M3** | MVP 单链路贯通 | 在交互界面输入自然语言 → Isaac Sim 中 Franka Panda 成功完成物理动作 |
-
-### 各角色重点目标
-
-- **A (王翊航/郭家腾)**：打通口语转 JSON，搭建可视化交互网页
-- **B (冯海)**：调教 CodeArts，把 JSON 翻译为带几何计算的 Python 控制脚本
-- **C (吴昌庆)**：维护 Isaac Sim，输出感知坐标，把底层运动封装成元 API
-- **D (王翊航/郭家腾)**：打通前后端数据链，植入底层监控探针
-
-> 📖 详细开发说明见 [开发说明.md](开发说明.md)
-
----
-
-## 📄 许可证
-
-[待定]
+详细操作说明见 [`docs/联调仓库使用手册.md`](docs/联调仓库使用手册.md)。
