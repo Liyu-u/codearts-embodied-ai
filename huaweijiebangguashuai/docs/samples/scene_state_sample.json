@@ -1,0 +1,266 @@
+{
+  "schema_version": "1.0.0",
+  "message_type": "perception_observation",
+
+  "observation_id": "obs_1723456789123_0001",
+  "scene_id": "table_scene_001",
+
+  "timestamp": 1723456789123,
+  "clock_domain": "unix_utc",
+
+  "coordinate_system": "robot_base",
+
+  "source": {
+    "module": "perception_pipeline",
+    "pipeline_version": "1.0.0",
+    "sensor_ids": [
+      "camera_front",
+      "depth_front"
+    ]
+  },
+
+  "objects": [
+    {
+      "object_id": "obj_001",
+
+      "category_candidates": [
+        { "name": "cube", "score": 0.95 },
+        { "name": "box", "score": 0.03 },
+        { "name": "block", "score": 0.02 }
+      ],
+
+      "pose": {
+        "position": { "x": 0.15, "y": 0.05, "z": 0.03 },
+        "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+      },
+
+      "geometry": {
+        "type": "oriented_bbox_3d",
+        "size": { "width": 0.04, "height": 0.04, "depth": 0.04 }
+      },
+
+      "appearance": {
+        "color_candidates": [
+          { "name": "red", "score": 0.95 },
+          { "name": "orange", "score": 0.03 }
+        ],
+        "shape_candidates": [
+          { "name": "cubic", "score": 0.92 }
+        ],
+        "texture_candidates": [
+          { "name": "matte", "score": 0.80 }
+        ]
+      },
+
+      "tracking": {
+        "track_age_frames": 30,
+        "velocity": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "velocity_confidence": 0.98
+      }
+    },
+    {
+      "object_id": "obj_002",
+
+      "category_candidates": [
+        { "name": "cup", "score": 0.93 },
+        { "name": "bottle", "score": 0.04 },
+        { "name": "container", "score": 0.03 }
+      ],
+
+      "pose": {
+        "position": { "x": -0.12, "y": 0.08, "z": 0.06 },
+        "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+      },
+
+      "geometry": {
+        "type": "oriented_bbox_3d",
+        "size": { "width": 0.05, "height": 0.10, "depth": 0.05 }
+      },
+
+      "appearance": {
+        "color_candidates": [
+          { "name": "blue", "score": 0.91 },
+          { "name": "cyan", "score": 0.06 }
+        ],
+        "shape_candidates": [
+          { "name": "cylindrical", "score": 0.91 }
+        ],
+        "texture_candidates": [
+          { "name": "smooth", "score": 0.76 }
+        ]
+      },
+
+      "tracking": {
+        "track_age_frames": 25,
+        "velocity": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "velocity_confidence": 0.96
+      }
+    },
+    {
+      "object_id": "obj_003",
+
+      "category_candidates": [
+        { "name": "cylinder", "score": 0.96 },
+        { "name": "can", "score": 0.03 },
+        { "name": "tube", "score": 0.01 }
+      ],
+
+      "pose": {
+        "position": { "x": 0.20, "y": -0.12, "z": 0.04 },
+        "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+      },
+
+      "geometry": {
+        "type": "oriented_bbox_3d",
+        "size": { "width": 0.04, "height": 0.08, "depth": 0.04 }
+      },
+
+      "appearance": {
+        "color_candidates": [
+          { "name": "green", "score": 0.94 },
+          { "name": "teal", "score": 0.04 }
+        ],
+        "shape_candidates": [
+          { "name": "cylindrical", "score": 0.94 }
+        ],
+        "texture_candidates": [
+          { "name": "smooth", "score": 0.82 }
+        ]
+      },
+
+      "tracking": {
+        "track_age_frames": 28,
+        "velocity": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "velocity_confidence": 0.97
+      }
+    },
+    {
+      "object_id": "obj_004",
+
+      "category_candidates": [
+        { "name": "triangle", "score": 0.88 },
+        { "name": "wedge", "score": 0.07 },
+        { "name": "prism", "score": 0.05 }
+      ],
+
+      "pose": {
+        "position": { "x": -0.15, "y": -0.10, "z": 0.02 },
+        "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+      },
+
+      "geometry": {
+        "type": "oriented_bbox_3d",
+        "size": { "width": 0.06, "height": 0.03, "depth": 0.06 }
+      },
+
+      "appearance": {
+        "color_candidates": [
+          { "name": "yellow", "score": 0.92 },
+          { "name": "gold", "score": 0.05 }
+        ],
+        "shape_candidates": [
+          { "name": "triangular", "score": 0.88 }
+        ],
+        "texture_candidates": [
+          { "name": "matte", "score": 0.78 }
+        ]
+      },
+
+      "tracking": {
+        "track_age_frames": 20,
+        "velocity": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "velocity_confidence": 0.94
+      }
+    },
+    {
+      "object_id": "obj_005",
+
+      "category_candidates": [
+        { "name": "cube", "score": 0.94 },
+        { "name": "box", "score": 0.04 },
+        { "name": "block", "score": 0.02 }
+      ],
+
+      "pose": {
+        "position": { "x": 0.05, "y": -0.15, "z": 0.03 },
+        "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 }
+      },
+
+      "geometry": {
+        "type": "oriented_bbox_3d",
+        "size": { "width": 0.04, "height": 0.04, "depth": 0.04 }
+      },
+
+      "appearance": {
+        "color_candidates": [
+          { "name": "blue", "score": 0.93 },
+          { "name": "cyan", "score": 0.05 }
+        ],
+        "shape_candidates": [
+          { "name": "cubic", "score": 0.93 }
+        ],
+        "texture_candidates": [
+          { "name": "matte", "score": 0.81 }
+        ]
+      },
+
+      "tracking": {
+        "track_age_frames": 32,
+        "velocity": { "x": 0.0, "y": 0.0, "z": 0.0 },
+        "velocity_confidence": 0.98
+      }
+    }
+  ],
+
+  "simulation_metadata": {
+    "evaluation_only": true,
+
+    "ground_truth_objects": [
+      {
+        "object_id": "obj_001",
+        "prim_path": "/World/Table/红色方块",
+        "mass_kg": 0.15,
+        "material": "plastic",
+        "friction": 0.4,
+        "rigid_body": true,
+        "collision_enabled": true
+      },
+      {
+        "object_id": "obj_002",
+        "prim_path": "/World/Table/蓝色杯子",
+        "mass_kg": 0.2,
+        "material": "glass",
+        "friction": 0.3,
+        "rigid_body": true,
+        "collision_enabled": true
+      },
+      {
+        "object_id": "obj_003",
+        "prim_path": "/World/Table/绿色圆柱",
+        "mass_kg": 0.18,
+        "material": "plastic",
+        "friction": 0.35,
+        "rigid_body": true,
+        "collision_enabled": true
+      },
+      {
+        "object_id": "obj_004",
+        "prim_path": "/World/Table/黄色三角",
+        "mass_kg": 0.1,
+        "material": "plastic",
+        "friction": 0.45,
+        "rigid_body": true,
+        "collision_enabled": true
+      },
+      {
+        "object_id": "obj_005",
+        "prim_path": "/World/Table/蓝色方块",
+        "mass_kg": 0.15,
+        "material": "plastic",
+        "friction": 0.4,
+        "rigid_body": true,
+        "collision_enabled": true
+      }
+    ]
+  }
+}

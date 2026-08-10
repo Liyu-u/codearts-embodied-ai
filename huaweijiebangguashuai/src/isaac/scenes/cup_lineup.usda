@@ -1,0 +1,111 @@
+#usda 1.0
+(
+    doc = """场景2: 杯子排列
+    用途: 测试 find_object + pick_and_place 动作
+    内容: 5 个不同颜色的杯子散放在桌面上
+    队友 A: "把蓝色杯子和红色杯子交换位置"
+    队友 B: find_object(color="blue") + pick_and_place()
+    """
+)
+
+def Xform "World"
+{
+    # 桌面
+    def Cube "Table"
+    {
+        double3 xformOp:translate = (0.3, 0.0, 0.0)
+        double3 xformOp:scale = (0.8, 1.0, 0.02)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        color3f[] primvars:displayColor = [(0.5, 0.35, 0.2)]
+    }
+
+    # 红色杯子
+    def Cylinder "RedCup" (
+        apiSchemas = ["PhysxRigidBodyAPI", "PhysxCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (0.15, 0.10, 0.06)
+        double3 xformOp:scale = (0.025, 0.05, 0.025)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        color3f[] primvars:displayColor = [(1.0, 0.0, 0.0)]
+        token semantic:label = "cup"
+        string semantic:color = "red"
+
+        uniform bool physxRigidBody:rigidBodyEnabled = true
+        uniform float physxRigidBody:mass = 0.20
+        uniform token physxRigidBody:material = "glass"
+        uniform bool physxCollision:collisionEnabled = true
+    }
+
+    # 蓝色杯子
+    def Cylinder "BlueCup" (
+        apiSchemas = ["PhysxRigidBodyAPI", "PhysxCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (0.30, -0.08, 0.06)
+        double3 xformOp:scale = (0.025, 0.05, 0.025)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        color3f[] primvars:displayColor = [(0.0, 0.0, 1.0)]
+        token semantic:label = "cup"
+        string semantic:color = "blue"
+
+        uniform bool physxRigidBody:rigidBodyEnabled = true
+        uniform float physxRigidBody:mass = 0.20
+        uniform token physxRigidBody:material = "glass"
+        uniform bool physxCollision:collisionEnabled = true
+    }
+
+    # 绿色杯子
+    def Cylinder "GreenCup" (
+        apiSchemas = ["PhysxRigidBodyAPI", "PhysxCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (0.45, 0.05, 0.06)
+        double3 xformOp:scale = (0.025, 0.05, 0.025)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        color3f[] primvars:displayColor = [(0.0, 1.0, 0.0)]
+        token semantic:label = "cup"
+        string semantic:color = "green"
+
+        uniform bool physxRigidBody:rigidBodyEnabled = true
+        uniform float physxRigidBody:mass = 0.20
+        uniform token physxRigidBody:material = "glass"
+        uniform bool physxCollision:collisionEnabled = true
+    }
+
+    # 黄色杯子
+    def Cylinder "YellowCup" (
+        apiSchemas = ["PhysxRigidBodyAPI", "PhysxCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (0.20, -0.15, 0.06)
+        double3 xformOp:scale = (0.025, 0.05, 0.025)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        color3f[] primvars:displayColor = [(1.0, 1.0, 0.0)]
+        token semantic:label = "cup"
+        string semantic:color = "yellow"
+
+        uniform bool physxRigidBody:rigidBodyEnabled = true
+        uniform float physxRigidBody:mass = 0.20
+        uniform token physxRigidBody:material = "glass"
+        uniform bool physxCollision:collisionEnabled = true
+    }
+
+    # 白色杯子
+    def Cylinder "WhiteCup" (
+        apiSchemas = ["PhysxRigidBodyAPI", "PhysxCollisionAPI"]
+    )
+    {
+        double3 xformOp:translate = (0.40, 0.18, 0.06)
+        double3 xformOp:scale = (0.025, 0.05, 0.025)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+        color3f[] primvars:displayColor = [(0.9, 0.9, 0.9)]
+        token semantic:label = "cup"
+        string semantic:color = "white"
+
+        uniform bool physxRigidBody:rigidBodyEnabled = true
+        uniform float physxRigidBody:mass = 0.20
+        uniform token physxRigidBody:material = "glass"
+        uniform bool physxCollision:collisionEnabled = true
+    }
+}

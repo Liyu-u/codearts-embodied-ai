@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+conda-env/
+
+# 环境变量 (含密钥，严禁提交!)
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Isaac Sim
+*.usd~
+isaac_sim/
+_experimental/
+
+# 运行时日志（动态生成，不提交）
+logs/
+
+# 临时测试脚本
+src/isaac/scripts/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temp
+tmp/
+temp/
+*.tmp
