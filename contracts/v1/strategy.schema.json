@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "robot-system/strategy/v1",
+  "type": "object",
+  "required": ["schema_version", "task_id", "steps"],
+  "properties": {
+    "schema_version": {"const": "strategy.v1"},
+    "task_id": {"type": "string"},
+    "steps": {"type": "array", "items": {"type": "object", "required": ["step_id", "action", "arguments"], "properties": {"step_id": {"type": "string"}, "action": {"type": "string"}, "arguments": {"type": "object"}, "on_failure": {"type": "object"}}}},
+    "code": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}

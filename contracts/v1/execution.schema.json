@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "robot-system/execution/v1",
+  "type": "object",
+  "required": ["schema_version", "task_id", "status", "steps"],
+  "properties": {
+    "schema_version": {"const": "execution.v1"},
+    "task_id": {"type": "string"},
+    "status": {"enum": ["SUCCEEDED", "FAILED", "SAFE_STOP"]},
+    "steps": {"type": "array"},
+    "trajectory_points": {"type": "array"},
+    "total_duration_ms": {"type": "number"},
+    "safety_events": {"type": "array"}
+  },
+  "additionalProperties": true
+}

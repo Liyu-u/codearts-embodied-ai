@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "robot-system/task/v1",
+  "type": "object",
+  "required": ["schema_version", "task_id", "action", "status"],
+  "properties": {
+    "schema_version": {"const": "task.v1"},
+    "task_id": {"type": "string"},
+    "action": {"type": "string"},
+    "target_ids": {"type": "array", "items": {"type": "string"}},
+    "destination_id": {"type": ["string", "null"]},
+    "constraints": {"type": "array"},
+    "status": {"enum": ["READY", "NEEDS_CLARIFICATION", "BLOCKED"]},
+    "blocking_reasons": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

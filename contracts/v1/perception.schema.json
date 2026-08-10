@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "robot-system/perception/v1",
+  "type": "object",
+  "required": ["schema_version", "scene_id", "objects"],
+  "properties": {
+    "schema_version": {"const": "perception.v1"},
+    "scene_id": {"type": "string", "minLength": 1},
+    "coordinate_frame": {"type": "string"},
+    "objects": {"type": "array", "items": {"type": "object", "required": ["id", "category", "pose"], "properties": {"id": {"type": "string"}, "category": {"type": "string"}, "pose": {"type": "object", "required": ["x", "y", "z"], "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "z": {"type": "number"}}}, "dimensions": {"type": "object"}, "attributes": {"type": "object"}, "execution": {"type": "object"}}}},
+    "execution_context": {"type": "object"}
+  },
+  "additionalProperties": true
+}
