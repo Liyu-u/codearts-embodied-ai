@@ -1,0 +1,53 @@
+{
+  "schema_version": "strategy.v1",
+  "task_id": "stacking-demo-001",
+  "steps": [
+    {
+      "step_id": "detect_green",
+      "action": "detect_object",
+      "arguments": {
+        "object_id": "green_cube"
+      }
+    },
+    {
+      "step_id": "approach_green",
+      "action": "move_to_object",
+      "arguments": {
+        "object_id": "$detect_green.object_id"
+      }
+    },
+    {
+      "step_id": "grasp_green",
+      "action": "grasp",
+      "arguments": {
+        "object_id": "$detect_green.object_id"
+      },
+      "on_failure": {
+        "max_attempts": 1,
+        "steps": [
+          {
+            "step_id": "retry_grasp_green",
+            "action": "grasp",
+            "arguments": {
+              "object_id": "$detect_green.object_id"
+            }
+          }
+        ],
+        "on_exhausted": "stop"
+      }
+    },
+    {
+      "step_id": "move_target",
+      "action": "move_to_target",
+      "arguments": {
+        "destination_id": "zone_unstack_target"
+      }
+    },
+    {
+      "step_id": "release_green",
+      "action": "release",
+      "arguments": {}
+    }
+  ],
+  "code": null
+}
