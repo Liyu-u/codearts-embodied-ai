@@ -1124,6 +1124,7 @@ git commit -m "feat: connect executor to mock pipeline"
 - Modify: `Makefile`
 - Modify: `.github/workflows/integration-contract.yml`
 - Create: `tests/e2e/__init__.py`
+- Create: `tests/e2e/test_mock_stacking_e2e.py`
 
 **Interfaces:**
 - Consumes: all implemented public APIs and checked-in JSON examples
@@ -1195,6 +1196,8 @@ After the existing JSON syntax step, add:
 
 Human-facing prose is reviewed directly rather than tested by grepping exact wording. Verify every local Markdown link introduced by this task resolves to an existing repository path, then run the actual entrypoints documented for teammates.
 
+Because `unittest discover` exits with status 5 when no tests are found, add one real acceptance test in `tests/e2e/test_mock_stacking_e2e.py`. It must run the checked-in scene and strategy through the public pipeline, assert `execution.v1` succeeds, and assert the final `green_cube` pose equals `zone_unstack_target` rather than accepting action return values alone.
+
 Run:
 
 ```bash
@@ -1205,12 +1208,12 @@ python -m unittest discover -s tests -t . -v
 python -c "import json; from pathlib import Path; files=list(Path('contracts').rglob('*.json'))+list(Path('testdata').rglob('*.json')); [json.loads(p.read_text(encoding='utf-8')) for p in files]; print(f'JSON syntax: OK ({len(files)} files)')"
 ```
 
-Expected: all document links resolve; all tests pass; e2e may report 0 tests but exits successfully because the package exists; all contract and testdata JSON parses.
+Expected: all document links resolve; the e2e suite runs one real stacking acceptance test; all tests pass; all contract and testdata JSON parses.
 
 - [ ] **Step 5: Commit locally**
 
 ```bash
-git add modules/perception/README.md modules/executor/README.md docs/Isaac执行器接口说明.md README.md Makefile .github/workflows/integration-contract.yml tests/e2e/__init__.py
+git add modules/perception/README.md modules/executor/README.md docs/Isaac执行器接口说明.md README.md Makefile .github/workflows/integration-contract.yml tests/e2e docs/superpowers/plans/2026-08-16-isaac-v1-mock-integration.md
 git commit -m "docs: explain isaac v1 integration interface"
 ```
 

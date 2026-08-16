@@ -17,7 +17,10 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          for p in Path('contracts').rglob('*.json'):
+          files = list(Path('contracts').rglob('*.json')) + list(Path('testdata').rglob('*.json'))
+          for p in files:
               json.loads(p.read_text(encoding='utf-8'))
-          print('contract JSON syntax: OK')
+          print(f'contract and example JSON syntax: OK ({len(files)} files)')
           PY
+      - name: Run contract and integration tests
+        run: python -m unittest discover -s tests -t . -v

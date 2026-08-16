@@ -63,12 +63,21 @@ health() -> dict
 
 输入和输出必须分别符合 `contracts/v1` 中的 Schema。接口修改时，同时修改 Schema、示例和契约测试，并说明兼容策略。
 
+### C 模块（吴昌庆）当前接口
+
+- 感知模块：[`modules/perception/README.md`](modules/perception/README.md)
+- 执行模块：[`modules/executor/README.md`](modules/executor/README.md)
+- A/B/C/D 联调接口：[`docs/Isaac执行器接口说明.md`](docs/Isaac执行器接口说明.md)
+
+当前第一阶段使用确定性 Mock 后端，不需要连接服务器或启动 Isaac Sim；它用于先冻结接口并跑通软件闭环。真实 Isaac Sim 执行属于第二阶段，保持相同的 `strategy.v1 → execution.v1` 边界。
+
 ## 四、日常使用
 
 ```bash
 make contract-test   # 检查所有协议 JSON
 make integration-test # 运行模块联调测试
 make e2e              # 运行完整闭环测试
+make test             # 运行全部标准库测试
 ```
 
 推荐开发顺序：

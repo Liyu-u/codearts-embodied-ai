@@ -1,10 +1,13 @@
-.PHONY: contract-test integration-test e2e
+.PHONY: contract-test integration-test e2e test
 
 contract-test:
-	python -c "import json; from pathlib import Path; [json.loads(p.read_text(encoding='utf-8')) for p in Path('contracts').rglob('*.json')]; print('contract JSON syntax: OK')"
+	python -m unittest discover -s tests/contract -t . -v
 
 integration-test:
-	pytest tests/integration -q
+	python -m unittest discover -s tests/integration -t . -v
 
 e2e:
-	pytest tests/e2e -q
+	python -m unittest discover -s tests/e2e -t . -v
+
+test:
+	python -m unittest discover -s tests -t . -v
