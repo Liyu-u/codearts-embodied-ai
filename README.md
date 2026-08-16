@@ -96,3 +96,32 @@ make e2e              # 运行完整闭环测试
 5. 仿真通过后再进行真机小范围验证，禁止直接跳过安全门禁。
 
 详细操作说明见 [`docs/联调仓库使用手册.md`](docs/联调仓库使用手册.md)。
+
+## 七、TraceCoder 模块接入说明（feedback 环节）
+
+**定位**：`modules/evaluator/`（D 模块）内的 TraceCoder 负责"执行后反馈与策略修正"，
+即把上游执行结果喂给它做失败归因，返回可再次迭代的修复后策略。
+
+**代码位置**：
+- 引擎：`modules/evaluator/tracecoder/`（轻量仿真 + 三角色修复 + HLLM 经验库，离线可跑）
+- 适配器：`integration/adapters/tracecoder.py`（`run()` / `health()`，输出 `feedback.v1`）
+- 编排：`integration/pipeline.py` 已把 `{task, strategy, execution}` 三份上下文传给 `feedback.run()`
+
+**调用方式**（pipeline 已接入，也可单独调用）：
+```python
+from integration.adapters.tracecoder import run, health
+health()                                   # 模块健康检查
+out = run({"task": task_v1, "strategy": strategy_v1, "execution": execution_v1})
+# out = feedback.v1: {schema_version, task_id, diagnosis, retryable, patch}
+```
+
+**测试**（Python 标准库，无需额外依赖）：
+```bash
+python -m unittest discover -s tests -t .
+```
+契约测试（tests/contract/）校验 TraceCoder 输出与 `contracts/v1/feedback.v1` 一致；
+集成测试（tests/integration/）用 Mock 执行器跑通"意图 → 策略 → 执行 → 反馈"闭环。
+
+**演进规划**：当前 `execution.v1` 由 TraceCoder 内置轻量仿真（或 Mock 执行器）产出；
+后续接入 Isaac Sim 后，真实仿真日志同样以 `execution.v1` 输入，引擎的
+诊断/修复逻辑无需改动——适配器接口已按"执行日志 + 当前策略"为输入设计。

@@ -14,5 +14,15 @@ def run_pipeline(perception: dict, instruction: str, adapters: dict) -> dict:
     strategy = adapters["strategy"].run(task)
     execution = adapters["executor"].run(strategy)
     feedback = adapters.get("tracecoder")
+    # TraceCoder 修复需要『任务 + 当前策略 + 执行日志』三份上下文：
+    # execution.v1 是执行证据（未来 Isaac Sim 接入后由真实仿真日志承担），
+    # task.v1 / strategy.v1 用于还原任务目标与待修复策略。
+    feedback_out = (
+        feedback.run(
+            {"task": task, "strategy": strategy, "execution": execution}
+        )
+        if feedback
+        else None
+    )
     return {"status": execution.get("status"), "task": task, "strategy": strategy,
-            "execution": execution, "feedback": feedback.run(execution) if feedback else None}
+            "execution": execution, "feedback": feedback_out}
