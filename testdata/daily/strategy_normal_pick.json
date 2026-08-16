@@ -1,0 +1,13 @@
+{
+  "schema_version": "task.v1",
+  "task_id": "task-001",
+  "action": "pick_and_place",
+  "target_ids": ["obj-001"],
+  "target_object": "红色方块",
+  "destination": {"x": 0.2, "y": 0.0, "z": 0.03},
+  "destination_id": null,
+  "constraints": [],
+  "status": "READY",
+  "blocking_reasons": [],
+  "_comment": "正常样例：抓取红色方块放到指定位置"
+}
