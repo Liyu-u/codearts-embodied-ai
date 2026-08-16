@@ -1,0 +1,13 @@
+{
+  "schema_version": "task.v1",
+  "task_id": "task-002",
+  "action": "pick_and_place",
+  "target_ids": [],
+  "target_object": "",
+  "destination": null,
+  "destination_id": null,
+  "constraints": [],
+  "status": "NEEDS_CLARIFICATION",
+  "blocking_reasons": ["目标物体未指定，无法生成策略"],
+  "_comment": "失败样例：目标不存在，task 状态不是 READY，适配器应阻断"
+}

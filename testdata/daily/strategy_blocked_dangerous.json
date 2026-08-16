@@ -1,0 +1,13 @@
+{
+  "schema_version": "task.v1",
+  "task_id": "task-003",
+  "action": "pick_and_place",
+  "target_ids": ["obj-danger"],
+  "target_object": "易碎物品",
+  "destination": {"x": 0.2, "y": 0.0, "z": 0.03},
+  "destination_id": null,
+  "constraints": ["gentle_grip", "low_velocity"],
+  "status": "BLOCKED",
+  "blocking_reasons": ["目标易碎，未确认安全放置位置，禁止直接执行"],
+  "_comment": "危险样例：易碎物品且状态为 BLOCKED，适配器应阻断不生成策略"
+}
