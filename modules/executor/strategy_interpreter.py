@@ -5,10 +5,14 @@ from typing import Any
 
 from integration.contract_validation import assert_contract
 from modules.executor.action_catalog import validate_action_arguments
-from modules.executor.models import ExecutionLimits, ExecutorBackend
+from modules.executor.models import ExecutionLimits, ExecutorBackend, StepOutcome
 
 
 class ReferenceResolutionError(ValueError):
+    pass
+
+
+class _ActionLimitExceeded(RuntimeError):
     pass
 
 
@@ -54,50 +58,181 @@ class StrategyInterpreter:
 
         records: list[dict] = []
         results: dict[str, dict] = {}
-        failed = False
+        counter = [0]
+        safety_events: list[dict] = []
+        overall_status = "SUCCEEDED"
 
         for index, step in enumerate(strategy["steps"]):
             try:
-                arguments = resolve_arguments(step["arguments"], results)
-            except ReferenceResolutionError as exc:
-                records.append(
-                    self._record(
-                        step,
-                        step["arguments"],
-                        "FAILED",
-                        str(exc),
-                        0,
-                    )
+                outcome = self._execute_step(step, results, "main", counter)
+            except _ActionLimitExceeded:
+                self._append_skipped(
+                    strategy["steps"][index:],
+                    records,
+                    "ACTION_LIMIT_EXCEEDED",
                 )
-                self._append_skipped(strategy["steps"][index + 1 :], records)
-                failed = True
+                self._enter_safe_stop(
+                    "ACTION_LIMIT_EXCEEDED",
+                    step["step_id"],
+                    records,
+                    safety_events,
+                )
+                overall_status = "SAFE_STOP"
                 break
 
-            backend_result = self.backend.execute(step["action"], arguments)
-            results[step["step_id"]] = deepcopy(backend_result)
-            records.append(
-                self._record(
-                    step,
-                    arguments,
-                    backend_result["status"],
-                    backend_result.get("reason") or None,
-                    backend_result.get("duration_ms", 0),
+            records.append(outcome.record)
+            if outcome.result.get("status") == "SUCCESS":
+                continue
+
+            recovery = step.get("on_failure")
+            if recovery is None:
+                self._append_skipped(strategy["steps"][index + 1 :], records)
+                overall_status = "FAILED"
+                break
+
+            try:
+                recovered = self._execute_recovery(
+                    recovery,
+                    results,
+                    records,
+                    counter,
                 )
+            except _ActionLimitExceeded:
+                self._append_skipped(
+                    strategy["steps"][index + 1 :],
+                    records,
+                    "ACTION_LIMIT_EXCEEDED",
+                )
+                self._enter_safe_stop(
+                    "ACTION_LIMIT_EXCEEDED",
+                    step["step_id"],
+                    records,
+                    safety_events,
+                )
+                overall_status = "SAFE_STOP"
+                break
+
+            if recovered:
+                continue
+
+            self._append_skipped(strategy["steps"][index + 1 :], records)
+            self._enter_safe_stop(
+                "RECOVERY_EXHAUSTED",
+                step["step_id"],
+                records,
+                safety_events,
             )
-            if backend_result["status"] != "SUCCESS":
-                self._append_skipped(strategy["steps"][index + 1 :], records)
-                failed = True
-                break
+            overall_status = "SAFE_STOP"
+            break
 
+        return self._build_output(
+            strategy["task_id"],
+            overall_status,
+            records,
+            safety_events,
+        )
+
+    def _build_output(
+        self,
+        task_id: str,
+        status: str,
+        records: list[dict],
+        safety_events: list[dict],
+    ) -> dict:
         return {
             "schema_version": "execution.v1",
-            "task_id": strategy["task_id"],
-            "status": "FAILED" if failed else "SUCCEEDED",
+            "task_id": task_id,
+            "status": status,
             "steps": records,
             "trajectory_points": self.backend.trajectory_points(),
             "total_duration_ms": sum(item["duration_ms"] for item in records),
-            "safety_events": [],
+            "safety_events": safety_events,
         }
+
+    def _execute_step(
+        self,
+        step: dict,
+        results: dict[str, dict],
+        phase: str,
+        counter: list[int],
+    ) -> StepOutcome:
+        try:
+            arguments = resolve_arguments(step["arguments"], results)
+        except ReferenceResolutionError as exc:
+            result = {"status": "FAILED", "reason": str(exc), "duration_ms": 0}
+            return StepOutcome(
+                self._record(step, step["arguments"], "FAILED", str(exc), 0, phase),
+                result,
+            )
+
+        if counter[0] >= self.limits.max_action_calls:
+            raise _ActionLimitExceeded
+        counter[0] += 1
+        result = self.backend.execute(step["action"], arguments)
+        results[step["step_id"]] = deepcopy(result)
+        return StepOutcome(
+            self._record(
+                step,
+                arguments,
+                result["status"],
+                result.get("reason") or None,
+                result.get("duration_ms", 0),
+                phase,
+            ),
+            result,
+        )
+
+    def _execute_recovery(
+        self,
+        recovery: dict,
+        results: dict[str, dict],
+        records: list[dict],
+        counter: list[int],
+    ) -> bool:
+        for attempt in range(1, recovery["max_attempts"] + 1):
+            attempt_ok = True
+            for recovery_step in recovery["steps"]:
+                outcome = self._execute_step(
+                    recovery_step,
+                    results,
+                    phase=f"recovery_{attempt}",
+                    counter=counter,
+                )
+                records.append(outcome.record)
+                if outcome.result.get("status") != "SUCCESS":
+                    attempt_ok = False
+                    break
+            if attempt_ok:
+                return True
+        return False
+
+    def _enter_safe_stop(
+        self,
+        reason: str,
+        step_id: str,
+        records: list[dict],
+        safety_events: list[dict],
+    ) -> None:
+        stop_result = self.backend.safe_stop(reason)
+        records.append(
+            {
+                "step_id": "safe_stop",
+                "phase": "safe_stop",
+                "action": "stop",
+                "arguments": {},
+                "status": "SUCCESS",
+                "reason": stop_result.get("reason") or reason,
+                "duration_ms": stop_result.get("duration_ms", 0),
+            }
+        )
+        safety_events.append(
+            {
+                "type": reason,
+                "severity": "error",
+                "step_id": step_id,
+                "message": f"{reason}; executor entered safe stop",
+            }
+        )
 
     def _preflight(self, strategy: dict) -> None:
         steps = strategy["steps"]
@@ -115,6 +250,19 @@ class StrategyInterpreter:
                 recovery_steps = recovery.get("steps", [])
                 if not isinstance(recovery_steps, list):
                     raise ValueError("INVALID_RECOVERY:steps must be an array")
+                max_attempts = recovery.get("max_attempts")
+                if (
+                    not isinstance(max_attempts, int)
+                    or isinstance(max_attempts, bool)
+                    or not 1 <= max_attempts <= self.limits.max_recovery_attempts
+                ):
+                    raise ValueError("max_attempts must be between 1 and 3")
+                if not recovery_steps:
+                    raise ValueError("recovery steps must not be empty")
+                if len(recovery_steps) > self.limits.max_recovery_steps:
+                    raise ValueError("RECOVERY_STEP_LIMIT_EXCEEDED")
+                if recovery.get("on_exhausted") != "stop":
+                    raise ValueError("on_exhausted must be stop")
                 all_steps.extend(recovery_steps)
 
         for step in all_steps:
@@ -149,14 +297,19 @@ class StrategyInterpreter:
         }
 
     @classmethod
-    def _append_skipped(cls, steps: list[dict], records: list[dict]) -> None:
+    def _append_skipped(
+        cls,
+        steps: list[dict],
+        records: list[dict],
+        reason: str = "PREVIOUS_STEP_FAILED",
+    ) -> None:
         for step in steps:
             records.append(
                 cls._record(
                     step,
                     step["arguments"],
                     "SKIPPED",
-                    "PREVIOUS_STEP_FAILED",
+                    reason,
                     0,
                 )
             )
