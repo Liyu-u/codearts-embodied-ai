@@ -12,6 +12,12 @@ class ExecutionLimits:
     max_action_calls: int = 100
 
 
+@dataclass(frozen=True)
+class StepOutcome:
+    record: dict
+    result: dict
+
+
 class ExecutorBackend(Protocol):
     mode: str
 
