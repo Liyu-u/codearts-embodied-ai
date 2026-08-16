@@ -7,7 +7,7 @@ STACKING_CUBES = {
     "objects": [
         {
             "id": "red_cube",
-            "category": "cube",
+            "category": "红色方块",
             "pose": {"x": 0.25, "y": 0.0, "z": 0.04},
             "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
             "attributes": {"display_name": "红色方块", "color": "red"},
@@ -15,7 +15,7 @@ STACKING_CUBES = {
         },
         {
             "id": "green_cube",
-            "category": "cube",
+            "category": "绿色方块",
             "pose": {"x": 0.25, "y": 0.0, "z": 0.12},
             "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
             "attributes": {"display_name": "绿色方块", "color": "green"},
@@ -23,7 +23,7 @@ STACKING_CUBES = {
         },
         {
             "id": "zone_unstack_target",
-            "category": "target_zone",
+            "category": "桌子",
             "pose": {"x": 0.4, "y": 0.0, "z": 0.03},
             "attributes": {"purpose": "safe_placement"},
             "execution": {

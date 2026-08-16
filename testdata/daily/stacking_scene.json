@@ -5,7 +5,7 @@
   "objects": [
     {
       "id": "red_cube",
-      "category": "cube",
+      "category": "红色方块",
       "pose": {
         "x": 0.25,
         "y": 0.0,
@@ -27,7 +27,7 @@
     },
     {
       "id": "green_cube",
-      "category": "cube",
+      "category": "绿色方块",
       "pose": {
         "x": 0.25,
         "y": 0.0,
@@ -49,7 +49,7 @@
     },
     {
       "id": "zone_unstack_target",
-      "category": "target_zone",
+      "category": "桌子",
       "pose": {
         "x": 0.4,
         "y": 0.0,
