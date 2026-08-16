@@ -1,0 +1,84 @@
+{
+  "version": "1.0",
+  "description": "Physics Ontology for Embodied Intent Reasoner",
+  "entries": {
+    "glass_cup": {
+      "aliases": ["cup", "glass", "drinking_glass", "water_cup"],
+      "category": "cup", "material": "glass",
+      "physical": {"fragility_level": 3, "max_force_N": 2.0, "max_velocity_ms": 0.10, "mass_range_kg": [0.1, 0.5]},
+      "affordance": ["grasp", "move"], "risk": ["breakable", "slippery"]
+    },
+    "ceramic_cup": {
+      "aliases": ["mug"],
+      "category": "cup", "material": "ceramic",
+      "physical": {"fragility_level": 3, "max_force_N": 2.5, "max_velocity_ms": 0.12, "mass_range_kg": [0.15, 0.6]},
+      "affordance": ["grasp", "move"], "risk": ["breakable"]
+    },
+    "plastic_cup": {
+      "aliases": [],
+      "category": "cup", "material": "plastic",
+      "physical": {"fragility_level": 1, "max_force_N": 8.0, "max_velocity_ms": 0.25, "mass_range_kg": [0.02, 0.1]},
+      "affordance": ["grasp", "move", "stack"], "risk": []
+    },
+    "medicine_bottle": {
+      "aliases": ["bottle", "pill_bottle"],
+      "category": "bottle", "material": "plastic",
+      "physical": {"fragility_level": 1, "max_force_N": 5.0, "max_velocity_ms": 0.20, "mass_range_kg": [0.02, 0.2]},
+      "affordance": ["grasp", "move"], "risk": []
+    },
+    "glass_bottle": {
+      "aliases": ["bottle_glass"],
+      "category": "bottle", "material": "glass",
+      "physical": {"fragility_level": 3, "max_force_N": 2.0, "max_velocity_ms": 0.10, "mass_range_kg": [0.1, 0.5]},
+      "affordance": ["grasp", "move"], "risk": ["breakable"]
+    },
+    "wafer_box": {
+      "aliases": ["wafer", "wafer_container"],
+      "category": "wafer_container", "material": "plastic",
+      "physical": {"fragility_level": 4, "max_force_N": 1.5, "max_velocity_ms": 0.05, "mass_range_kg": [0.2, 1.0]},
+      "affordance": ["grasp", "move"], "risk": ["precision_equipment", "vibration_sensitive", "static_sensitive"]
+    },
+    "optical_lens_box": {
+      "aliases": ["lens_box", "precision_box"],
+      "category": "optical_component_container", "material": "optical_glass",
+      "physical": {"fragility_level": 4, "max_force_N": 1.5, "max_velocity_ms": 0.05, "mass_range_kg": [0.1, 0.5]},
+      "affordance": ["grasp", "move"], "risk": ["precision_equipment", "vibration_sensitive", "optical_surface"]
+    },
+    "power_supply": {
+      "aliases": ["power", "power_unit"],
+      "category": "industrial_power_supply", "material": "metal",
+      "physical": {"fragility_level": 0, "max_force_N": 50.0, "max_velocity_ms": 0.10, "mass_range_kg": [10.0, 50.0]},
+      "affordance": [], "risk": ["electrical_hazard", "heavy", "fixed"]
+    },
+    "high_voltage_cabinet": {
+      "aliases": ["cabinet"],
+      "category": "electrical_cabinet", "material": "metal",
+      "physical": {"fragility_level": 0, "max_force_N": 50.0, "max_velocity_ms": 0.10, "mass_range_kg": [20.0, 80.0]},
+      "affordance": [], "risk": ["electrical_hazard", "heavy", "fixed", "high_voltage"]
+    },
+    "wooden_block": {
+      "aliases": ["block", "cube"],
+      "category": "block", "material": "wood",
+      "physical": {"fragility_level": 0, "max_force_N": 10.0, "max_velocity_ms": 0.30, "mass_range_kg": [0.05, 0.5]},
+      "affordance": ["grasp", "move", "stack"], "risk": []
+    },
+    "plastic_block": {
+      "aliases": [],
+      "category": "block", "material": "plastic",
+      "physical": {"fragility_level": 1, "max_force_N": 8.0, "max_velocity_ms": 0.25, "mass_range_kg": [0.02, 0.3]},
+      "affordance": ["grasp", "move", "stack"], "risk": []
+    },
+    "metal_block": {
+      "aliases": [],
+      "category": "block", "material": "metal",
+      "physical": {"fragility_level": 0, "max_force_N": 10.0, "max_velocity_ms": 0.30, "mass_range_kg": [0.1, 2.0]},
+      "affordance": ["grasp", "move", "stack"], "risk": []
+    },
+    "generic_container": {
+      "aliases": ["box", "container"],
+      "category": "container", "material": "plastic",
+      "physical": {"fragility_level": 1, "max_force_N": 8.0, "max_velocity_ms": 0.25, "mass_range_kg": [0.05, 1.0]},
+      "affordance": ["grasp", "move"], "risk": []
+    }
+  }
+}

@@ -12,6 +12,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install intent-understanding dependencies
+        run: python -m pip install -r modules/intent_understanding/requirements.txt
       - name: Validate JSON schemas and examples
         run: |
           python - <<'PY'

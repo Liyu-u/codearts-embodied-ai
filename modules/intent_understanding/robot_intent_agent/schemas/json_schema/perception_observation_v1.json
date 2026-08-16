@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "perception_observation.v1",
+  "title": "Perception Observation v1",
+  "description": "Upstream perception envelope. simulation_metadata is accepted only as evaluator-side input and is removed before inference.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "message_type", "observation_id", "scene_id", "objects"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "message_type": {"const": "perception_observation"},
+    "observation_id": {"type": "string"},
+    "scene_id": {"type": "string"},
+    "timestamp": {"type": ["number", "string", "null"]},
+    "clock_domain": {"type": ["string", "null"]},
+    "coordinate_system": {"type": ["string", "null"]},
+    "source": {"type": "object"},
+    "objects": {"type": "array", "items": {"$ref": "#/$defs/object"}},
+    "regions": {"type": "array", "items": {"type": "object"}},
+    "relations": {"type": "array", "items": {"type": "object"}},
+    "robot_state": {"type": "object"},
+    "simulation_metadata": {"type": "object"}
+  },
+  "$defs": {
+    "object": {
+      "type": "object",
+      "required": ["object_id"],
+      "properties": {
+        "object_id": {"type": "string", "minLength": 1},
+        "category_candidates": {"type": "array"},
+        "pose": {"type": "object"},
+        "geometry": {"type": "object"},
+        "appearance": {"type": "object"},
+        "tracking": {"type": "object"}
+      },
+      "additionalProperties": true
+    }
+  }
+}

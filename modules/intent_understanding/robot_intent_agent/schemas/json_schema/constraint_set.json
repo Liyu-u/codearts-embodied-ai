@@ -1,0 +1,341 @@
+{
+  "$defs": {
+    "CollisionConstraint": {
+      "description": "碰撞约束 — 与指定物体保持安全距离。\n\n示例:\n    \"别碰玻璃杯\" → CollisionConstraint(\n        avoid_object=\"glass_cup\",\n        min_distance_m=0.05,\n    )",
+      "properties": {
+        "constraint_type": {
+          "$ref": "#/$defs/ConstraintType",
+          "default": "collision"
+        },
+        "priority": {
+          "$ref": "#/$defs/ConstraintPriority",
+          "default": "hard"
+        },
+        "avoid_object": {
+          "description": "避免碰撞的物体 ID/名称",
+          "title": "Avoid Object",
+          "type": "string"
+        },
+        "min_distance_m": {
+          "default": 0.05,
+          "description": "最小安全距离 (m)",
+          "exclusiveMinimum": 0.0,
+          "title": "Min Distance M",
+          "type": "number"
+        },
+        "description": {
+          "default": "",
+          "description": "人类可读约束说明",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "avoid_object"
+      ],
+      "title": "CollisionConstraint",
+      "type": "object"
+    },
+    "ConstraintPriority": {
+      "description": "约束优先级",
+      "enum": [
+        "hard",
+        "soft"
+      ],
+      "title": "ConstraintPriority",
+      "type": "string"
+    },
+    "ConstraintType": {
+      "description": "约束类型",
+      "enum": [
+        "force",
+        "velocity",
+        "collision",
+        "height",
+        "temporal",
+        "preference"
+      ],
+      "title": "ConstraintType",
+      "type": "string"
+    },
+    "ForceConstraint": {
+      "description": "力约束。\n\n示例:\n    \"轻一点\" → ForceConstraint(max_force_n=3.0, axis=\"z\")\n    \"用力抓住\" → ForceConstraint(min_force_n=5.0, max_force_n=8.0)",
+      "properties": {
+        "constraint_type": {
+          "$ref": "#/$defs/ConstraintType",
+          "default": "force"
+        },
+        "priority": {
+          "$ref": "#/$defs/ConstraintPriority",
+          "default": "hard"
+        },
+        "min_force_n": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "最小力 (N)",
+          "title": "Min Force N"
+        },
+        "max_force_n": {
+          "default": 10.0,
+          "description": "最大力 (N)",
+          "exclusiveMinimum": 0.0,
+          "maximum": 10.0,
+          "title": "Max Force N",
+          "type": "number"
+        },
+        "axis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "约束轴向 (x|y|z|grip)",
+          "title": "Axis"
+        },
+        "description": {
+          "default": "",
+          "description": "人类可读约束说明",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "title": "ForceConstraint",
+      "type": "object"
+    },
+    "HeightConstraint": {
+      "description": "高度约束 — Z 轴安全。\n\n示例:\n    assert z >= 0.02  → HeightConstraint(min_z_m=0.02)",
+      "properties": {
+        "constraint_type": {
+          "$ref": "#/$defs/ConstraintType",
+          "default": "height"
+        },
+        "priority": {
+          "$ref": "#/$defs/ConstraintPriority",
+          "default": "hard"
+        },
+        "min_z_m": {
+          "default": 0.02,
+          "description": "Z 轴最低安全高度 (m)",
+          "exclusiveMinimum": 0.0,
+          "title": "Min Z M",
+          "type": "number"
+        },
+        "description": {
+          "default": "",
+          "description": "人类可读约束说明",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "title": "HeightConstraint",
+      "type": "object"
+    },
+    "PreferenceConstraint": {
+      "description": "用户偏好约束 (SOFT)。\n\n示例:\n    \"用左手递给我\" → PreferenceConstraint(\n        key=\"hand\", value=\"left\",\n    )",
+      "properties": {
+        "constraint_type": {
+          "$ref": "#/$defs/ConstraintType",
+          "default": "preference"
+        },
+        "priority": {
+          "$ref": "#/$defs/ConstraintPriority",
+          "default": "soft"
+        },
+        "key": {
+          "description": "偏好键 (hand, speed_label, grip_style...)",
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "description": "偏好值",
+          "title": "Value"
+        },
+        "description": {
+          "default": "",
+          "description": "人类可读约束说明",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "title": "PreferenceConstraint",
+      "type": "object"
+    },
+    "TemporalConstraint": {
+      "description": "时序约束。\n\n示例:\n    \"先打开夹爪再抓取\" → TemporalConstraint(before=\"open_gripper\", after=\"close_gripper\")",
+      "properties": {
+        "constraint_type": {
+          "$ref": "#/$defs/ConstraintType",
+          "default": "temporal"
+        },
+        "priority": {
+          "$ref": "#/$defs/ConstraintPriority",
+          "default": "hard"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "在此技能之前执行",
+          "title": "Before"
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "在此技能之后执行",
+          "title": "After"
+        },
+        "description": {
+          "default": "",
+          "description": "人类可读约束说明",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "title": "TemporalConstraint",
+      "type": "object"
+    },
+    "VelocityConstraint": {
+      "description": "速度约束。\n\n示例:\n    \"慢一点\" → VelocityConstraint(max_linear_ms=0.15)\n    \"动作快些\" → VelocityConstraint(max_linear_ms=0.5)",
+      "properties": {
+        "constraint_type": {
+          "$ref": "#/$defs/ConstraintType",
+          "default": "velocity"
+        },
+        "priority": {
+          "$ref": "#/$defs/ConstraintPriority",
+          "default": "hard"
+        },
+        "max_linear_ms": {
+          "default": 0.3,
+          "description": "最大线速度 (m/s)",
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Max Linear Ms",
+          "type": "number"
+        },
+        "max_angular_rads": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "最大角速度 (rad/s)",
+          "title": "Max Angular Rads"
+        },
+        "description": {
+          "default": "",
+          "description": "人类可读约束说明",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "title": "VelocityConstraint",
+      "type": "object"
+    }
+  },
+  "description": "约束集合 — Hybrid Constraint Compiler 输出。\n\n将 Hard 和 Soft 约束分组管理。",
+  "properties": {
+    "set_id": {
+      "title": "Set Id",
+      "type": "string"
+    },
+    "task_id": {
+      "description": "关联的任务 ID",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "hard_constraints": {
+      "description": "硬约束 (必须满足)",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ForceConstraint"
+          },
+          {
+            "$ref": "#/$defs/VelocityConstraint"
+          },
+          {
+            "$ref": "#/$defs/CollisionConstraint"
+          },
+          {
+            "$ref": "#/$defs/HeightConstraint"
+          },
+          {
+            "$ref": "#/$defs/TemporalConstraint"
+          },
+          {
+            "$ref": "#/$defs/PreferenceConstraint"
+          }
+        ]
+      },
+      "title": "Hard Constraints",
+      "type": "array"
+    },
+    "soft_constraints": {
+      "description": "软约束 (尽量满足)",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ForceConstraint"
+          },
+          {
+            "$ref": "#/$defs/VelocityConstraint"
+          },
+          {
+            "$ref": "#/$defs/CollisionConstraint"
+          },
+          {
+            "$ref": "#/$defs/HeightConstraint"
+          },
+          {
+            "$ref": "#/$defs/TemporalConstraint"
+          },
+          {
+            "$ref": "#/$defs/PreferenceConstraint"
+          }
+        ]
+      },
+      "title": "Soft Constraints",
+      "type": "array"
+    }
+  },
+  "required": [
+    "task_id"
+  ],
+  "title": "ConstraintSet",
+  "type": "object"
+}

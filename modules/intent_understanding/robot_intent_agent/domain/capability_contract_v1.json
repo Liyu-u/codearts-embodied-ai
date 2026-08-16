@@ -1,0 +1,37 @@
+{
+  "contract_id": "capability_contract.v1",
+  "version": "1.1.0",
+  "scope": "intent_understanding_to_downstream_intent_json",
+  "status_values": ["READY", "NEEDS_CLARIFICATION", "BLOCKED"],
+  "actions": {
+    "GRASP": {"external": "grasp", "required_roles": ["theme"]},
+    "DYNAMIC_GRASP": {"external": "dynamic_grasp", "required_roles": ["theme"]},
+    "PLACE": {"external": "pick_and_place", "required_roles": ["theme", "destination"]},
+    "FETCH": {"external": "fetch", "required_roles": ["theme"], "required_any_roles": [["destination", "recipient"]]},
+    "TRANSFER": {"external": "transfer", "required_roles": ["theme", "destination"]},
+    "HANDOVER": {"external": "handover", "required_roles": ["theme", "recipient"]},
+    "PUSH": {"external": "push", "required_roles": ["theme"]},
+    "POUR": {"external": "pour", "required_roles": ["theme", "destination"]},
+    "STACK": {"external": "stack", "required_roles": ["theme", "destination"]},
+    "WAIT": {"external": "wait", "required_roles": ["condition"]}
+  },
+  "object_categories": [
+    "cup", "bottle", "box", "book", "medicine_bottle", "ball",
+    "workpiece", "tool", "fixture", "tray", "table", "bin", "shelf", "container"
+  ],
+  "roles": ["theme", "source", "destination", "recipient", "obstacle", "reference", "condition"],
+  "attributes": ["color", "material", "shape", "size", "motion_state", "category"],
+  "relations": ["left", "right", "front", "behind", "near", "far", "on", "inside", "blocking", "avoiding"],
+  "constraints": {
+    "parameters": ["force_n", "velocity_ms"],
+    "operators": ["exact", "min", "max", "range"],
+    "units": ["N", "m/s"]
+  },
+  "public_schema": "intent_output.v1.1",
+  "policies": {
+    "never_fabricate_entity_id": true,
+    "unknown_capability": "BLOCKED",
+    "ambiguous_grounding": "NEEDS_CLARIFICATION",
+    "evaluation_truth_is_not_inference_input": true
+  }
+}

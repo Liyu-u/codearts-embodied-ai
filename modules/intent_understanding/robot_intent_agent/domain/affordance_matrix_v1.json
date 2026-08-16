@@ -1,0 +1,18 @@
+{
+  "version": "affordance_matrix.v1",
+  "description": "Release-time action/affordance boundary for the supported task domain.",
+  "actions": {
+    "grasp": ["graspable"],
+    "dynamic_grasp": ["graspable", "tracking_available"],
+    "pick_and_place": ["graspable", "destination_supports_placement"],
+    "fetch": ["graspable", "destination_grounded"],
+    "transfer": ["graspable", "destination_grounded"],
+    "handover": ["graspable", "recipient_grounded", "handover_pose_known"],
+    "push": ["pushable", "push_path_clear"],
+    "pour": ["pourable", "destination_container"],
+    "stack": ["stackable", "destination_stable"],
+    "wait": ["condition_observable"]
+  },
+  "unknown_capability_policy": "BLOCK_OR_NEEDS_CLARIFICATION",
+  "fake_entity_policy": "NEVER_FABRICATE"
+}

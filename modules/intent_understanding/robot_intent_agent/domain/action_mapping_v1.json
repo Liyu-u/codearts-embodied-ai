@@ -1,0 +1,18 @@
+{
+  "version": "action_mapping.v1",
+  "description": "Internal semantic action to stable downstream action mapping.",
+  "mappings": {
+    "GRASP": "grasp",
+    "DYNAMIC_GRASP": "dynamic_grasp",
+    "PLACE": "pick_and_place",
+    "FETCH": "fetch",
+    "TRANSFER": "transfer",
+    "HANDOVER": "handover",
+    "PUSH": "push",
+    "POUR": "pour",
+    "STACK": "stack",
+    "WAIT": "wait",
+    "CUSTOM": "unsupported"
+  },
+  "authority": "robot_intent_agent.intent_output_adapter.ACTION_OUTPUT_MAP"
+}
