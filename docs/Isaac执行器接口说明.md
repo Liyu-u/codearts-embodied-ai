@@ -166,7 +166,7 @@ executor = ExecutorAdapter(MockBackend.from_perception(perception_v1))
 execution_v1 = executor.run(strategy_v1)
 ```
 
-成功输出的结构示例：
+成功输出的结构摘录如下。为便于阅读，`steps` 只展示第一条，`trajectory_points` 也省略了实际轨迹；程序的真实输出会保存全部五条主步骤和移动轨迹：
 
 ```json
 {
