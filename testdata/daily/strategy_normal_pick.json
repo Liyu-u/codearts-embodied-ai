@@ -5,7 +5,7 @@
   "target_ids": ["obj-001"],
   "target_object": "红色方块",
   "destination": {"x": 0.2, "y": 0.0, "z": 0.03},
-  "destination_id": null,
+  "destination_id": "zone-001",
   "constraints": [],
   "status": "READY",
   "blocking_reasons": [],

@@ -32,9 +32,50 @@ class TestStrategyContract(unittest.TestCase):
         self.assertTrue(output["success"])
         self.assertFalse(output["blocked"])
         self.assertEqual(output["task_id"], "task-001")
-        self.assertEqual(output["steps"][0]["arguments"]["target_id"], "obj-001")
-        self.assertEqual(output["steps"][0]["arguments"]["destination"]["z"], 0.03)
-        self.assertIsInstance(output["code"], str)
+        self.assertEqual(
+            [step["action"] for step in output["steps"]],
+            [
+                "detect_object",
+                "move_to_object",
+                "grasp",
+                "move_to_target",
+                "release",
+            ],
+        )
+        self.assertEqual(
+            output["steps"][0],
+            {
+                "step_id": "task-001-detect",
+                "action": "detect_object",
+                "arguments": {"object_name": "obj-001"},
+            },
+        )
+        self.assertEqual(
+            output["steps"][1]["arguments"],
+            {"object_id": "$task-001-detect.object_id"},
+        )
+        self.assertEqual(
+            output["steps"][2]["on_failure"],
+            {
+                "max_attempts": 1,
+                "steps": [
+                    {
+                        "step_id": "task-001-retry-grasp",
+                        "action": "grasp",
+                        "arguments": {
+                            "object_id": "$task-001-detect.object_id"
+                        },
+                    }
+                ],
+                "on_exhausted": "stop",
+            },
+        )
+        self.assertEqual(
+            output["steps"][3]["arguments"],
+            {"target": "zone-001"},
+        )
+        self.assertEqual(output["steps"][4]["arguments"], {})
+        self.assertIsNone(output["code"])
 
     def test_non_ready_tasks_are_blocked(self):
         for filename in ("strategy_target_not_found.json", "strategy_blocked_dangerous.json"):
@@ -59,50 +100,58 @@ class TestStrategyContract(unittest.TestCase):
         self.assertTrue(output["blocked"])
         self.assertIsNone(output["code"])
 
-    def test_all_builtin_actions_generate(self):
-        tasks = [
-            {
-                "action": "pick_and_place",
-                "target_object": "red",
-                "destination": {"x": 0.2, "y": 0.0, "z": 0.03},
-            },
-            {
-                "action": "push",
-                "target_object": "green",
-                "destination": {"x": 0.4, "y": -0.2, "z": 0.04},
-            },
-            {
-                "action": "stack",
-                "target_object": "red",
-                "reference_object": "blue",
-            },
-            {
-                "action": "sort_by_color",
-                "target_objects": ["red", "blue"],
-                "attributes": ["red", "blue"],
-                "num_piles": 2,
-            },
-            {"action": "sort_by_size", "target_objects": ["red", "blue"]},
-            {
-                "action": "filter_by_attribute",
-                "target_objects": ["red", "blue"],
-                "attributes": ["red"],
-                "destination": {"x": 0.2, "y": 0.0, "z": 0.03},
-            },
-        ]
-
-        for index, details in enumerate(tasks):
-            with self.subTest(action=details["action"]):
-                task = {
+    def test_unsupported_ready_actions_are_blocked(self):
+        for action in (
+            "push",
+            "stack",
+            "sort_by_color",
+            "sort_by_size",
+            "filter_by_attribute",
+        ):
+            with self.subTest(action=action):
+                output = strategy.run({
                     "schema_version": "task.v1",
-                    "task_id": f"builtin-{index}",
+                    "task_id": f"unsupported-{action}",
+                    "action": action,
+                    "target_ids": ["obj-001"],
+                    "destination_id": "zone-001",
                     "status": "READY",
-                    **details,
-                }
-                output = strategy.run(task)
+                })
                 self.assert_strategy_schema(output)
-                self.assertTrue(output["success"], output.get("message"))
-                self.assertIsInstance(output["code"], str)
+                self.assertFalse(output["success"])
+                self.assertTrue(output["blocked"])
+                self.assertEqual(output["steps"], [])
+                self.assertIsNone(output["code"])
+                self.assertIn(
+                    f"UNSUPPORTED_ACTION:{action}",
+                    output["blocking_reasons"],
+                )
+
+    def test_pick_and_place_requires_one_target_id_and_destination_id(self):
+        cases = (
+            ([], "zone-001"),
+            (["obj-001", "obj-002"], "zone-001"),
+            (["obj-001"], None),
+        )
+        for target_ids, destination_id in cases:
+            with self.subTest(
+                target_ids=target_ids,
+                destination_id=destination_id,
+            ):
+                output = strategy.run({
+                    "schema_version": "task.v1",
+                    "task_id": "unresolved-pick",
+                    "action": "pick_and_place",
+                    "target_ids": target_ids,
+                    "target_object": "红色方块",
+                    "destination_id": destination_id,
+                    "status": "READY",
+                })
+                self.assert_strategy_schema(output)
+                self.assertFalse(output["success"])
+                self.assertTrue(output["blocked"])
+                self.assertEqual(output["steps"], [])
+                self.assertIsNone(output["code"])
 
 
 if __name__ == "__main__":
