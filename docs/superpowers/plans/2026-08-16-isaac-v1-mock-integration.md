@@ -1129,37 +1129,7 @@ git commit -m "feat: connect executor to mock pipeline"
 - Consumes: all implemented public APIs and checked-in JSON examples
 - Produces: team-facing interface guide and dependency-free CI entrypoints
 
-- [ ] **Step 1: Write a failing documentation/entrypoint contract test**
-
-Add to `tests/contract/test_execution_adapter.py`:
-
-```python
-    def test_team_interface_documents_all_actions_and_commands(self):
-        root = Path(__file__).resolve().parents[2]
-        text = (root / "docs" / "Isaac执行器接口说明.md").read_text(encoding="utf-8")
-        for action in (
-            "detect_object",
-            "move_to_object",
-            "grasp",
-            "move_to_target",
-            "release",
-        ):
-            self.assertIn(f"`{action}`", text)
-        self.assertIn("python -m unittest discover -s tests -t . -v", text)
-        self.assertIn("未经确认不得执行 strategy.code", text)
-```
-
-- [ ] **Step 2: Run and verify RED**
-
-Run:
-
-```bash
-python -m unittest tests.contract.test_execution_adapter.ExecutionAdapterContractTests.test_team_interface_documents_all_actions_and_commands -v
-```
-
-Expected: `FileNotFoundError` for `docs/Isaac执行器接口说明.md`.
-
-- [ ] **Step 3: Write the three interface documents**
+- [ ] **Step 1: Write the three interface documents**
 
 `modules/perception/README.md` must contain:
 
@@ -1190,7 +1160,7 @@ Expected: `FileNotFoundError` for `docs/Isaac执行器接口说明.md`.
 6. exact local verification command `python -m unittest discover -s tests -t . -v`;
 7. clear statement that phase one does not prove real Isaac motion.
 
-- [ ] **Step 4: Update root README and Makefile**
+- [ ] **Step 2: Update root README and Makefile**
 
 Add links from the root README’s C module section to the three new README/interface documents.
 
@@ -1212,7 +1182,7 @@ test:
 	python -m unittest discover -s tests -t . -v
 ```
 
-- [ ] **Step 5: Extend GitHub Actions without adding packages**
+- [ ] **Step 3: Extend GitHub Actions without adding packages**
 
 After the existing JSON syntax step, add:
 
@@ -1221,12 +1191,13 @@ After the existing JSON syntax step, add:
         run: python -m unittest discover -s tests -t . -v
 ```
 
-- [ ] **Step 6: Run docs, Makefile-equivalent, and full verification**
+- [ ] **Step 4: Verify document links, real entrypoints, and JSON examples**
+
+Human-facing prose is reviewed directly rather than tested by grepping exact wording. Verify every local Markdown link introduced by this task resolves to an existing repository path, then run the actual entrypoints documented for teammates.
 
 Run:
 
 ```bash
-python -m unittest tests.contract.test_execution_adapter.ExecutionAdapterContractTests.test_team_interface_documents_all_actions_and_commands -v
 python -m unittest discover -s tests/contract -t . -v
 python -m unittest discover -s tests/integration -t . -v
 python -m unittest discover -s tests/e2e -t . -v
@@ -1234,12 +1205,12 @@ python -m unittest discover -s tests -t . -v
 python -c "import json; from pathlib import Path; files=list(Path('contracts').rglob('*.json'))+list(Path('testdata').rglob('*.json')); [json.loads(p.read_text(encoding='utf-8')) for p in files]; print(f'JSON syntax: OK ({len(files)} files)')"
 ```
 
-Expected: all tests pass; e2e may report 0 tests but exits successfully because the package exists; all contract and testdata JSON parses.
+Expected: all document links resolve; all tests pass; e2e may report 0 tests but exits successfully because the package exists; all contract and testdata JSON parses.
 
-- [ ] **Step 7: Commit locally**
+- [ ] **Step 5: Commit locally**
 
 ```bash
-git add modules/perception/README.md modules/executor/README.md docs/Isaac执行器接口说明.md README.md Makefile .github/workflows/integration-contract.yml tests/e2e/__init__.py tests/contract/test_execution_adapter.py
+git add modules/perception/README.md modules/executor/README.md docs/Isaac执行器接口说明.md README.md Makefile .github/workflows/integration-contract.yml tests/e2e/__init__.py
 git commit -m "docs: explain isaac v1 integration interface"
 ```
 
