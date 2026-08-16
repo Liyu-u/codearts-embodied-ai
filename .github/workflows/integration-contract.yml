@@ -21,3 +21,5 @@ jobs:
               json.loads(p.read_text(encoding='utf-8'))
           print('contract JSON syntax: OK')
           PY
+      - name: Run contract and integration tests
+        run: python -m unittest discover -s tests -t . -v

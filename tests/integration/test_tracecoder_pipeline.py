@@ -3,7 +3,7 @@
 用 Mock 的 intent / strategy / executor 适配器 + 真实 tracecoder 适配器，
 走 pipeline.run_pipeline 的『意图 → 策略 → 执行 → 反馈』完整链路：
   - 贪心基线无恢复 → 执行失败
-  - TraceCoder 给失败抓取补 on_failure 恢复 → 修复通过
+  - TraceCoder 给失败抓取补 on_failure 恢复 → 生成待重执行的 patch
   - feedback.v1 输出可供上层回归测试与策略修正消费
 """
 
@@ -78,10 +78,11 @@ class TestTraceCoderPipeline(unittest.TestCase):
         self.assertIsNotNone(feedback)
         self.assertEqual(feedback["schema_version"], "feedback.v1")
 
-        # 修复应成功：feedback 里能解析出 final_passed=True
+        # 仿真修复应成功，但真实执行尚未重跑，不能冒充已通过
         diag = json.loads(feedback["diagnosis"])
-        self.assertTrue(diag["final_passed"], diag.get("stopped_reason"))
-        self.assertFalse(feedback["retryable"])
+        self.assertTrue(diag["simulation_final_passed"], diag.get("stopped_reason"))
+        self.assertFalse(diag["final_passed"])
+        self.assertTrue(feedback["retryable"])
 
         # patch 是修复后的完整策略：抓取步骤已带 on_failure 恢复
         patch_steps = feedback["patch"]["steps"]

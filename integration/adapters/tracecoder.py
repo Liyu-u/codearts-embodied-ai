@@ -27,8 +27,8 @@ feedback.v1 服务：接收上游执行结果，做失败归因，返回修复�
 关于『轻量仿真 → Isaac Sim』的演进（重要）
 ----------------------------------------
 当前 TraceCoder 引擎内置轻量确定性仿真（modules/evaluator/tracecoder/
-simulator.py），因此 run() 能独立跑通 初始分→修复→最终分 的完整闭环，
-用于 Mock 联调阶段。
+simulator.py），仅用于 Mock 联调阶段生成候选修复策略；最终是否通过，
+必须以输入的 execution.v1 真实执行证据为准。
 
 后续接入 Isaac Sim 后，真实执行日志（execution.v1）会承载执行证据，
 TraceCoder 消费它做归因——本适配器已经把 execution.v1 作为必备输入，
@@ -72,7 +72,10 @@ def _strategy_v1_to_native(strategy_v1: dict) -> dict:
             "arguments": step.get("arguments") or {},
             "on_failure": step.get("on_failure"),
         })
-    return {"steps": steps}
+    # strategy.v1 没有独立的 strategy_id，task_id 就是策略与任务的关联键。
+    # 必须保留下来，否则 normalize_strategy() 会生成 generated_strategy，
+    # 返回的 patch 就无法再关联到原任务。
+    return {"strategy_id": strategy_v1.get("task_id"), "steps": steps}
 
 
 def _strategy_native_to_v1(strategy_native: dict) -> dict:
@@ -184,6 +187,16 @@ def _derive_max_api_calls(task: dict) -> int | None:
     return None
 
 
+def _execution_failure_counts(execution: dict) -> dict[str, int]:
+    """把执行日志中的失败动作转换成轻量仿真的失败注入。"""
+    failures: dict[str, int] = {}
+    for item in _execution_summary(execution)["failed_steps"]:
+        action = item.get("action")
+        if action:
+            failures[action] = failures.get(action, 0) + 1
+    return failures
+
+
 def resolve_task_data(task: dict, native_strategy: dict, execution: dict) -> dict:
     """把 v1 协议解析为 TraceCoder 引擎的 task_data。
 
@@ -199,12 +212,15 @@ def resolve_task_data(task: dict, native_strategy: dict, execution: dict) -> dic
 
     objects = explicit.get("objects") or _derive_objects(native_strategy)
     goals = explicit.get("goals") or _derive_goals(task, native_strategy)
-    scenarios = explicit.get("scenarios") or [{
-        "name": "normal",
-        "required": True,
-        # 演示/联调可在 task 里注入失败：{"failures": {"grasp": 1}}
-        # 让引擎有机会展示『给失败步骤补 on_failure 恢复』的修复逻辑。
-    }]
+    scenarios = explicit.get("scenarios")
+    if not scenarios:
+        # 没有专门的 Mock 场景时，用真实 execution.v1 中记录的失败动作
+        # 驱动候选修复仿真，而不是无条件假设 normal 场景。
+        scenario = {"name": "execution_evidence", "required": True}
+        failures = _execution_failure_counts(execution)
+        if failures:
+            scenario["failures"] = failures
+        scenarios = [scenario]
 
     # 参考时长：只有执行已成功时，本次执行时长才能作为理想时长的有效下界；
     # 执行失败时它包含失败/恢复路径，不作为参考基准（efficiency 回退通用口径）。
@@ -222,6 +238,9 @@ def resolve_task_data(task: dict, native_strategy: dict, execution: dict) -> dic
         "scenarios": scenarios,
         "safety_rules": {"max_api_calls": _derive_max_api_calls(task)},
         "reference_duration_ms": reference_duration_ms,
+        # 评估器目前用轻量仿真生成候选 patch；把真实执行证据一并带入任务数据，
+        # 供诊断层记录，避免把仿真结果误当成真实执行结果。
+        "execution_evidence": _execution_summary(execution),
     }
 
 
@@ -229,7 +248,46 @@ def resolve_task_data(task: dict, native_strategy: dict, execution: dict) -> dic
 # feedback.v1 输出组装
 # ---------------------------------------------------------------------------
 
-def _build_diagnosis(result: dict) -> str:
+def _execution_summary(execution: dict) -> dict:
+    """提取 execution.v1 中与反馈直接相关的事实，避免复制完整日志。"""
+    failed_steps = []
+    for step in execution.get("steps") or []:
+        status = str(step.get("status", "")).upper()
+        if status in {"FAILED", "FAIL", "ERROR", "SAFE_STOP"}:
+            failed_steps.append({
+                "step_id": step.get("step_id"),
+                "action": step.get("action"),
+                "status": step.get("status"),
+                "reason": step.get("reason") or step.get("error"),
+            })
+    return {
+        "task_id": execution.get("task_id"),
+        "status": execution.get("status"),
+        "failed_steps": failed_steps,
+        "safety_events": execution.get("safety_events") or [],
+    }
+
+
+def _has_safety_violation(execution: dict) -> bool:
+    """判断执行日志是否记录了明确的安全违规。"""
+    for event in execution.get("safety_events") or []:
+        count = event.get("count")
+        if isinstance(count, (int, float)) and not isinstance(count, bool) and count > 0:
+            return True
+        if event.get("triggered") is True or str(event.get("status", "")).upper() in {
+            "VIOLATION", "TRIGGERED", "FAILED"
+        }:
+            return True
+    return False
+
+
+def _execution_passed(execution: dict) -> bool:
+    """execution.v1 是最终事实来源，轻量仿真不能覆盖真实失败。"""
+    # steps 中可能保留可恢复的中间失败；最终 status 才表示整次执行结果。
+    return execution.get("status") == "SUCCEEDED" and not _has_safety_violation(execution)
+
+
+def _build_diagnosis(result: dict, execution: dict, final_passed: bool) -> str:
     """把引擎的结构化结果序列化为 feedback.v1 的 diagnosis 字符串。
 
     schema 限定 diagnosis 为 string，因此这里把结构化内容 JSON 序列化；
@@ -240,7 +298,12 @@ def _build_diagnosis(result: dict) -> str:
     final_eval = result.get("final_evaluation") or {}
     score = final_eval.get("score") or {}
     structured = {
-        "final_passed": bool(result.get("final_passed")),
+        # final_passed 必须反映真实 execution.v1，而不是内部仿真结果。
+        "final_passed": final_passed,
+        "execution_status": execution.get("status"),
+        "execution_passed": _execution_passed(execution),
+        "simulation_final_passed": bool(result.get("final_passed")),
+        "execution_evidence": _execution_summary(execution),
         "status": result.get("status"),
         "stopped_reason": result.get("stopped_reason"),
         "repair_rounds": len(history),
@@ -262,16 +325,19 @@ def _build_diagnosis(result: dict) -> str:
     return json.dumps(structured, ensure_ascii=False)
 
 
-def _build_feedback(result: dict) -> dict:
+def _build_feedback(result: dict, execution: dict) -> dict:
     """把引擎结果映射为 feedback.v1。"""
-    final_passed = bool(result.get("final_passed"))
+    final_passed = _execution_passed(execution)
+    safety_violation = _has_safety_violation(execution)
+    # FAILED 可以在重新执行 patch 前重试；SAFE_STOP 或安全违规不能自动重试。
+    retryable = execution.get("status") == "FAILED" and not safety_violation
     return {
         "schema_version": "feedback.v1",
         "task_id": result.get("task_id"),
-        "diagnosis": _build_diagnosis(result),
-        # retryable：修复未完全通过 → 闭环可以用返回的 patch 再次迭代；
-        # 已通过 → 无需重试（质量优化已完成，patch 是可直接采用的最终版）。
-        "retryable": not final_passed,
+        "diagnosis": _build_diagnosis(result, execution, final_passed),
+        # retryable：真实执行 FAILED 且没有安全违规 → 上游可以重新执行 patch；
+        # SAFE_STOP 或安全违规不允许自动重试。
+        "retryable": retryable,
         # patch：修复后的完整策略（strategy.v1）。无论通过与否都返回——
         # 通过=质量优化后的最终版；未通过=当前最优可用版。
         "patch": _strategy_native_to_v1(result.get("best_strategy") or {}),
@@ -321,12 +387,29 @@ def run(input_json: dict) -> dict:
 
     # 缺少核心输入时如实报错（符合仓库『危险/缺字段必须阻断』原则），
     # 不静默返回空 patch。
-    if not task.get("task_id") or not strategy_v1.get("steps") or not execution:
+    task_id = task.get("task_id")
+    strategy_task_id = strategy_v1.get("task_id")
+    execution_task_id = execution.get("task_id")
+    if not task_id or not strategy_v1.get("steps") or not execution:
         raise ValueError(
             "tracecoder.run 需要完整的 {task, strategy, execution} 输入，"
             f"实际收到 task_id={task.get('task_id')!r}, "
             f"steps={len(strategy_v1.get('steps') or [])}, execution={'有' if execution else '无'}"
         )
+    if strategy_task_id != task_id:
+        raise ValueError(
+            f"task_id 不一致：task={task_id!r}, strategy={strategy_task_id!r}"
+        )
+    if execution_task_id != task_id:
+        raise ValueError(
+            f"task_id 不一致：task={task_id!r}, execution={execution_task_id!r}"
+        )
+    if execution.get("schema_version") != "execution.v1":
+        raise ValueError("execution 必须是 execution.v1")
+    if execution.get("status") not in {"SUCCEEDED", "FAILED", "SAFE_STOP"}:
+        raise ValueError(f"execution.status 无效：{execution.get('status')!r}")
+    if not isinstance(execution.get("steps"), list) or not execution["steps"]:
+        raise ValueError("execution.steps 必须是非空数组")
 
     native_strategy = normalize_strategy(_strategy_v1_to_native(strategy_v1))
     task_data = resolve_task_data(task, native_strategy, execution)
@@ -339,4 +422,4 @@ def run(input_json: dict) -> dict:
         # HLLM 经验库：进程内记忆，跨 run() 调用复用成功修复组合。
         experience_store=_EXPERIENCE_STORE,
     )
-    return _build_feedback(result)
+    return _build_feedback(result, execution)

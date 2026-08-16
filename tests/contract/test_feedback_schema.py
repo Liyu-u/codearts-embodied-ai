@@ -8,9 +8,15 @@
 从而保证模块对外接口与 Schema 冻结版本一致。
 """
 
+import copy
+import json
 import unittest
 
-from integration.adapters.tracecoder import run
+from integration.adapters.tracecoder import (
+    _strategy_v1_to_native,
+    resolve_task_data,
+    run,
+)
 from tests.helpers.schema_validate import load_schema, validate
 from tests.helpers.tracecoder_fixtures import (
     DEMO_STRATEGY_V1,
@@ -40,6 +46,7 @@ class TestFeedbackContract(unittest.TestCase):
         self.assertEqual(output["task_id"], "demo_place_cup")
         self.assertIsInstance(output["diagnosis"], str)
         self.assertIn("final_passed", output["diagnosis"])  # 序列化诊断可被解析
+        self.assertEqual(output["patch"]["task_id"], "demo_place_cup")
 
     def test_patch_validates_against_strategy_schema(self):
         output = run(self._input())
@@ -54,8 +61,54 @@ class TestFeedbackContract(unittest.TestCase):
         self.assertEqual(errors, [], "执行日志不符合 execution.v1：\n" + "\n".join(errors))
 
     def test_retryable_flag_semantics(self):
-        # 修复后应通过 → retryable=False
+        # 初始执行失败，虽然仿真生成了修复 patch，但尚未重新执行 → 可重试
         output = run(self._input())
+        diagnosis = json.loads(output["diagnosis"])
+        self.assertTrue(diagnosis["simulation_final_passed"])
+        self.assertFalse(diagnosis["final_passed"])
+        self.assertTrue(output["retryable"])
+
+    def test_execution_task_id_must_match_task(self):
+        execution = mock_executor_run(DEMO_STRATEGY_V1, DEMO_TASK_V1)
+        execution["task_id"] = "another_task"
+        with self.assertRaises(ValueError):
+            run(self._input(execution))
+
+    def test_execution_failure_drives_candidate_simulation(self):
+        task = copy.deepcopy(DEMO_TASK_V1)
+        task.pop("tracecoder")
+        execution = {
+            "schema_version": "execution.v1",
+            "task_id": task["task_id"],
+            "status": "FAILED",
+            "steps": [{
+                "step_id": "grasp_cup",
+                "action": "grasp",
+                "status": "FAILED",
+                "reason": "OBJECT_NOT_REACHABLE_FROM_CURRENT_POSE",
+            }],
+        }
+        task_data = resolve_task_data(
+            task,
+            _strategy_v1_to_native(DEMO_STRATEGY_V1),
+            execution,
+        )
+        self.assertEqual(task_data["scenarios"][0]["failures"], {"grasp": 1})
+
+    def test_successful_reexecution_is_the_final_pass_signal(self):
+        first = run(self._input())
+        patched_strategy = first["patch"]
+        execution = mock_executor_run(patched_strategy, DEMO_TASK_V1)
+        self.assertEqual(execution["status"], "SUCCEEDED")
+
+        output = run({
+            "task": DEMO_TASK_V1,
+            "strategy": patched_strategy,
+            "execution": execution,
+        })
+        diagnosis = json.loads(output["diagnosis"])
+        self.assertTrue(diagnosis["execution_passed"])
+        self.assertTrue(diagnosis["final_passed"])
         self.assertFalse(output["retryable"])
 
 

@@ -1,7 +1,8 @@
 """TraceCoder 联调测试的共享 fixture 与 Mock 执行器。
 
 demo 场景：『红杯放入左托盘』，注入一次抓取失败（grasp: 1）。
-贪心基线策略没有 on_failure 恢复 → 初始失败；TraceCoder 修复后通过。
+贪心基线策略没有 on_failure 恢复 → 初始失败；TraceCoder 生成修复 patch，
+由上游重新执行后才能确认是否通过。
 
 Mock 执行器（mock_executor_run）是 C 模块（Isaac Sim 执行器）接入前的
 替身：把 strategy.v1 放到 TraceCoder 轻量仿真里跑一遍，产出 execution.v1。
