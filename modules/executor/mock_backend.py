@@ -65,17 +65,6 @@ class MockBackend:
 
     def _detect_object(self, arguments: dict, duration_ms: int) -> dict:
         object_id = arguments.get("object_id")
-        if object_id is None:
-            object_name = arguments.get("object_name")
-            matches = [
-                item_id
-                for item_id, item in self._objects.items()
-                if item_id == object_name
-                or item.get("attributes", {}).get("display_name") == object_name
-            ]
-            if len(matches) > 1:
-                return self._failed(f"AMBIGUOUS_OBJECT_NAME:{object_name}", duration_ms)
-            object_id = matches[0] if matches else object_name
         item = self._objects.get(object_id)
         if item is None:
             return self._failed(f"OBJECT_NOT_FOUND:{object_id}", duration_ms)
@@ -110,7 +99,7 @@ class MockBackend:
         return self._succeeded(duration_ms, object_id=object_id)
 
     def _move_to_target(self, arguments: dict, duration_ms: int) -> dict:
-        destination_id = arguments.get("destination_id", arguments.get("target"))
+        destination_id = arguments.get("destination_id")
         item = self._objects.get(destination_id)
         if item is None or not item.get("execution", {}).get(
             "valid_destination", False

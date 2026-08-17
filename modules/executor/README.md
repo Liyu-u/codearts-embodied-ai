@@ -7,6 +7,8 @@
 ## 安全边界
 
 - 只允许 `detect_object`、`move_to_object`、`grasp`、`move_to_target`、`release`。
+- `detect_object`、`move_to_object`、`grasp` 只接受 `object_id`；`move_to_target` 只接受 `destination_id`；`release` 参数必须为空。
+- 遗留字段 `object_name` 和 `target` 不再兼容，会在执行前返回 `INVALID_ARGUMENT`。
 - `strategy.code` 必须为 `null` 或空字符串；任何非空代码都会在执行前被拒绝。
 - 所有动作及恢复动作在执行前统一校验。
 - 主步骤最多 50，单个恢复最多 10 步，恢复尝试最多 3 次，总动作调用最多 100 次。

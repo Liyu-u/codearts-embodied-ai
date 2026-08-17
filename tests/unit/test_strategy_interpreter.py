@@ -64,6 +64,24 @@ class StrategyInterpreterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DUPLICATE_STEP_ID"):
             make_interpreter().run(strategy)
 
+    def test_legacy_detect_object_name_is_rejected(self):
+        strategy = load_strategy()
+        strategy["steps"][0]["arguments"] = {"object_name": "green_cube"}
+
+        with self.assertRaisesRegex(
+            ValueError, "INVALID_ARGUMENT:detect_object:object_id is required"
+        ):
+            make_interpreter().run(strategy)
+
+    def test_legacy_move_target_field_is_rejected(self):
+        strategy = load_strategy()
+        strategy["steps"][3]["arguments"] = {"target": "zone_unstack_target"}
+
+        with self.assertRaisesRegex(
+            ValueError, "INVALID_ARGUMENT:move_to_target:destination_id is required"
+        ):
+            make_interpreter().run(strategy)
+
 
 if __name__ == "__main__":
     unittest.main()

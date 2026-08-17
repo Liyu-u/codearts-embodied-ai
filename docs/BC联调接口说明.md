@@ -50,7 +50,7 @@ D TraceCoder
     {
       "step_id": "stacking_cubes-detect",
       "action": "detect_object",
-      "arguments": {"object_name": "green_cube"}
+      "arguments": {"object_id": "green_cube"}
     },
     {
       "step_id": "stacking_cubes-approach",
@@ -76,7 +76,7 @@ D TraceCoder
     {
       "step_id": "stacking_cubes-move-target",
       "action": "move_to_target",
-      "arguments": {"target": "zone_unstack_target"}
+      "arguments": {"destination_id": "zone_unstack_target"}
     },
     {
       "step_id": "stacking_cubes-release",
@@ -91,7 +91,7 @@ D TraceCoder
 }
 ```
 
-兼容说明：D 当前读取 `object_name` 和 `target`，C 同时接受它们及 `object_id`/`destination_id`。这里的 `object_name` 和 `target` 实际承载稳定 ID，不做模糊名称搜索。
+正式接口只允许 `object_id` 和 `destination_id`。旧字段 `object_name`、`target` 已停止兼容，C 会在执行前以 `INVALID_ARGUMENT` 拒绝。D 必须同步迁移，具体见 `docs/interfaces/C对D修改需求-2026-08-17.md`。
 
 ## 4. C 的输出
 
@@ -105,7 +105,7 @@ D TraceCoder
       "step_id": "stacking_cubes-detect",
       "phase": "main",
       "action": "detect_object",
-      "arguments": {"object_name": "green_cube"},
+      "arguments": {"object_id": "green_cube"},
       "status": "SUCCESS",
       "reason": null,
       "duration_ms": 10
@@ -140,7 +140,7 @@ D 接收 `{task, strategy, execution}`，输出 `feedback.v1`：
       {
         "step_id": "stacking_cubes-detect",
         "action": "detect_object",
-        "arguments": {"object_name": "green_cube"}
+        "arguments": {"object_id": "green_cube"}
       }
     ]
   }
@@ -167,7 +167,7 @@ python -m unittest tests.e2e.test_abcd_pick_and_place_e2e -v
 python -m unittest discover -s tests -t . -v
 ```
 
-校园服务器不能访问外网，也不允许在线更新。Isaac Sim 依赖和项目包必须先在 Windows 下载、校验，再传到 `/data/stu_01`；服务器端使用 `isaacsim` 环境运行。
+校园服务器不能访问外网，也不允许在线更新。Isaac Sim 依赖和项目包必须先在 Windows 下载、校验，再传到 `/data/stu_01`；服务器容器内通过 Isaac Sim 自带的 `/isaac-sim/python.sh` 运行，不依赖 Windows 的 Conda 环境。
 
 ## 7. 当前限制
 
@@ -176,4 +176,4 @@ python -m unittest discover -s tests -t . -v
 3. 公共 Pipeline 目前只在 A 非 READY 时提前返回；若 B 返回阻断结果，Pipeline 仍会调用 C。因此阻断链路尚未纳入端到端验收，后续需要公共 Pipeline 负责人修改。
 4. 本轮通过的是确定性 Mock 闭环；Isaac Sim 后端、USD 场景、控制器和服务器实测仍是下一阶段。
 5. 任何 B 生成的 Python 代码都不属于联调协议，C 会拒绝非空 `strategy.code`。
-6. D 当前的轻量仿真会给推导对象生成内部 ID，而任务目标使用 perception 稳定 ID，因此诊断中的 `simulation_final_passed` 可能为 `false`；D 已把真实 `execution.v1` 设为最终事实来源，所以执行成功时 `final_passed=true`。彻底消除这项模拟差异需要 D 负责人后续统一对象 ID，本阶段不修改 D。
+6. D 当前仍使用 `object_name`/`target`，且轻量仿真可能生成内部对象 ID。D 完成正式字段迁移前，新的 B→C 策略不能视为已完成 D 联调；本阶段没有代替 D 负责人修改其业务代码。

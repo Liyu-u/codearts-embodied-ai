@@ -48,10 +48,10 @@
   "schema_version": "strategy.v1",
   "task_id": "task-001",
   "steps": [
-    {"step_id": "task-001-detect", "action": "detect_object", "arguments": {"object_name": "obj-001"}},
+    {"step_id": "task-001-detect", "action": "detect_object", "arguments": {"object_id": "obj-001"}},
     {"step_id": "task-001-approach", "action": "move_to_object", "arguments": {"object_id": "$task-001-detect.object_id"}},
     {"step_id": "task-001-grasp", "action": "grasp", "arguments": {"object_id": "$task-001-detect.object_id"}},
-    {"step_id": "task-001-move-target", "action": "move_to_target", "arguments": {"target": "zone-001"}},
+    {"step_id": "task-001-move-target", "action": "move_to_target", "arguments": {"destination_id": "zone-001"}},
     {"step_id": "task-001-release", "action": "release", "arguments": {}}
   ],
   "code": null
@@ -106,5 +106,5 @@ python -m unittest tests.contract.test_strategy_schema -v
 1. 公开适配器第一阶段只接受 `READY + pick_and_place`。
 2. 必须有且只有一个稳定 `target_ids`，并且必须有稳定 `destination_id`。
 3. 其他动作和缺少绑定的任务输出阻断结果，不交给 C 执行。
-4. `object_name` 与 `target` 是为了兼容 D 现有字段名；字段值仍是 perception 的稳定 ID。
+4. 正式 B→C 接口只使用 `object_id` 与 `destination_id`；旧字段 `object_name`、`target` 会被 C 拒绝。
 5. 内部代码生成器仍可单独研究，但它的代码不是 B-C 联调接口的一部分。

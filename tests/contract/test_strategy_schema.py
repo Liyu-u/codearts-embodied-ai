@@ -47,7 +47,7 @@ class TestStrategyContract(unittest.TestCase):
             {
                 "step_id": "task-001-detect",
                 "action": "detect_object",
-                "arguments": {"object_name": "obj-001"},
+                "arguments": {"object_id": "obj-001"},
             },
         )
         self.assertEqual(
@@ -72,7 +72,7 @@ class TestStrategyContract(unittest.TestCase):
         )
         self.assertEqual(
             output["steps"][3]["arguments"],
-            {"target": "zone-001"},
+            {"destination_id": "zone-001"},
         )
         self.assertEqual(output["steps"][4]["arguments"], {})
         self.assertIsNone(output["code"])

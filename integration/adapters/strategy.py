@@ -222,9 +222,7 @@ def _build_pick_and_place_steps(
         {
             "step_id": detect_step_id,
             "action": "detect_object",
-            # D 当前读取 object_name；C 同时接受 object_name/object_id。
-            # 该兼容字段承载的是稳定 perception ID，不是模糊名称。
-            "arguments": {"object_name": target_id},
+            "arguments": {"object_id": target_id},
         },
         {
             "step_id": f"{task_id}-approach",
@@ -250,8 +248,7 @@ def _build_pick_and_place_steps(
         {
             "step_id": f"{task_id}-move-target",
             "action": "move_to_target",
-            # D 当前读取 target；C 同时接受 target/destination_id。
-            "arguments": {"target": destination_id},
+            "arguments": {"destination_id": destination_id},
         },
         {
             "step_id": f"{task_id}-release",
