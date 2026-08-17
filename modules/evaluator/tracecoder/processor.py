@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Callable
 
-from .agents import LLMPolicyAgentSuite, PolicyAgentSuite
+from .agents import LLMRequiredError, LLMPolicyAgentSuite, PolicyAgentSuite
 from .evaluator import evaluate_policy, is_better
 from .experience import ExperienceStore, classify_generator, compose_patch, eval_signature
 from .models import normalize_strategy
@@ -32,12 +32,25 @@ def process_policy(
     max_no_improvement: int = 2,
     use_llm: bool = False,
     model: str = "",
+    llm_mode: str = "off",  # off | optional | required（默认 off = 纯规则）
+    llm_provider=None,  # 注入的 LLM Provider（测试用）；None 时按 env/参数构造
+    call_log: list = None,  # 传入则追加 LLM 调用证据，None 则内部新建
     optimize_quality: bool = True,
     agent_suite: PolicyAgentSuite | None = None,
     evaluator: Callable[[dict, dict, dict | None], dict] = evaluate_policy,
     experience_store: ExperienceStore | None = None,
 ) -> dict:
     """Evaluate and repair a robot policy while retaining the best safe version.
+
+    LLM 三模式（llm_mode）：
+      - off：纯规则三角色，零 LLM 调用（历史行为，完全兼容）。
+      - optional：三角色先问 LLM，成功用 LLM 输出；失败回退规则并记录
+        used_fallback=True（不静默）。HLLM 经验库仍生效。
+      - required：每轮必须用 LLM，LLM 失败/输出不可用即中止
+        （status=LLM_REQUIRED_FAILED），绝不产出规则 patch；不经经验库。
+    所有模式下，LLM 生成的 patch 仍必须过本地白名单 validate_patch。
+    证据：每次调用记入 call_log（模型/请求号/耗时/是否回退），结果返回
+    llm_stats 汇总 + 完整 call_log。
 
     experience_store: 传入 HLLM 经验库时启用『经验优先』——修复阶段先查库，
     命中则直接复用已知成功补丁（跳过三角色推理），未命中才走规则流水线；
@@ -48,8 +61,15 @@ def process_policy(
     strategy = normalize_strategy(
         initial_strategy or task_data.get("initial_strategy", {})
     )
+    # 兼容旧参数：use_llm=True 视为 optional（LLM 优先、失败回退规则）
+    mode = llm_mode if llm_mode != "off" else ("optional" if use_llm else "off")
+    if call_log is None:
+        call_log = []
     suite = agent_suite or (
-        LLMPolicyAgentSuite(model) if use_llm else PolicyAgentSuite()
+        LLMPolicyAgentSuite(
+            provider=llm_provider, mode=mode, call_log=call_log, model=model,
+        )
+        if mode != "off" else PolicyAgentSuite()
     )
 
     initial_result = evaluator(task_data, strategy, None)
@@ -58,7 +78,10 @@ def process_policy(
     best_result = initial_result
     history: list[dict] = []
 
-    if initial_result.get("passed"):
+    # 纯规则（off）模式：初始通过直接返回，与历史行为完全一致。
+    # LLM 模式（optional/required）：初始通过也要走一轮 LLM 质量确认，
+    # 以留下『模型确实参与』的调用证据，再在质量轮收敛（见下）。
+    if initial_result.get("passed") and mode == "off":
         return {
             "task_id": task_data.get("task_id"),
             "status": "PASSED",
@@ -71,11 +94,16 @@ def process_policy(
             "stopped_reason": "初始策略已通过全部检查。",
             "deployment_advice": _deployment_advice(best_result),
             "hllm_stats": {"hits": 0, "misses": 0, "source": "none"},
+            "llm_stats": _llm_stats(call_log, mode),
+            "llm_required_failed": False,
+            "call_log": call_log,
         }
 
     no_improvement = 0
-    achieved_pass = False
+    # LLM 模式初始即通过时，视为『已通过』直接进入质量优化轮（LLM 参与确认）。
+    achieved_pass = bool(initial_result.get("passed"))
     stopped_reason = "达到最大修改次数。"
+    llm_required_failed = False
     attempted_patch_signatures: set[str] = set()
     hllm_hits = 0
     hllm_misses = 0
@@ -83,8 +111,15 @@ def process_policy(
 
     for attempt in range(1, max_repair_attempts + 1):
         source = "rules"
-        # HLLM 前置层：仅在“尚未通过”时查库，命中则跳过三角色推理
-        if experience_store is not None and not achieved_pass and not best_result.get("passed"):
+        round_start = len(call_log)  # 本轮 LLM 调用证据起点
+        # HLLM 前置层：仅在“尚未通过”时查库，命中则跳过三角色推理；
+        # required（纯 LLM）模式不经经验库——每轮都必须由 LLM 产出结果。
+        if (
+            experience_store is not None
+            and mode != "required"
+            and not achieved_pass
+            and not best_result.get("passed")
+        ):
             hit = experience_store.lookup(best_result)
             if hit:
                 gen_names, key = hit
@@ -111,16 +146,45 @@ def process_policy(
             patch = None
 
         if patch is None:
-            observation = suite.observation_advice(
-                best_strategy, best_result, history
-            )
-            diagnosis = suite.diagnosis(
-                best_strategy, best_result, observation, history
-            )
-            patch = suite.patch(
-                best_strategy, diagnosis, best_result, history
-            )
-            source = "rules"
+            try:
+                observation = suite.observation_advice(
+                    best_strategy, best_result, history
+                )
+                diagnosis = suite.diagnosis(
+                    best_strategy, best_result, observation, history
+                )
+                patch = suite.patch(
+                    best_strategy, diagnosis, best_result, history
+                )
+                source = "llm" if isinstance(suite, LLMPolicyAgentSuite) else "rules"
+            except LLMRequiredError as error:
+                # required 模式：LLM 未产出可用结果 → 立即中止，拒绝回退规则
+                llm_required_failed = True
+                attempt_record = {
+                    "attempt": attempt,
+                    "source": "llm_required_failed",
+                    "observation_advice": {},
+                    "diagnosis": {},
+                    "patch": {},
+                    "patch_validation": {
+                        "passed": False,
+                        "issues": [str(error)],
+                    },
+                    "llm_calls": list(call_log[round_start:]),
+                }
+                attempt_record["result"] = {
+                    "passed": False,
+                    "stage": "llm_required_failed",
+                    "result": str(error),
+                }
+                attempt_record["lesson"] = (
+                    "required 模式：LLM 未产出可用结果，拒绝回退规则，中止。"
+                )
+                history.append(attempt_record)
+                stopped_reason = (
+                    "required 模式：模型调用失败，拒绝回退到规则（{}）。"
+                ).format(error)
+                break
         validation = validate_patch(patch)
 
         attempt_record = {
@@ -130,6 +194,7 @@ def process_policy(
             "diagnosis": diagnosis,
             "patch": patch,
             "patch_validation": validation,
+            "llm_calls": list(call_log[round_start:]),
         }
 
         if not validation["passed"]:
@@ -245,9 +310,15 @@ def process_policy(
                 initial_signature, applied_gen_names,
                 task_id=str(task_data.get("task_id")),
             )
+    if llm_required_failed:
+        status = "LLM_REQUIRED_FAILED"
+    elif final_passed:
+        status = "PASSED"
+    else:
+        status = "NOT_READY"
     return {
         "task_id": task_data.get("task_id"),
-        "status": "PASSED" if final_passed else "NOT_READY",
+        "status": status,
         "initial_passed": False,
         "final_passed": final_passed,
         "best_strategy": best_strategy,
@@ -261,6 +332,9 @@ def process_policy(
             "misses": hllm_misses,
             "source": "experience" if experience_store is not None else "none",
         },
+        "llm_stats": _llm_stats(call_log, mode),
+        "llm_required_failed": llm_required_failed,
+        "call_log": call_log,
     }
 
 
@@ -291,5 +365,26 @@ def _deployment_advice(result: dict) -> dict:
             "已通过轻量模拟检查，仍需在正式仿真器中验证后才能进行真机低速测试。"
             if passed else
             "策略尚未通过全部检查，不得部署到真实机器人。"
+        ),
+    }
+
+
+def _llm_stats(call_log: list, mode: str) -> dict:
+    """从调用证据汇总 LLM 参与情况（模型是否真参与、有无回退、总耗时）。"""
+    calls = len(call_log)
+    if calls == 0:
+        return {
+            "mode": mode, "calls": 0, "ok_calls": 0,
+            "fallback_calls": 0, "failed_calls": 0, "total_latency_ms": 0.0,
+        }
+    statuses = [record.get("status") for record in call_log]
+    return {
+        "mode": mode,
+        "calls": calls,
+        "ok_calls": statuses.count("ok"),
+        "fallback_calls": statuses.count("fallback"),
+        "failed_calls": statuses.count("failed"),
+        "total_latency_ms": round(
+            sum(record.get("latency_ms", 0.0) for record in call_log), 1,
         ),
     }
