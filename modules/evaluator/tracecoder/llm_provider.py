@@ -19,8 +19,11 @@
     TRACECODER_LLM_MAX_TOKENS  最大输出 token（默认 8192；reasoning 模型思考会占）
     TRACECODER_LLM_JSON_MODE   是否请求结构化 JSON 输出（默认 true）
 
-支持在本地 .env 填 TRACECODER_LLM_API_KEY（python-dotenv 已装，CI 无该包时
-通过 try/except 跳过，零依赖原则不被破坏）。
+配置载体：仓库根的 `tracecoder_llm.env`（与仓库根 `.env` 分离！）。
+`.env` 被 robot_intent_agent 的 pydantic Settings 独占（extra=forbid，
+只认 RIA_ 前缀字段），任何写入 .env 的 TRACECODER_LLM_* 都会让意图理解
+ValidationError 崩溃。因此 TRACECODER_LLM_* 必须放独立文件，见
+`try_load_dotenv()`（python-dotenv 已装；CI 无该包时 try/except 跳过）。
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ import re
 import socket
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import urllib.error
@@ -292,15 +296,25 @@ class LLMProvider:
         )
 
 
+_ENV_FILE_NAME = "tracecoder_llm.env"
+
+
 def try_load_dotenv() -> None:
-    """可选加载本地 .env（python-dotenv 未安装时静默跳过，保持零依赖）。"""
+    """可选加载仓库根的 tracecoder_llm.env（python-dotenv 未安装则跳过）。
+
+    注意不要加载仓库根的 .env：它被 robot_intent_agent 的 pydantic Settings
+    独占（extra=forbid + env_prefix=RIA_），任何非 RIA_ 字段都会让它
+    ValidationError，导致意图理解整条流水线 BLOCKED。TRACECODER_LLM_* 因此
+    必须独立成文件，与 .env 严格分离。
+    """
     try:
         from dotenv import load_dotenv  # type: ignore
 
-        load_dotenv()
+        repo_root = Path(__file__).resolve().parents[3]
+        load_dotenv(dotenv_path=repo_root / _ENV_FILE_NAME, override=False)
     except ImportError:
         pass
 
 
-# 模块加载即尝试读一次 .env，保证 from_env() 能拿到本地配置。
+# 模块加载即尝试读一次 tracecoder_llm.env，保证 from_env() 能拿到本地配置。
 try_load_dotenv()

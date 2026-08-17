@@ -39,10 +39,27 @@ class TestTraceCoderLLM(unittest.TestCase):
     def _run_case(self, case_key: str, mode: str, provider=None) -> dict:
         case = _CASES[case_key]
         configure_llm(mode=mode, provider=provider)
+        # main 的 run() 校验 execution.v1 契约（task_id 一致 + schema_version +
+        # status 枚举 + 非空 steps）。失败注入由 task_v1.tracecoder.scenarios
+        # 显式驱动，execution 只需最小合法结构；status 反映该用例初始结果
+        # （final_passed 以输入 execution.v1 为准）：normal=成功，其余=失败。
+        task_id = case["task_v1"].get("task_id")
+        execution = {
+            "schema_version": "execution.v1",
+            "task_id": task_id,
+            "status": "SUCCEEDED" if case_key == "normal" else "FAILED",
+            "steps": [{
+                "step_id": "execution_start",
+                "action": "noop",
+                "status": "SUCCEEDED",
+                "reason": "mock execution.v1 满足 run() 契约，真实仿真由 scenarios 驱动",
+            }],
+            "safety_events": [],
+        }
         return run({
             "task": case["task_v1"],
             "strategy": case["strategy_v1"],
-            "execution": {"status": "RUNNING"},
+            "execution": execution,
         })
 
     def _diag(self, result: dict) -> dict:
