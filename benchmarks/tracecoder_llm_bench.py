@@ -47,13 +47,30 @@ _GROUPS = [
 
 
 def _provider_for(mode: str, case_key: str):
-    """LLM 组的 Provider。无效修复场景给模型一个『会输出非法操作』的行为，
-    以暴露 required 中止 vs optional 回退 vs 纯规则不依赖 LLM 的真实差异。
+    """LLM 组的 Provider。
+
+    - 已配置 TRACECODER_LLM_API_KEY → 返回 None，让 configure_llm 落到 env 的
+      真实 Provider（真实 DeepSeek 调用；此时『无效修复』场景由真实模型给出
+      合法修复，不再复现 fake 的非法输出，属于预期）。
+    - 未配置 Key → 离线 FakeLLMProvider（确定性，CI 无 Key 也能跑）。
+      『无效修复』场景给模型一个『会输出非法操作』的行为，以暴露 required
+      中止 vs optional 回退 vs 纯规则不依赖 LLM 的真实差异。
     """
     if mode == "off":
         return None
+    if adapter_mod._LLM_CONFIG.key_configured:
+        return None  # 真实 Provider（env / 本地 .env 配置）
     invalid = case_key == "invalid_repair"
     return FakeLLMProvider(handler=smart_handler(invalid=invalid))
+
+
+def _provider_mode_label() -> str:
+    if adapter_mod._LLM_CONFIG.key_configured:
+        model = adapter_mod._LLM_CONFIG.model or "未配置模型名"
+        return "真实 API（{}，{}）".format(
+            adapter_mod._LLM_CONFIG.base_url, model
+        )
+    return "FakeLLMProvider（离线确定性，未配置 Key）"
 
 
 def _run_one(case_key: str, mode: str, provider) -> dict:
@@ -142,9 +159,11 @@ def main() -> None:
         print(json.dumps(data, ensure_ascii=False, indent=2))
         return
     print("TraceCoder 三组效果对比（纯规则 / 纯 LLM / 规则+LLM × 五类场景）")
+    print("LLM 行 Provider：" + _provider_mode_label())
     _print_table(data["rows"])
-    print("\n说明：LLM 行用 FakeLLMProvider 离线注入（确定性）；本地 .env 填好")
-    print("TRACECODER_LLM_API_KEY 后跑真实 API 冒烟即可替换 required 行为真实调用。")
+    print("\n说明：未配置 Key 时 LLM 行用 FakeLLMProvider 离线注入（确定性）；")
+    print("在本地 .env 填 TRACECODER_LLM_API_KEY / TRACECODER_LLM_MODEL 后再跑，")
+    print("LLM 行即为真实 API 调用（无效修复场景由真实模型给出合法修复）。")
 
 
 if __name__ == "__main__":

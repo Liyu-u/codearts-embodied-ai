@@ -16,7 +16,7 @@
     TRACECODER_LLM_TIMEOUT_S   请求超时秒（默认 45）
     TRACECODER_LLM_MAX_RETRIES 失败重试次数（默认 2）
     TRACECODER_LLM_TEMPERATURE 采样温度（默认 0.2）
-    TRACECODER_LLM_MAX_TOKENS  最大输出 token（默认 2000）
+    TRACECODER_LLM_MAX_TOKENS  最大输出 token（默认 8192；reasoning 模型思考会占）
     TRACECODER_LLM_JSON_MODE   是否请求结构化 JSON 输出（默认 true）
 
 支持在本地 .env 填 TRACECODER_LLM_API_KEY（python-dotenv 已装，CI 无该包时
@@ -95,7 +95,7 @@ class LLMConfig:
     timeout_s: float = 45.0
     max_retries: int = 2
     temperature: float = 0.2
-    max_tokens: int = 2000
+    max_tokens: int = 8192
     json_mode: bool = True
     mode: str = "off"  # off | optional | required
 
@@ -112,7 +112,7 @@ class LLMConfig:
             timeout_s=_env_float(_ENV_PREFIX + "TIMEOUT_S", 45.0),
             max_retries=_env_int(_ENV_PREFIX + "MAX_RETRIES", 2),
             temperature=_env_float(_ENV_PREFIX + "TEMPERATURE", 0.2),
-            max_tokens=_env_int(_ENV_PREFIX + "MAX_TOKENS", 2000),
+            max_tokens=_env_int(_ENV_PREFIX + "MAX_TOKENS", 8192),
             json_mode=_env_bool(_ENV_PREFIX + "JSON_MODE", True),
         )
 
@@ -143,6 +143,8 @@ class LLMResult:
     latency_ms: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    reasoning_tokens: int = 0  # 思维链模型（如 deepseek 系列）思考占用的 token
+    finish_reason: str = ""    # stop / length（length=输出被 max_tokens 截断）
     error: str = ""
 
     def to_record(
@@ -167,6 +169,8 @@ class LLMResult:
             "latency_ms": round(self.latency_ms, 1),
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
+            "finish_reason": self.finish_reason,
             "used_fallback": used_fallback,
         }
 
@@ -233,8 +237,28 @@ class LLMProvider:
                 latency_ms = (time.time() - started) * 1000.0
                 data = json.loads(raw)
                 choice = (data.get("choices") or [{}])[0]
-                content = (choice.get("message") or {}).get("content") or ""
+                message = choice.get("message") or {}
+                content = message.get("content") or ""
                 usage = data.get("usage") or {}
+                finish_reason = choice.get("finish_reason") or ""
+                details = usage.get("completion_tokens_details") or {}
+                reasoning_tokens = int(details.get("reasoning_tokens", 0) or 0)
+                # 思维链模型把输出 token 预算占满（content 空且被截断）→ 如实报错
+                if finish_reason == "length" and not content.strip():
+                    return LLMResult(
+                        ok=False,
+                        model=cfg.model,
+                        request_id=data.get("id", ""),
+                        latency_ms=latency_ms,
+                        prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
+                        completion_tokens=int(usage.get("completion_tokens", 0) or 0),
+                        reasoning_tokens=reasoning_tokens,
+                        finish_reason=finish_reason,
+                        error=(
+                            "输出被 max_tokens={} 截断（思维链占 {} token，正式输出为空）。"
+                            "请调大 TRACECODER_LLM_MAX_TOKENS 或精简 prompt。"
+                        ).format(cfg.max_tokens, reasoning_tokens),
+                    )
                 return LLMResult(
                     ok=True,
                     text=content,
@@ -244,6 +268,8 @@ class LLMProvider:
                     latency_ms=latency_ms,
                     prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
                     completion_tokens=int(usage.get("completion_tokens", 0) or 0),
+                    reasoning_tokens=reasoning_tokens,
+                    finish_reason=finish_reason,
                 )
             except urllib.error.HTTPError as exc:
                 last_error = "HTTP {}: {}".format(exc.code, exc.reason)

@@ -89,6 +89,8 @@ class FakeLLMProvider:
         _, _, body = user.partition("\n")
         if not body:
             return {}
+        # 真实 prompt 会在 payload 前插入角色契约/示例文本；payload 始终在最后一行
+        body = body.rsplit("\n", 1)[-1]
         try:
             parsed = json.loads(body)
         except json.JSONDecodeError:
