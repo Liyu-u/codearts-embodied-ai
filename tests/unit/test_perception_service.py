@@ -20,6 +20,29 @@ class PerceptionServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported mock scene"):
             observe_scene({"scene_id": "missing", "backend": "mock"})
 
+    def test_sorting_workcell_exposes_three_objects_and_three_destinations(self):
+        result = observe_scene(
+            {"scene_id": "sorting_workcell", "backend": "mock"}
+        )
+        by_id = {item["id"]: item for item in result["objects"]}
+        self.assertEqual(
+            set(by_id),
+            {
+                "red_sort_cube",
+                "green_sort_cube",
+                "blue_sort_cube",
+                "left_sort_tray",
+                "middle_sort_tray",
+                "right_sort_tray",
+            },
+        )
+        self.assertTrue(
+            all(
+                by_id[tray]["execution"]["valid_destination"]
+                for tray in ("left_sort_tray", "middle_sort_tray", "right_sort_tray")
+            )
+        )
+
     def test_non_mock_backend_is_rejected_in_phase_one(self):
         with self.assertRaisesRegex(ValueError, "backend must be mock"):
             observe_scene({"scene_id": "stacking_cubes", "backend": "isaac"})

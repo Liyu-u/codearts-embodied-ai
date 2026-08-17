@@ -1,0 +1,16 @@
+{
+  "case_id": "acceptance_006_unsupported_action",
+  "title": "策略门禁：当前阶段不支持推送动作",
+  "category": "strategy_safety",
+  "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
+  "instruction": "把红色方块推到桌子上",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "READY",
+    "strategy_blocked": true,
+    "strategy_blocking_reasons_contains": "UNSUPPORTED_ACTION:push",
+    "stop_at": "strategy",
+    "no_execution": true
+  }
+}

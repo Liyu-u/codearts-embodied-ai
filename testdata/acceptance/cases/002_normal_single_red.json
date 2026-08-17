@@ -1,0 +1,24 @@
+{
+  "case_id": "acceptance_002_normal_single_red",
+  "title": "正常：唯一红色方块放到桌子上",
+  "category": "happy_path",
+  "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
+  "instruction": "把红色方块放到桌子上",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "SUCCEEDED",
+    "task_status": "READY",
+    "action": "pick_and_place",
+    "target_ids": ["red_cube"],
+    "destination_id": "zone_unstack_target",
+    "strategy_actions": ["detect_object", "move_to_object", "grasp", "move_to_target", "release"],
+    "execution_status": "SUCCEEDED",
+    "feedback_schema_version": "feedback.v1",
+    "feedback_retryable": false,
+    "diagnosis": {"final_passed": true, "execution_passed": true},
+    "retry_count": 0,
+    "attempt_count": 1,
+    "stop_reason": "EXECUTION_SUCCEEDED",
+    "final_placement": {"object_id": "red_cube", "destination_id": "zone_unstack_target"}
+  }
+}

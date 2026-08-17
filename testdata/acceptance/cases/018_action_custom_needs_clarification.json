@@ -1,0 +1,15 @@
+{
+  "case_id": "acceptance_018_action_custom_needs_clarification",
+  "title": "动作范围：无法归类的自定义动作禁止执行",
+  "category": "action_boundary",
+  "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
+  "instruction": "处理一下红色方块",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "NEEDS_CLARIFICATION",
+    "action": "custom",
+    "blocking_reasons_non_empty": true,
+    "no_execution": true
+  }
+}

@@ -62,6 +62,10 @@ _DEFAULT_AFFORDANCES: Dict[str, List[Affordance]] = {
     "medicine": [Affordance.GRASPABLE, Affordance.FRAGILE, Affordance.MOVABLE],
     "box": [Affordance.GRASPABLE, Affordance.CONTAINER, Affordance.PUSHABLE],
     "table": [Affordance.FIXED],
+    # Trays are fixed support surfaces for PLACE tasks.  Keep this explicit
+    # because the semantic scene builder otherwise falls back to a movable
+    # object affordance for a Chinese tray label.
+    "tray": [Affordance.FIXED],
     "wall": [Affordance.FIXED],
     "ball": [Affordance.GRASPABLE, Affordance.MOVABLE],
     "needle": [Affordance.GRASPABLE, Affordance.MOVABLE],

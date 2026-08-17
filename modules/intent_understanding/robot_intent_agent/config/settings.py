@@ -9,6 +9,11 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pathlib import Path
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_ENV_FILE = _REPO_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -84,7 +89,9 @@ class Settings(BaseSettings):
 
     model_config = {
         "env_prefix": "RIA_",
-        "env_file": ".env",
+        # Resolve from the repository, not the process working directory.
+        # This keeps the frontend demo and IDE/CLI launches consistent.
+        "env_file": str(_ENV_FILE),
         "extra": "forbid",
     }
 

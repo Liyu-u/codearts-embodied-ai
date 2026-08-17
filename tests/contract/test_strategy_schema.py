@@ -1,8 +1,10 @@
 """策略生成模块的 task.v1 -> strategy.v1 契约与冒烟测试。"""
 
 import json
+import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from integration.adapters import strategy
 from tests.helpers.schema_validate import load_schema, validate
@@ -152,6 +154,82 @@ class TestStrategyContract(unittest.TestCase):
                 self.assertTrue(output["blocked"])
                 self.assertEqual(output["steps"], [])
                 self.assertIsNone(output["code"])
+
+    def test_required_mode_blocks_when_codearts_is_unavailable(self):
+        task = load_task("strategy_normal_pick.json")
+        failure = {
+            "success": False,
+            "strategy": None,
+            "error": "CODEARTS_CLI_NOT_FOUND",
+            "trace": {
+                "provider": "huaweicloud-codearts-agent",
+                "transport": "codearts-cli",
+            },
+        }
+        with patch.dict(os.environ, {"CODEARTS_STRATEGY_MODE": "required"}):
+            with patch(
+                "integration.adapters.strategy.CodeArtsStrategyClient"
+            ) as client_class:
+                client_class.return_value.generate.return_value = failure
+                output = strategy.run(task)
+
+        self.assert_strategy_schema(output)
+        self.assertTrue(output["blocked"])
+        self.assertEqual(output["mode"], "codearts_blocked")
+        self.assertIn("CODEARTS_CLI_NOT_FOUND", output["blocking_reasons"])
+
+    def test_auto_mode_records_safe_local_fallback(self):
+        task = load_task("strategy_normal_pick.json")
+        failure = {
+            "success": False,
+            "strategy": None,
+            "error": "CODEARTS_CLI_NOT_FOUND",
+            "trace": {
+                "provider": "huaweicloud-codearts-agent",
+                "transport": "codearts-cli",
+            },
+        }
+        with patch.dict(os.environ, {"CODEARTS_STRATEGY_MODE": "auto"}):
+            with patch(
+                "integration.adapters.strategy.CodeArtsStrategyClient"
+            ) as client_class:
+                client_class.return_value.generate.return_value = failure
+                output = strategy.run(task)
+
+        self.assert_strategy_schema(output)
+        self.assertTrue(output["success"])
+        self.assertEqual(output["mode"], "primitive_plan_fallback")
+        self.assertEqual(output["provider_error"], "CODEARTS_CLI_NOT_FOUND")
+
+    def test_adapter_returns_successful_codearts_strategy(self):
+        task = load_task("strategy_normal_pick.json")
+        with patch.dict(os.environ, {"CODEARTS_STRATEGY_MODE": "off"}):
+            generated = strategy.run(task)
+        generated["mode"] = "codearts_agent"
+        generated["provenance"] = {
+            "provider": "huaweicloud-codearts-agent",
+            "transport": "codearts-cli",
+        }
+        success = {
+            "success": True,
+            "strategy": generated,
+            "error": None,
+            "trace": generated["provenance"],
+        }
+
+        with patch.dict(os.environ, {"CODEARTS_STRATEGY_MODE": "required"}):
+            with patch(
+                "integration.adapters.strategy.CodeArtsStrategyClient"
+            ) as client_class:
+                client_class.return_value.generate.return_value = success
+                output = strategy.run(task)
+
+        self.assert_strategy_schema(output)
+        self.assertEqual(output["mode"], "codearts_agent")
+        self.assertEqual(
+            output["provenance"]["provider"],
+            "huaweicloud-codearts-agent",
+        )
 
 
 if __name__ == "__main__":

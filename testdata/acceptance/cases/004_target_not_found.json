@@ -1,0 +1,16 @@
+{
+  "case_id": "acceptance_004_target_not_found",
+  "title": "安全阻断：目标物体不存在",
+  "category": "intent_safety",
+  "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
+  "instruction": "把蓝色方块放到桌子上",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "NEEDS_CLARIFICATION",
+    "target_ids": [],
+    "stop_at": "intent",
+    "blocking_reasons_non_empty": true,
+    "no_execution": true
+  }
+}

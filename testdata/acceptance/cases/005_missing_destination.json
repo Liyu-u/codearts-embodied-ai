@@ -1,0 +1,15 @@
+{
+  "case_id": "acceptance_005_missing_destination",
+  "title": "安全阻断：没有合法放置目标区",
+  "category": "intent_safety",
+  "scene": {"source": "file", "path": "scenes/no_destination.json"},
+  "instruction": "把红色方块放到安全区",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "NEEDS_CLARIFICATION",
+    "stop_at": "intent",
+    "blocking_reasons_non_empty": true,
+    "no_execution": true
+  }
+}

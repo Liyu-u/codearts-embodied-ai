@@ -15,6 +15,21 @@ scene = perception.run({
 })
 ```
 
+当前 Mock 还提供一个综合分拣工位：`sorting_workcell`。它包含三个待分拣方块
+（红、绿、蓝）和三个有颜色标识的托盘，可用于在同一个环境中测试多条自然语言
+`pick_and_place` 指令：
+
+```python
+scene = perception.run({
+    "scene_id": "sorting_workcell",
+    "backend": "mock",
+})
+```
+
+分拣场景的稳定 ID 为：`red_sort_cube`、`green_sort_cube`、`blue_sort_cube`，
+以及 `left_sort_tray`、`middle_sort_tray`、`right_sort_tray`。托盘使用红、绿、
+蓝颜色属性来帮助 A 在多个同类目标区中完成唯一绑定。
+
 返回值包含：
 
 - `schema_version="perception.v1"`

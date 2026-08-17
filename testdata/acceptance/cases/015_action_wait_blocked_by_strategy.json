@@ -1,0 +1,16 @@
+{
+  "case_id": "acceptance_015_action_wait_blocked_by_strategy",
+  "title": "动作范围：等待由 B 阻断",
+  "category": "action_boundary",
+  "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
+  "instruction": "等待红色方块稳定",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "READY",
+    "action": "wait",
+    "strategy_blocked": true,
+    "strategy_blocking_reasons_contains": "UNSUPPORTED_ACTION:wait",
+    "no_execution": true
+  }
+}

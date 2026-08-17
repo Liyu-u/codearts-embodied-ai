@@ -68,6 +68,7 @@ health() -> dict
 ```bash
 make contract-test   # 检查所有协议 JSON
 make integration-test # 运行模块联调测试
+make acceptance-test # 运行数据驱动的闭环验收题集
 make e2e              # 运行完整闭环测试
 ```
 
@@ -97,6 +98,11 @@ make e2e              # 运行完整闭环测试
 
 详细操作说明见 [`docs/联调仓库使用手册.md`](docs/联调仓库使用手册.md)。
 
+自动化闭环验收题位于 [`testdata/acceptance/`](testdata/acceptance/)，由
+[`tests/e2e/test_closed_loop_acceptance.py`](tests/e2e/test_closed_loop_acceptance.py)
+统一读取并检查。每道题包含自然语言指令、感知场景、可选故障注入和跨
+`task.v1 → strategy.v1 → execution.v1 → feedback.v1` 的预期结果。
+
 ## 七、TraceCoder 模块接入说明（feedback 环节）
 
 **定位**：`modules/evaluator/`（D 模块）内的 TraceCoder 负责"执行后反馈与策略修正"，
@@ -111,11 +117,15 @@ make e2e              # 运行完整闭环测试
 ```python
 from integration.adapters.tracecoder import run, health
 health()                                   # 模块健康检查
-out = run({"task": task_v1, "strategy": strategy_v1, "execution": execution_v1})
+out = run({"task": task_v1, "strategy": strategy_v1, "execution": execution_v1,
+           "perception": perception_v1})
 # out = feedback.v1: {schema_version, task_id, diagnosis, retryable, patch}
 ```
 
-**测试**（Python 标准库，无需额外依赖）：
+**测试**：TraceCoder 核心子集使用 Python 标准库；意图适配器和闭环 Demo 还需要根目录依赖：
+```bash
+python -m pip install -r requirements.txt
+```
 ```bash
 python -m unittest discover -s tests -t .
 ```
@@ -125,3 +135,13 @@ python -m unittest discover -s tests -t .
 **演进规划**：当前 `execution.v1` 由 TraceCoder 内置轻量仿真（或 Mock 执行器）产出；
 后续接入 Isaac Sim 后，真实仿真日志同样以 `execution.v1` 输入，引擎的
 诊断/修复逻辑无需改动——适配器接口已按"执行日志 + 当前策略"为输入设计。
+
+## 八、闭环前端 Demo
+
+仓库提供一个不依赖前端构建工具的可视化演示页，展示“环境预设 → 自然语言 → A 意图 → B 策略 → C Mock 执行 → D 反馈”的完整流转，并绘制 C 模块的物体、目标区和轨迹。
+
+```bash
+python demo/server.py
+```
+
+打开 <http://127.0.0.1:8765/> 即可体验。详细说明见 [`demo/README.md`](demo/README.md)。

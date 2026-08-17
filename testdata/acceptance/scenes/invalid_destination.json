@@ -1,0 +1,23 @@
+{
+  "schema_version": "perception.v1",
+  "scene_id": "acceptance_invalid_destination",
+  "coordinate_frame": "world",
+  "objects": [
+    {
+      "id": "red_cube",
+      "category": "红色方块",
+      "pose": {"x": 0.22, "y": 0.0, "z": 0.04},
+      "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
+      "attributes": {"display_name": "红色方块", "color": "red"},
+      "execution": {"movable": true, "graspable": true}
+    },
+    {
+      "id": "zone_invalid_target",
+      "category": "桌子",
+      "pose": {"x": 0.4, "y": 0.0, "z": 0.03},
+      "attributes": {"purpose": "blocked_placement", "display_name": "桌子"},
+      "execution": {"movable": false, "graspable": false, "valid_destination": false}
+    }
+  ],
+  "execution_context": {"backend": "mock", "scene_revision": "acceptance-1"}
+}

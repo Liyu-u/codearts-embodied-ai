@@ -3,14 +3,14 @@
 用 Mock 的 intent / strategy / executor 适配器 + 真实 tracecoder 适配器，
 走 pipeline.run_pipeline 的『意图 → 策略 → 执行 → 反馈』完整链路：
   - 贪心基线无恢复 → 执行失败
-  - TraceCoder 给失败抓取补 on_failure 恢复 → 生成待重执行的 patch
-  - feedback.v1 输出可供上层回归测试与策略修正消费
+  - TraceCoder 给失败抓取补 on_failure 恢复 → 生成 patch
+  - 总线自动把 patch 交给 C 重试，再由 TraceCoder 做最终复核
 """
 
 import json
 import unittest
 
-from integration.adapters.tracecoder import health, run
+from integration.adapters.tracecoder import health, reset_experience_store, run
 from integration.pipeline import run_pipeline
 from tests.helpers.tracecoder_fixtures import (
     DEMO_STRATEGY_V1,
@@ -55,6 +55,9 @@ def _mock_adapters():
 
 
 class TestTraceCoderPipeline(unittest.TestCase):
+    def setUp(self):
+        reset_experience_store()
+
     def test_health_ok(self):
         h = health()
         self.assertEqual(h["status"], "ok")
@@ -70,7 +73,7 @@ class TestTraceCoderPipeline(unittest.TestCase):
         out = run_pipeline(perception, "把红杯放进左托盘", _mock_adapters())
 
         # 闭环各段都有产出
-        self.assertEqual(out["status"], "FAILED")          # 初始执行失败（无恢复）
+        self.assertEqual(out["status"], "SUCCEEDED")       # 修复后重试通过
         self.assertIn("task", out)
         self.assertIn("strategy", out)
         self.assertIn("execution", out)
@@ -78,14 +81,17 @@ class TestTraceCoderPipeline(unittest.TestCase):
         self.assertIsNotNone(feedback)
         self.assertEqual(feedback["schema_version"], "feedback.v1")
 
-        # 仿真修复应成功，但真实执行尚未重跑，不能冒充已通过
+        # 总线已完成一次 D→C 重试，最终反馈必须以第二次 execution 为准
         diag = json.loads(feedback["diagnosis"])
         self.assertTrue(diag["simulation_final_passed"], diag.get("stopped_reason"))
-        self.assertFalse(diag["final_passed"])
-        self.assertTrue(feedback["retryable"])
+        self.assertTrue(diag["final_passed"])
+        self.assertFalse(feedback["retryable"])
+        self.assertEqual(out["retry_count"], 1)
+        self.assertEqual(len(out["attempts"]), 2)
+        self.assertEqual(out["stop_reason"], "EXECUTION_SUCCEEDED")
 
-        # patch 是修复后的完整策略：抓取步骤已带 on_failure 恢复
-        patch_steps = feedback["patch"]["steps"]
+        # 最终策略就是 D 生成、C 已执行成功的完整 patch
+        patch_steps = out["strategy"]["steps"]
         grasp = next(s for s in patch_steps if s["action"] == "grasp")
         self.assertIsNotNone(grasp.get("on_failure"))
         self.assertEqual(

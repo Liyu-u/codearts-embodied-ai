@@ -1,0 +1,16 @@
+{
+  "case_id": "acceptance_011_action_transfer_blocked_by_strategy",
+  "title": "动作范围：搬运由 B 阻断",
+  "category": "action_boundary",
+  "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
+  "instruction": "把红色方块搬运到桌子上",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "READY",
+    "action": "transfer",
+    "strategy_blocked": true,
+    "strategy_blocking_reasons_contains": "UNSUPPORTED_ACTION:transfer",
+    "no_execution": true
+  }
+}

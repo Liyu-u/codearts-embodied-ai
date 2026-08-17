@@ -1,0 +1,15 @@
+{
+  "case_id": "acceptance_016_action_fetch_needs_clarification",
+  "title": "动作范围：取物缺少交付位置",
+  "category": "action_boundary",
+  "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
+  "instruction": "把红色方块取过来",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "NEEDS_CLARIFICATION",
+    "action": "fetch",
+    "blocking_reasons_non_empty": true,
+    "no_execution": true
+  }
+}

@@ -53,6 +53,50 @@ class TestIntentStrategyPipeline(unittest.TestCase):
         self.assertTrue(out["strategy"]["success"], out["strategy"])
         self.assertEqual(out["status"], "SUCCEEDED")
 
+    def test_blocked_strategy_never_reaches_executor(self):
+        task = {
+            "schema_version": "task.v1",
+            "task_id": "blocked-codearts",
+            "action": "pick_and_place",
+            "target_ids": ["obj-red"],
+            "destination_id": "surface-table",
+            "status": "READY",
+        }
+        blocked = {
+            "schema_version": "strategy.v1",
+            "task_id": "blocked-codearts",
+            "steps": [],
+            "code": None,
+            "success": False,
+            "blocked": True,
+            "blocking_reasons": ["CODEARTS_CLI_NOT_FOUND"],
+        }
+
+        class StaticAdapter:
+            def __init__(self, value):
+                self.value = value
+
+            def run(self, _):
+                return self.value
+
+        class RejectUnexpectedExecution:
+            def run(self, _):
+                raise AssertionError("blocked strategy reached executor")
+
+        output = run_pipeline(
+            {},
+            "instruction",
+            {
+                "intent": StaticAdapter(task),
+                "strategy": StaticAdapter(blocked),
+                "executor": RejectUnexpectedExecution(),
+            },
+        )
+
+        self.assertEqual(output["status"], "BLOCKED")
+        self.assertEqual(output["strategy"], blocked)
+        self.assertNotIn("execution", output)
+
 
 if __name__ == "__main__":
     unittest.main()

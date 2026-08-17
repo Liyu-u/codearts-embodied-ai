@@ -1,0 +1,17 @@
+{
+  "case_id": "acceptance_009_tracecoder_repair_retry",
+  "title": "反馈闭环：TraceCoder 修复策略后重试成功",
+  "category": "feedback_recovery",
+  "mode": "tracecoder_fixture",
+  "instruction": "把红杯放进左托盘",
+  "expected": {
+    "pipeline_status": "SUCCEEDED",
+    "feedback_schema_version": "feedback.v1",
+    "feedback_retryable": false,
+    "diagnosis": {"final_passed": true},
+    "retry_count": 1,
+    "attempt_count": 2,
+    "stop_reason": "EXECUTION_SUCCEEDED",
+    "final_strategy_grasp_has_recovery": true
+  }
+}

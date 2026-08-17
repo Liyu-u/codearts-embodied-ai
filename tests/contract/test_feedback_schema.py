@@ -14,6 +14,7 @@ import unittest
 
 from integration.adapters.tracecoder import (
     _strategy_v1_to_native,
+    reset_experience_store,
     resolve_task_data,
     run,
 )
@@ -27,6 +28,9 @@ from tests.helpers.tracecoder_fixtures import (
 
 class TestFeedbackContract(unittest.TestCase):
     """tracecoder.run() 输出符合 feedback.v1。"""
+
+    def setUp(self):
+        reset_experience_store()
 
     def _input(self, execution=None):
         return {
@@ -94,6 +98,35 @@ class TestFeedbackContract(unittest.TestCase):
             execution,
         )
         self.assertEqual(task_data["scenarios"][0]["failures"], {"grasp": 1})
+
+    def test_perception_objects_are_preferred_when_task_has_no_tracecoder_fixture(self):
+        task = copy.deepcopy(DEMO_TASK_V1)
+        task.pop("tracecoder")
+        perception = {
+            "schema_version": "perception.v1",
+            "scene_id": "scene-grounded",
+            "objects": [
+                {
+                    "id": "red_cup",
+                    "category": "cup",
+                    "pose": {"x": 1.2, "y": -0.4, "z": 0.3},
+                },
+                {
+                    "id": "left_bin",
+                    "category": "bin",
+                    "pose": {"x": 2.0, "y": 0.8, "z": 0.0},
+                },
+            ],
+        }
+        task_data = resolve_task_data(
+            task,
+            _strategy_v1_to_native(DEMO_STRATEGY_V1),
+            {"status": "RUNNING"},
+            perception=perception,
+        )
+        objects = {item["id"]: item for item in task_data["initial_state"]["objects"]}
+        self.assertEqual(objects["red_cup"]["position"], [1.2, -0.4, 0.3])
+        self.assertEqual(objects["left_bin"]["position"], [2.0, 0.8, 0.0])
 
     def test_successful_reexecution_is_the_final_pass_signal(self):
         first = run(self._input())

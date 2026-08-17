@@ -1,0 +1,25 @@
+{
+  "case_id": "acceptance_001_normal_stacking",
+  "title": "正常：绿色方块放到桌子上",
+  "category": "happy_path",
+  "scene": {"source": "perception_adapter", "scene_id": "stacking_cubes", "backend": "mock"},
+  "instruction": "把绿色方块放到桌子上",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "SUCCEEDED",
+    "task_status": "READY",
+    "action": "pick_and_place",
+    "target_ids": ["green_cube"],
+    "destination_id": "zone_unstack_target",
+    "strategy_actions": ["detect_object", "move_to_object", "grasp", "move_to_target", "release"],
+    "strategy_code": null,
+    "execution_status": "SUCCEEDED",
+    "feedback_schema_version": "feedback.v1",
+    "feedback_retryable": false,
+    "diagnosis": {"final_passed": true, "execution_passed": true},
+    "retry_count": 0,
+    "attempt_count": 1,
+    "stop_reason": "EXECUTION_SUCCEEDED",
+    "final_placement": {"object_id": "green_cube", "destination_id": "zone_unstack_target"}
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "case_id": "acceptance_008_grasp_safe_stop",
+  "title": "安全停止：抓取和恢复抓取都失败",
+  "category": "execution_safety",
+  "scene": {"source": "perception_adapter", "scene_id": "stacking_cubes", "backend": "mock"},
+  "instruction": "把绿色方块放到桌子上",
+  "engine": "rule",
+  "executor": {"failures": {"grasp": 2}},
+  "expected": {
+    "pipeline_status": "SAFE_STOP",
+    "task_status": "READY",
+    "execution_status": "SAFE_STOP",
+    "feedback_schema_version": "feedback.v1",
+    "feedback_retryable": false,
+    "diagnosis": {"final_passed": false, "execution_passed": false},
+    "safety_event_types_contains": "RECOVERY_EXHAUSTED",
+    "retry_count": 0,
+    "attempt_count": 1,
+    "stop_reason": "SAFETY_STOP"
+  }
+}

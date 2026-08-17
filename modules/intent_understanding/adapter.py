@@ -22,6 +22,7 @@ if str(_MODULE_DIR) not in sys.path:
 
 from robot_intent_agent.constraint import HybridConstraintCompiler  # noqa: E402
 from robot_intent_agent.ir import RobotTaskIRGenerator  # noqa: E402
+from robot_intent_agent.planner import LLMPlanner  # noqa: E402
 from robot_intent_agent.scene_builder import RawObjectPercept, SemanticSceneBuilder  # noqa: E402
 from robot_intent_agent.semantic_compiler import SemanticCompiler  # noqa: E402
 from robot_intent_agent.schemas.scene import (  # noqa: E402
@@ -100,7 +101,11 @@ def run(input_json: dict) -> dict:
     try:
         scene = _build_scene(perception)
         engine = _select_engine(input_json)
-        compiled = SemanticCompiler().compile(
+        # The core compiler already implements rule/LLM/hybrid fusion.  The
+        # integration adapter must provide the optional provider explicitly;
+        # otherwise a requested hybrid run silently becomes rule-only.
+        llm_planner = _build_llm_planner(engine)
+        compiled = SemanticCompiler(llm_planner=llm_planner).compile(
             instruction,
             scene=scene,
             mode=engine,
@@ -119,7 +124,13 @@ def run(input_json: dict) -> dict:
             constraint_graph=constraint_graph,
             scene=scene,
         )
-        return _to_task_v1(ir, perception, task_id, engine)
+        return _to_task_v1(
+            ir,
+            perception,
+            task_id,
+            engine,
+            engine_trace=compiled.engine_trace,
+        )
     except Exception as exc:
         return _blocked(
             task_id,
@@ -135,9 +146,27 @@ def _select_engine(input_json: dict) -> str:
     ).strip().lower()
     if requested not in {"rule", "llm", "hybrid"}:
         return "rule"
-    # This adapter does not create a provider client implicitly.  A later
-    # integration can inject one without changing task.v1.
-    return "rule" if requested != "rule" else requested
+    return requested
+
+
+def _build_llm_planner(engine: str) -> Optional[LLMPlanner]:
+    """Create the optional provider used by the selected semantic engine.
+
+    Rule mode remains completely offline.  For ``llm``/``hybrid`` the
+    planner is created even when no key is configured so the compiler can
+    produce an auditable fallback trace instead of failing the whole task.
+    ``LLMPlanner`` performs the actual availability check before any network
+    call.
+    """
+
+    if engine not in {"llm", "hybrid"}:
+        return None
+    try:
+        return LLMPlanner()
+    except Exception:
+        # Configuration errors must not make the safe rule fallback
+        # unavailable.  The compiler will record the provider as absent.
+        return None
 
 
 def _build_scene(perception: dict):
@@ -259,7 +288,13 @@ def _first_target_name(scene: Any) -> str:
     return str(getattr(objects[0], "name", "target")) if objects else "target"
 
 
-def _to_task_v1(ir: Any, perception: dict, task_id: str, engine: str) -> dict:
+def _to_task_v1(
+    ir: Any,
+    perception: dict,
+    task_id: str,
+    engine: str,
+    engine_trace: Optional[dict] = None,
+) -> dict:
     parsed = getattr(ir, "parsed_task", None)
     metadata = getattr(ir, "plan_metadata", None)
     validation = getattr(ir, "validation_result", None)
@@ -303,6 +338,9 @@ def _to_task_v1(ir: Any, perception: dict, task_id: str, engine: str) -> dict:
     constraints = [_constraint_dump(item) for item in (getattr(parsed, "user_constraints", []) or [])]
     diagnostics = {
         "engine": engine,
+        "requested_engine": engine,
+        "actual_engine": (engine_trace or {}).get("actual_engine", "RuleEngine"),
+        "engine_trace": dict(engine_trace or {}),
         "execution_allowed": execution_allowed,
         "confidence": {
             "parse": float(getattr(parsed, "parse_confidence", 0.0) or 0.0),

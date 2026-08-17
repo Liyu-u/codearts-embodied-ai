@@ -3,24 +3,19 @@
 
 职责：
 1. 接收标准 task.v1 JSON
-2. 把第一阶段 READY pick_and_place 任务降解为可信原子动作
-3. 输出不含可执行 Python 代码的标准 strategy.v1 JSON
+2. 通过 CodeArts CLI 调用代码智能体生成结构化原子策略
+3. 严格校验智能体输出，并按配置安全回退或阻断
+4. 输出不含可执行 Python 代码的标准 strategy.v1 JSON
 
 联调仓库统一接口：
     run(input_json: dict) -> dict
     health() -> dict
 """
 
-import sys
-from pathlib import Path
+import os
 from typing import Any, List
 
-# 把 modules/strategy_generation 加入搜索路径，方便导入冯海的代码
-_MOD_DIR = str(Path(__file__).resolve().parent.parent.parent / "modules" / "strategy_generation")
-if _MOD_DIR not in sys.path:
-    sys.path.insert(0, _MOD_DIR)
-
-from strategy_generator import generate_strategy
+from modules.strategy_generation.codearts_agent import CodeArtsStrategyClient
 
 
 def run(input_json: dict) -> dict:
@@ -94,7 +89,52 @@ def run(input_json: dict) -> dict:
     task_id = input_json["task_id"]
     target_id = input_json["target_ids"][0]
     destination_id = input_json["destination_id"]
-    return {
+    codearts_mode = _codearts_mode()
+    if codearts_mode != "off":
+        result = CodeArtsStrategyClient().generate(input_json)
+        if result["success"]:
+            return result["strategy"]
+        if codearts_mode == "required":
+            blocked = _blocked_result(
+                task_id,
+                [result["error"]],
+                "CodeArts 智能体未能生成通过安全校验的策略",
+            )
+            blocked.update(
+                {
+                    "mode": "codearts_blocked",
+                    "validation": {"passed": False, "errors": [result["error"]]},
+                    "provenance": result["trace"],
+                }
+            )
+            return blocked
+        return _local_pick_and_place_strategy(
+            task_id,
+            target_id,
+            destination_id,
+            mode="primitive_plan_fallback",
+            provider_error=result["error"],
+            provenance=result["trace"],
+        )
+
+    return _local_pick_and_place_strategy(
+        task_id,
+        target_id,
+        destination_id,
+        mode="primitive_plan",
+    )
+
+
+def _local_pick_and_place_strategy(
+    task_id: str,
+    target_id: str,
+    destination_id: str,
+    *,
+    mode: str,
+    provider_error: str | None = None,
+    provenance: dict | None = None,
+) -> dict:
+    output = {
         "schema_version": "strategy.v1",
         "task_id": task_id,
         "steps": _build_pick_and_place_steps(
@@ -107,30 +147,43 @@ def run(input_json: dict) -> dict:
         "code": None,
         "success": True,
         "blocked": False,
-        "message": "pick_and_place 已转换为五步原子策略",
-        "mode": "primitive_plan",
-        "validation": {},
+        "message": (
+            "CodeArts 不可用，已安全回退到本地五步原子策略"
+            if provider_error
+            else "pick_and_place 已转换为五步原子策略"
+        ),
+        "mode": mode,
+        "validation": {"passed": True, "errors": []},
     }
+    if provider_error:
+        output["provider_error"] = provider_error
+    if provenance:
+        output["provenance"] = provenance
+    return output
 
 
 def health() -> dict:
     """返回模块健康状态。"""
     try:
-        # 尝试生成一个最简单的策略，验证模块可用
-        test_intent = {
-            "intent_id": "health-check",
-            "action": "pick_and_place",
-            "target_object": "test_cube",
-            "destination": {"x": 0.2, "y": 0.0, "z": 0.03},
-        }
-        result = generate_strategy(test_intent)
-        ok = bool(result.get("success"))
+        mode = _codearts_mode()
+        availability = CodeArtsStrategyClient().availability()
+        ok = availability["available"] or mode != "required"
         return {
             "module": "strategy_generation",
             "role": "B",
             "owner": "冯海",
             "healthy": ok,
-            "message": result.get("message", ""),
+            "message": (
+                "CodeArts CLI 可用"
+                if availability["available"]
+                else (
+                    "CodeArts CLI 不可用；required 模式将阻断策略生成"
+                    if mode == "required"
+                    else "CodeArts CLI 不可用；auto 模式将使用本地安全回退"
+                )
+            ),
+            "codearts_mode": mode,
+            "codearts": availability,
         }
     except Exception as e:
         return {
@@ -145,6 +198,12 @@ def health() -> dict:
 # ============================================================
 # 内部转换函数
 # ============================================================
+
+
+def _codearts_mode() -> str:
+    """Return off/auto/required; invalid values fail safe to auto."""
+    value = os.environ.get("CODEARTS_STRATEGY_MODE", "auto").strip().lower()
+    return value if value in {"off", "auto", "required"} else "auto"
 
 
 def _validate_task_envelope(task: dict) -> List[str]:

@@ -1,0 +1,15 @@
+{
+  "case_id": "acceptance_017_action_handover_needs_clarification",
+  "title": "动作范围：递交缺少接收方位姿",
+  "category": "action_boundary",
+  "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
+  "instruction": "把红色方块递给我",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "NEEDS_CLARIFICATION",
+    "action": "handover",
+    "blocking_reasons_non_empty": true,
+    "no_execution": true
+  }
+}

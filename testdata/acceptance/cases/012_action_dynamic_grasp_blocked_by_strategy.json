@@ -1,0 +1,16 @@
+{
+  "case_id": "acceptance_012_action_dynamic_grasp_blocked_by_strategy",
+  "title": "动作范围：动态抓取由 B 阻断",
+  "category": "action_boundary",
+  "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
+  "instruction": "动态抓取红色方块",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "READY",
+    "action": "dynamic_grasp",
+    "strategy_blocked": true,
+    "strategy_blocking_reasons_contains": "UNSUPPORTED_ACTION:dynamic_grasp",
+    "no_execution": true
+  }
+}

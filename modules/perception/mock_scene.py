@@ -36,7 +36,106 @@ STACKING_CUBES = {
 }
 
 
+SORTING_WORKCELL = {
+    "scene_id": "sorting_workcell",
+    "coordinate_frame": "world",
+    "objects": [
+        {
+            "id": "red_sort_cube",
+            "category": "红色方块",
+            "pose": {"x": 0.16, "y": -0.18, "z": 0.04},
+            "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
+            "attributes": {
+                "display_name": "红色方块",
+                "color": "red",
+                "workcell_role": "待分拣物体",
+            },
+            "execution": {"movable": True, "graspable": True},
+        },
+        {
+            "id": "green_sort_cube",
+            "category": "绿色方块",
+            "pose": {"x": 0.24, "y": -0.18, "z": 0.04},
+            "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
+            "attributes": {
+                "display_name": "绿色方块",
+                "color": "green",
+                "workcell_role": "待分拣物体",
+            },
+            "execution": {"movable": True, "graspable": True},
+        },
+        {
+            "id": "blue_sort_cube",
+            "category": "蓝色方块",
+            "pose": {"x": 0.32, "y": -0.18, "z": 0.04},
+            "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
+            "attributes": {
+                "display_name": "蓝色方块",
+                "color": "blue",
+                "workcell_role": "待分拣物体",
+            },
+            "execution": {"movable": True, "graspable": True},
+        },
+        {
+            "id": "left_sort_tray",
+            "category": "红色托盘",
+            "pose": {"x": 0.16, "y": 0.22, "z": 0.03},
+            "dimensions": {"x": 0.12, "y": 0.12, "z": 0.03},
+            "attributes": {
+                "display_name": "红色托盘",
+                "color": "red",
+                "purpose": "sorting_destination",
+                "slot": "left",
+            },
+            "execution": {
+                "movable": False,
+                "graspable": False,
+                "valid_destination": True,
+            },
+        },
+        {
+            "id": "middle_sort_tray",
+            "category": "绿色托盘",
+            "pose": {"x": 0.24, "y": 0.22, "z": 0.03},
+            "dimensions": {"x": 0.12, "y": 0.12, "z": 0.03},
+            "attributes": {
+                "display_name": "绿色托盘",
+                "color": "green",
+                "purpose": "sorting_destination",
+                "slot": "middle",
+            },
+            "execution": {
+                "movable": False,
+                "graspable": False,
+                "valid_destination": True,
+            },
+        },
+        {
+            "id": "right_sort_tray",
+            "category": "蓝色托盘",
+            "pose": {"x": 0.32, "y": 0.22, "z": 0.03},
+            "dimensions": {"x": 0.12, "y": 0.12, "z": 0.03},
+            "attributes": {
+                "display_name": "蓝色托盘",
+                "color": "blue",
+                "purpose": "sorting_destination",
+                "slot": "right",
+            },
+            "execution": {
+                "movable": False,
+                "graspable": False,
+                "valid_destination": True,
+            },
+        },
+    ],
+}
+
+
 def get_mock_scene(scene_id: str) -> dict:
-    if scene_id != "stacking_cubes":
+    scenes = {
+        "stacking_cubes": STACKING_CUBES,
+        "sorting_workcell": SORTING_WORKCELL,
+    }
+    if scene_id not in scenes:
         raise ValueError(f"unsupported mock scene: {scene_id}")
-    return deepcopy(STACKING_CUBES)
+    return deepcopy(scenes[scene_id])

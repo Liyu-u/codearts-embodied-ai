@@ -1,0 +1,16 @@
+{
+  "case_id": "acceptance_014_action_pour_blocked_by_strategy",
+  "title": "动作范围：倾倒由 B 阻断",
+  "category": "action_boundary",
+  "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
+  "instruction": "把红色方块倒进桌子里",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "READY",
+    "action": "pour",
+    "strategy_blocked": true,
+    "strategy_blocking_reasons_contains": "UNSUPPORTED_ACTION:pour",
+    "no_execution": true
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "case_id": "acceptance_003_ambiguous_target",
+  "title": "安全阻断：两个同名红色方块",
+  "category": "intent_safety",
+  "scene": {"source": "file", "path": "scenes/ambiguous_red_cubes.json"},
+  "instruction": "把红色方块放到桌子上",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "BLOCKED",
+    "task_status": "NEEDS_CLARIFICATION",
+    "stop_at": "intent",
+    "blocking_reasons_non_empty": true,
+    "no_execution": true
+  }
+}

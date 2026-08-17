@@ -1,0 +1,19 @@
+{
+  "case_id": "acceptance_007_invalid_destination_execution",
+  "title": "执行失败：目标区存在但不可放置",
+  "category": "execution_feedback",
+  "scene": {"source": "file", "path": "scenes/invalid_destination.json"},
+  "instruction": "把红色方块放到桌子上",
+  "engine": "rule",
+  "expected": {
+    "pipeline_status": "FAILED",
+    "task_status": "READY",
+    "execution_status": "FAILED",
+    "feedback_schema_version": "feedback.v1",
+    "feedback_retryable": false,
+    "diagnosis": {"final_passed": false, "execution_passed": false},
+    "retry_count": 0,
+    "attempt_count": 1,
+    "stop_reason": "FEEDBACK_NOT_RETRYABLE"
+  }
+}
