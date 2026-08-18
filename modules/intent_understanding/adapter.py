@@ -13,6 +13,8 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from copy import deepcopy
+from uuid import UUID, uuid4
 
 
 _MODULE_DIR = Path(__file__).resolve().parent
@@ -76,27 +78,26 @@ def health() -> dict:
 def run(input_json: dict) -> dict:
     """Run intent understanding and return the repository's task.v1 object."""
 
+    # ``task_id`` is a task identity, not a scene/observation identity.  A
+    # caller may provide an already-created UUID (for idempotency), but legacy
+    # scene/request labels are never allowed to leak into the public contract.
+    task_id, task_id_note = _new_task_id(input_json if isinstance(input_json, dict) else {})
+
     if not isinstance(input_json, dict):
-        return _blocked("unknown", ["intent 输入必须是 JSON 对象"])
+        return _blocked(task_id, ["intent 输入必须是 JSON 对象"])
 
     instruction = input_json.get("instruction")
     perception = input_json.get("perception")
     if not isinstance(instruction, str) or not instruction.strip():
-        return _blocked("unknown", ["instruction 必须是非空字符串"])
+        return _blocked(task_id, ["instruction 必须是非空字符串"], {"task_id_note": task_id_note})
     if not isinstance(perception, dict):
-        return _blocked("unknown", ["perception 必须是 JSON 对象"])
+        return _blocked(task_id, ["perception 必须是 JSON 对象"], {"task_id_note": task_id_note})
     if perception.get("schema_version") not in {None, "perception.v1", "1.0.0"}:
         return _blocked(
-            str(perception.get("scene_id") or "unknown"),
+            task_id,
             ["不支持的 perception schema_version"],
+            {"task_id_note": task_id_note},
         )
-
-    task_id = str(
-        input_json.get("task_id")
-        or perception.get("observation_id")
-        or perception.get("scene_id")
-        or "task-intent"
-    )
 
     try:
         scene = _build_scene(perception)
@@ -130,13 +131,30 @@ def run(input_json: dict) -> dict:
             task_id,
             engine,
             engine_trace=compiled.engine_trace,
+            task_id_note=task_id_note,
         )
     except Exception as exc:
         return _blocked(
             task_id,
             [f"INTENT_PIPELINE_ERROR:{type(exc).__name__}"],
-            diagnostics={"message": str(exc)},
+            diagnostics={"message": str(exc), "task_id_note": task_id_note},
         )
+
+
+def _new_task_id(input_json: dict) -> tuple[str, str]:
+    """Return a UUID task identity and an audit note for legacy callers."""
+
+    candidate = input_json.get("task_id")
+    if candidate is not None:
+        try:
+            value = str(candidate)
+            UUID(value)
+            return value, "caller_uuid"
+        except (TypeError, ValueError, AttributeError):
+            # A request/scene label is correlation metadata, not a task ID.
+            # Generate a fresh UUID rather than silently reusing it.
+            return str(uuid4()), "legacy_task_id_replaced_with_uuid"
+    return str(uuid4()), "generated_uuid"
 
 
 def _select_engine(input_json: dict) -> str:
@@ -171,9 +189,10 @@ def _build_llm_planner(engine: str) -> Optional[LLMPlanner]:
 
 def _build_scene(perception: dict):
     raw_objects: List[RawObjectPercept] = []
+    seen_ids: set[str] = set()
     for index, item in enumerate(perception.get("objects") or []):
         if not isinstance(item, dict):
-            continue
+            raise ValueError(f"INVALID_OBJECT:{index}")
         position = _position(item.get("pose"))
         dimensions = _dimensions(item.get("dimensions") or item.get("geometry"))
         category = str(item.get("category") or item.get("name") or "unknown")
@@ -181,7 +200,18 @@ def _build_scene(perception: dict):
         appearance = item.get("appearance") if isinstance(item.get("appearance"), dict) else {}
         color = attributes.get("color") or appearance.get("color")
         material = attributes.get("material") or item.get("material")
-        object_id = str(item.get("id") or item.get("object_id") or f"obj-{index + 1:03d}")
+        object_id = item.get("id") or item.get("object_id")
+        if not isinstance(object_id, str) or not object_id.strip():
+            raise ValueError(f"MISSING_OBJECT_ID:{index}")
+        object_id = object_id.strip()
+        if object_id in seen_ids:
+            raise ValueError(f"DUPLICATE_OBJECT_ID:{object_id}")
+        seen_ids.add(object_id)
+        execution = item.get("execution")
+        if not isinstance(execution, dict):
+            # Formal sensor observations do not assert execution authority.
+            # Keep the absence explicit so the final A gate can fail closed.
+            execution = {}
         raw_objects.append(
             RawObjectPercept(
                 name=category,
@@ -197,6 +227,7 @@ def _build_scene(perception: dict):
                 extra_attrs={
                     "_integration_category": category,
                     "_integration_attributes": attributes,
+                    "_integration_execution": deepcopy(execution),
                 },
             )
         )
@@ -267,12 +298,20 @@ def _dimensions(raw: Any) -> Tuple[float, float, float]:
     if isinstance(raw, dict) and isinstance(raw.get("size"), dict):
         raw = raw["size"]
     if isinstance(raw, dict):
-        values = (raw.get("width", 0.05), raw.get("height", 0.10), raw.get("depth", 0.05))
-    elif isinstance(raw, (list, tuple)) and len(raw) >= 3:
-        values = raw[:3]
+        if all(key in raw for key in ("width", "height", "depth")):
+            values = (raw["width"], raw["height"], raw["depth"])
+        elif all(key in raw for key in ("x", "y", "z")):
+            values = (raw["x"], raw["y"], raw["z"])
+        else:
+            raise ValueError("MISSING_DIMENSIONS:expected width/height/depth or x/y/z")
+    elif isinstance(raw, (list, tuple)) and len(raw) == 3:
+        values = raw
     else:
-        values = (0.05, 0.10, 0.05)
-    return tuple(max(0.001, _finite_number(value, default)) for value, default in zip(values, (0.05, 0.10, 0.05)))
+        raise ValueError("MISSING_DIMENSIONS:expected width/height/depth or x/y/z")
+    result = tuple(_finite_number(value, float("nan")) for value in values)
+    if any(not math.isfinite(value) or value <= 0 for value in result):
+        raise ValueError("INVALID_DIMENSIONS:values must be finite and positive")
+    return result
 
 
 def _finite_number(value: Any, default: float) -> float:
@@ -294,6 +333,7 @@ def _to_task_v1(
     task_id: str,
     engine: str,
     engine_trace: Optional[dict] = None,
+    task_id_note: str = "generated_uuid",
 ) -> dict:
     parsed = getattr(ir, "parsed_task", None)
     metadata = getattr(ir, "plan_metadata", None)
@@ -327,14 +367,26 @@ def _to_task_v1(
         str(getattr(issue, "code", "VALIDATION_ERROR")) for issue in issues
     )
     blocking_reasons.extend(str(item) for item in (getattr(parsed, "unmet_roles", []) or []))
-    if getattr(parsed, "clarification", None):
-        blocking_reasons.append("CLARIFICATION_REQUIRED")
-    blocking_reasons = list(dict.fromkeys(item for item in blocking_reasons if item))
-
     target_id = _entity_id(theme)
     destination_id = _entity_id(destination_ref)
     scene = getattr(ir, "scene", None)
-    destination_pose = _scene_pose(scene, destination_id)
+    capability_errors = _execution_capability_errors(
+        scene,
+        action_value=action_value,
+        target_id=target_id,
+        destination_id=destination_id,
+    )
+    # Capability gates are terminal only for an otherwise executable task.
+    # Preserve NEEDS_CLARIFICATION/BLOCKED classifications from semantic
+    # grounding; the missing capability is still retained in diagnostics and
+    # blocking_reasons for the caller to resolve.
+    if capability_errors and status == "READY":
+        status = "BLOCKED"
+        execution_allowed = False
+    if getattr(parsed, "clarification", None):
+        blocking_reasons.append("CLARIFICATION_REQUIRED")
+    blocking_reasons.extend(capability_errors)
+    blocking_reasons = list(dict.fromkeys(item for item in blocking_reasons if item))
     constraints = [_constraint_dump(item) for item in (getattr(parsed, "user_constraints", []) or [])]
     diagnostics = {
         "engine": engine,
@@ -342,6 +394,8 @@ def _to_task_v1(
         "actual_engine": (engine_trace or {}).get("actual_engine", "RuleEngine"),
         "engine_trace": dict(engine_trace or {}),
         "execution_allowed": execution_allowed,
+        "task_id_note": task_id_note,
+        "execution_capability_errors": capability_errors,
         "confidence": {
             "parse": float(getattr(parsed, "parse_confidence", 0.0) or 0.0),
             "grounding": float(getattr(parsed, "grounding_confidence", 0.0) or 0.0),
@@ -370,8 +424,6 @@ def _to_task_v1(
         "clarification": getattr(parsed, "clarification", None),
         "diagnostics": diagnostics,
     }
-    if destination_pose is not None:
-        output["destination"] = destination_pose
     return output
 
 
@@ -380,19 +432,42 @@ def _entity_id(entity: Any) -> Optional[str]:
     return str(value) if value else None
 
 
-def _scene_pose(scene: Any, entity_id: Optional[str]) -> Optional[dict]:
-    if not entity_id or scene is None:
-        return None
+def _execution_capability_errors(
+    scene: Any,
+    *,
+    action_value: str,
+    target_id: Optional[str],
+    destination_id: Optional[str],
+) -> List[str]:
+    """Enforce trusted object-level execution capabilities before READY."""
+
+    errors: List[str] = []
+    target_required = action_value in {
+        "GRASP", "DYNAMIC_GRASP", "FETCH", "PLACE", "TRANSFER", "HANDOVER", "PUSH", "POUR", "STACK",
+    }
+    destination_required = action_value in {"PLACE", "TRANSFER", "FETCH", "STACK"}
+
+    if target_required and target_id:
+        execution = _scene_execution(scene, target_id)
+        if execution.get("graspable") is not True:
+            code = "TARGET_NOT_GRASPABLE" if execution.get("graspable") is False else "TARGET_GRASPABILITY_UNKNOWN"
+            errors.append(f"{code}:{target_id}")
+    if destination_required and destination_id:
+        execution = _scene_execution(scene, destination_id)
+        if execution.get("valid_destination") is not True:
+            code = "DESTINATION_INVALID" if execution.get("valid_destination") is False else "DESTINATION_VALIDITY_UNKNOWN"
+            errors.append(f"{code}:{destination_id}")
+    return errors
+
+
+def _scene_execution(scene: Any, entity_id: str) -> dict:
     for obj in getattr(scene, "objects", []) or []:
-        if str(getattr(obj, "id", "")) != entity_id:
+        if str(getattr(obj, "id", "")) != str(entity_id):
             continue
-        position = getattr(obj, "position", None)
-        return {
-            "x": float(getattr(position, "x", 0.0)),
-            "y": float(getattr(position, "y", 0.0)),
-            "z": max(0.02, float(getattr(position, "z", 0.03))),
-        }
-    return None
+        attributes = getattr(obj, "attributes", {}) or {}
+        execution = attributes.get("_integration_execution")
+        return execution if isinstance(execution, dict) else {}
+    return {}
 
 
 def _constraint_dump(constraint: Any) -> dict:

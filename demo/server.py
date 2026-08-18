@@ -40,6 +40,7 @@ from integration.adapters import intent, strategy, tracecoder  # noqa: E402
 from integration.adapters import perception as perception_adapter  # noqa: E402
 from integration.adapters.executor import ExecutorAdapter  # noqa: E402
 from integration.pipeline import run_pipeline  # noqa: E402
+from integration.acceptance_metrics import compute_metrics  # noqa: E402
 from modules.evaluator.tracecoder.experience import ExperienceStore  # noqa: E402
 from modules.executor.mock_backend import MockBackend  # noqa: E402
 
@@ -178,6 +179,10 @@ def _run_demo(payload: dict) -> dict:
         **{key: value for key, value in scenario.items() if key != "scene"},
     }
     acceptance = _acceptance_summary(scenario, result, instruction)
+    metrics = compute_metrics([{
+        "expected": {"pipeline_status": acceptance["expected_status"]},
+        "actual": result,
+    }])
     return {
         "ok": True,
         "server_mode": "real-adapters-with-mock-executor",
@@ -188,6 +193,7 @@ def _run_demo(payload: dict) -> dict:
         "result": result,
         "backend_snapshot": backend_snapshot,
         "acceptance": acceptance,
+        "metrics": metrics,
     }
 
 

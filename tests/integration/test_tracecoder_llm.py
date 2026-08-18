@@ -182,8 +182,9 @@ class TestTraceCoderLLM(unittest.TestCase):
         self.assertGreaterEqual(diag["llm"]["stats"]["failed_calls"], 1)
         first = diag["repair_log"][0]
         self.assertEqual(first["source"], "llm_required_failed")
-        grasp = self._grasp_step(result["patch"])
-        self.assertNotIn("on_failure", grasp)
+        # Invalid required-mode repair is terminal: no patch is exposed for
+        # accidental downstream application.
+        self.assertIsNone(result["patch"])
         # fake 侧证据：LLM 确实输出了非法操作
         repair_outputs = [c["output"] for c in fake.calls if c["role"] == "repair"]
         self.assertTrue(repair_outputs)
@@ -219,8 +220,9 @@ class TestTraceCoderLLM(unittest.TestCase):
         self.assertEqual(first["status"], "failed")
         self.assertIn("API_KEY", first["error"])
         # 抓取步骤保持原样：没有任何规则补丁被偷偷应用
-        grasp = self._grasp_step(result["patch"])
-        self.assertNotIn("on_failure", grasp)
+        # Missing credentials are also terminal in required mode; patch must
+        # remain null and cannot silently fall back to rules.
+        self.assertIsNone(result["patch"])
 
     def test_persistent_failure_safe_stop(self):
         """持续失败安全停止：LLM 恢复吸收不了 grasp:3，机器人 safe_stop；循环提前收敛。"""

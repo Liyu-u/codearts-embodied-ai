@@ -26,12 +26,16 @@ class TestIntentStrategyPipeline(unittest.TestCase):
                     "id": "obj-red",
                     "category": "红色方块",
                     "pose": {"x": 0.10, "y": 0.00, "z": 0.03},
+                    "dimensions": {"x": 0.05, "y": 0.05, "z": 0.05},
                     "attributes": {"color": "red"},
+                    "execution": {"graspable": True},
                 },
                 {
                     "id": "surface-table",
                     "category": "桌子",
                     "pose": {"x": 0.30, "y": 0.00, "z": 0.03},
+                    "dimensions": {"x": 0.50, "y": 0.05, "z": 0.50},
+                    "execution": {"valid_destination": True},
                 },
             ],
         }

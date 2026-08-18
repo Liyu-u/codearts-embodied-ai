@@ -199,6 +199,36 @@ class CodeArtsClientTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "CODEARTS_CLI_TIMEOUT")
 
+    def test_required_failure_matrix_keeps_structured_provenance(self):
+        cases = {
+            "illegal_json": "not-json",
+            "unknown_action": f"{OUTPUT_BEGIN}\n" + json.dumps({
+                **valid_strategy(),
+                "steps": [{**valid_strategy()["steps"][0], "action": "hack_robot"}],
+            }) + f"\n{OUTPUT_END}",
+            "wrong_entity_id": f"{OUTPUT_BEGIN}\n" + json.dumps({
+                **valid_strategy(),
+                "steps": [{
+                    **valid_strategy()["steps"][0],
+                    "arguments": {"object_id": "unknown-object"},
+                }],
+            }) + f"\n{OUTPUT_END}",
+        }
+        for name, stdout in cases.items():
+            with self.subTest(name=name):
+                client = CodeArtsStrategyClient(
+                    runner=lambda command, **kwargs: SimpleNamespace(
+                        returncode=0, stdout=stdout, stderr=""
+                    ),
+                    which=lambda _: "codearts",
+                )
+                result = client.generate(TASK)
+                self.assertFalse(result["success"])
+                trace = result["trace"]
+                self.assertTrue(trace["request_id"])
+                self.assertIn("latency_ms", trace)
+                self.assertFalse(trace["validation"]["passed"])
+
     def test_review_uses_separate_critic_prompt_and_requires_pass(self):
         calls = []
         strategy = valid_strategy()

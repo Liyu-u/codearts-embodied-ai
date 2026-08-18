@@ -72,6 +72,19 @@ class TestFeedbackContract(unittest.TestCase):
         self.assertFalse(diagnosis["final_passed"])
         self.assertTrue(output["retryable"])
 
+    def test_safety_event_forces_non_retryable_null_patch(self):
+        execution = mock_executor_run(DEMO_STRATEGY_V1, DEMO_TASK_V1)
+        execution["status"] = "FAILED"
+        execution["safety_events"] = [{
+            "type": "COLLISION_DETECTED",
+            "severity": "critical",
+            "triggered": True,
+        }]
+        output = run(self._input(execution))
+        self.assertFalse(output["retryable"])
+        self.assertIsNone(output["patch"])
+        self.assertIn("COLLISION_DETECTED", output["provenance"]["safety_events"])
+
     def test_execution_task_id_must_match_task(self):
         execution = mock_executor_run(DEMO_STRATEGY_V1, DEMO_TASK_V1)
         execution["task_id"] = "another_task"

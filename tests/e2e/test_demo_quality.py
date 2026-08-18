@@ -191,17 +191,12 @@ class DemoQualityTests(unittest.TestCase):
         self.assertFalse(_diagnosis(safe_stop)["execution_passed"])
         self.assertTrue(safe_stop_response["backend_snapshot"]["safe_stopped"])
 
-        failed = _run("invalid_destination")["result"]
-        self.assertEqual(failed["status"], "FAILED")
-        self.assertEqual(failed["execution"]["status"], "FAILED")
-        failed_steps = [step for step in failed["execution"]["steps"] if step["status"] == "FAILED"]
-        self.assertTrue(failed_steps)
-        self.assertIn("INVALID_DESTINATION", failed_steps[0]["reason"])
-        self.assertIsNotNone(failed["feedback"])
-        self.assertFalse(failed["feedback"]["retryable"])
-        diagnosis = _diagnosis(failed)
-        self.assertFalse(diagnosis["execution_passed"])
-        self.assertIn(diagnosis["retry_reason"], {"PATCH_UNCHANGED", "FEEDBACK_NOT_RETRYABLE"})
+        blocked = _run("invalid_destination")["result"]
+        self.assertEqual(blocked["status"], "BLOCKED")
+        self.assertEqual(blocked["task"]["status"], "BLOCKED")
+        self.assertNotIn("execution", blocked)
+        self.assertNotIn("feedback", blocked)
+        self.assertTrue(blocked["task"]["blocking_reasons"])
 
     def test_same_scenario_is_deterministic_with_distinct_request_ids(self):
         first = _run("tracecoder_repair", request_id="quality-run-1")

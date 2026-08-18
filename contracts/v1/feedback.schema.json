@@ -2,6 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "robot-system/feedback/v1",
   "type": "object",
-  "required": ["schema_version", "task_id", "diagnosis"],
-  "properties": {"schema_version": {"const": "feedback.v1"}, "task_id": {"type": "string"}, "diagnosis": {"type": "string"}, "retryable": {"type": "boolean"}, "patch": {"type": ["object", "null"]}}
+  "required": ["schema_version", "task_id", "diagnosis", "retryable", "patch", "provenance"],
+  "properties": {
+    "schema_version": {"const": "feedback.v1"},
+    "task_id": {"type": "string", "minLength": 1},
+    "diagnosis": {"type": "string"},
+    "retryable": {"type": "boolean"},
+    "patch": {"type": ["object", "null"]},
+    "provenance": {"type": "object"}
+  }
 }

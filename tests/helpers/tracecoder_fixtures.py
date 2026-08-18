@@ -47,15 +47,16 @@ DEMO_STRATEGY_V1 = {
     "task_id": "demo_place_cup",
     "steps": [
         {"step_id": "detect_cup", "action": "detect_object",
-         "arguments": {"object_name": "red_cup"}},
+         "arguments": {"object_id": "red_cup"}},
         {"step_id": "approach_cup", "action": "move_to_object",
          "arguments": {"object_id": "$detect_cup.object_id"}},
         {"step_id": "grasp_cup", "action": "grasp",
          "arguments": {"object_id": "$detect_cup.object_id"}},
         {"step_id": "move_bin", "action": "move_to_target",
-         "arguments": {"target": "left_bin"}},
+         "arguments": {"destination_id": "left_bin"}},
         {"step_id": "release_cup", "action": "release", "arguments": {}},
     ],
+    "code": None,
 }
 
 

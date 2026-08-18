@@ -5,13 +5,18 @@
   "required": ["schema_version", "task_id", "action", "status"],
   "properties": {
     "schema_version": {"const": "task.v1"},
-    "task_id": {"type": "string"},
+    "task_id": {"type": "string", "minLength": 1},
     "action": {"type": "string"},
     "target_ids": {"type": "array", "items": {"type": "string"}},
+    "target_object": {"type": ["string", "null"]},
     "destination_id": {"type": ["string", "null"]},
     "constraints": {"type": "array"},
     "status": {"enum": ["READY", "NEEDS_CLARIFICATION", "BLOCKED"]},
-    "blocking_reasons": {"type": "array", "items": {"type": "string"}}
+    "blocking_reasons": {"type": "array", "items": {"type": "string"}},
+    "execution_allowed": {"type": "boolean"},
+    "clarification": {"type": ["string", "null"]},
+    "diagnostics": {"type": "object"},
+    "tracecoder": {"type": "object"}
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }

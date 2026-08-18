@@ -51,7 +51,8 @@ class TestCodeArtsComparison(unittest.TestCase):
 
         self.assertTrue(baseline["success"])
         self.assertEqual(baseline["mode"], "primitive_plan")
-        self.assertNotIn("provenance", baseline)
+        self.assertEqual(baseline["provenance"]["source"], "local_rules")
+        self.assertFalse(baseline["provenance"]["fallback"])
         self.assertTrue(codearts["success"])
         self.assertEqual(codearts["mode"], "codearts_agent")
         self.assertEqual(

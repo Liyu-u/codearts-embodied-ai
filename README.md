@@ -16,7 +16,7 @@ TraceCoder / TraceProbe 反馈
 回归测试、失败诊断与策略修正
 ```
 
-> 当前主线基线：`04d34af`（2026-08-18）。`origin/main` 与本地 `main` 已同步，包含用户代码、PR3（TraceCoder LLM Provider）和基于主线重构后的 PR4（正式感知接口与规范化执行字段）。
+> 当前主线基线：C1 最终修复批次（2026-08-18）。本批次按“契约与安全门禁 → 模块联调 → 证据与指标 → 真实依赖验收”的顺序提交到 `main`；远程 `main` 的最新提交以 GitHub 为准。
 
 ## 一、仓库原则
 
@@ -30,23 +30,31 @@ TraceCoder / TraceProbe 反馈
 
 | 环节 | 已完成的代码能力 | 当前真实状态与边界 |
 | --- | --- | --- |
-| A 感知/意图 | Mock 感知、实体绑定、意图解析和安全门禁；新增 `perception_observation` 正式输入及 `ObservationNormalizer` | 软件闭环可运行；尚未接入真实相机、Isaac Sim 感知管线或真机传感器 |
-| B 策略 | `strategy.v1` 校验、动作白名单、CodeArts CLI 适配器和离线模板；支持 `off/auto/required` | CodeArts 接入代码已在主线；当前环境能找到 CLI，但没有提交 agent/model 配置，不能据此宣称云端策略已在线稳定运行 |
-| C 执行 | `execution.v1`、`MockBackend`、轨迹和安全事件输出；支持 `placement_mode: stack_on` | 当前可验证的执行后端仍是 Mock；Isaac Sim 和真机后端尚未进入主线 |
-| D 反馈 | TraceCoder 规则引擎、经验库、Provider 抽象和 LLM Provider；`off/optional/required` 三种模式 | 默认离线安全模式；当前环境未配置 TraceCoder API key/model，LLM 实际调用未启用 |
+| A 感知/意图 | Mock 感知、实体绑定、意图解析和安全门禁；`perception_observation` 正式输入、稳定 ID、UUID `task_id`、执行能力校验和尺寸校验 | 软件闭环可运行；尚未接入真实相机、Isaac Sim 感知管线或真机传感器 |
+| B 策略 | `strategy.v1` 校验、五动作白名单、CodeArts CLI 适配器、`off/auto/required` 模式、结构化 provenance 和 required 失败阻断 | CodeArts 接入代码已提交；当前环境没有可复核的线上 agent/model 配置，不能据此宣称云端策略已在线稳定运行 |
+| C 执行 | `execution.v1`、`MockBackend`、capabilities 透传、轨迹/安全事件、动作与恢复上限；支持 `placement_mode: stack_on` | 当前可验证的执行后端仍是 Mock；Isaac Sim 和真机后端尚未进入主线 |
+| D 反馈 | TraceCoder 规则引擎、经验库、Provider 抽象、LLM 三模式、安全事件识别、patch 校验和有限重试 | 默认离线安全模式；当前环境未配置 TraceCoder API key/model，LLM 实际调用未启用 |
 | 契约 | `perception_observation` 正式 Schema、Schema `$ref` 校验、规范化字段和契约测试 | `object_id`、`destination_id` 是正式跨模块字段；兼容别名只保留在 Mock/边界适配器内 |
 
-目前已经打通的是**软件级离线闭环**：意图 → task.v1 → 策略 → Mock 执行 → TraceCoder feedback.v1。它证明了接口和错误处理能够联调，但不等同于真实机器人已经完成闭环。
+目前已经打通的是**软件级离线闭环**：意图 → task.v1 → 策略 → Mock 执行 → TraceCoder feedback.v1。它证明了接口、安全门禁、错误处理和可追溯证据能够联调，但不等同于真实机器人已经完成闭环。软件级完成度约 95%；生产级完成度约 65%–75%，差距主要来自真实服务、仿真/硬件后端和线上证据。
 
 主线最近一次全量验证结果为：
 
 ```text
-105 passed, 1 skipped, 115 subtests passed
+129 passed, 1 skipped, 118 subtests passed
 ```
 
-### 主线与本地工作区的区别
+### 本次 C1 修复提交范围
 
-远程 `main` 只包含已提交、可审查的基线。当前本地工作区另有一组未提交的 CodeArts 策略质量审查实验改动，涉及策略适配器、CodeArts 客户端、模块说明、测试和基准脚本，并包含新增的策略测试/说明文件；它们**不属于 `04d34af`，也不会随本次 README 提交进入远程主线**。提交这些代码前应单独完成测试、评审和回滚点创建；本地生成的 `.codeartsdoer/`、`.opencode/`、PPT、渲染目录和报告也不应加入 Git。
+本次提交包含 C1 最终清单要求的代码、契约、测试、演示和交付指南：
+
+- A：执行能力门控、稳定对象 ID、唯一 UUID `task_id`、task.v1 目的地字段收紧、尺寸校验和歧义指标入口；
+- B：CodeArts `required` 模式、五种原子动作、`code=null`、调用 provenance 和失败阻断；
+- C：统一 capabilities、动作/参数/引用校验、执行 provenance、恢复上限和安全事件边界；
+- D：安全事件识别、patch 合法性与“无变化”拦截、`patch=null` 语义和有限重试；
+- 公共层：共享策略校验器、收紧的 v1 Schema、Pipeline correlation/run 元数据、前端来源展示和验收指标。
+
+本地生成的 `.codeartsdoer/`、`.opencode/`、PPT、渲染目录、运行报告和包含个人路径的附件不属于源代码交付，不应加入 Git。真实 CodeArts、在线 LLM、Isaac Sim 和真机验证仍需在具备相应凭证/环境的机器上完成。
 
 ## 三、目录结构和任务
 
@@ -154,16 +162,16 @@ TraceCoder 支持三种运行模式：
 
 ## 七、下一步工作路线
 
-以下顺序延续此前的合并方案：先冻结并保护当前基线，再逐步把真实依赖接入；每一步都保持 Mock 回归集可运行。
+以下顺序延续本次 C1 修复后的交付方案：先保护已提交基线，再逐步接入真实依赖；每一步都保持 Mock 回归集可运行。
 
-1. **冻结 v1 契约和基线**：为感知、策略、执行和反馈字段补齐所有权、版本兼容规则、错误码和示例；为 `04d34af` 保留可回滚标签。
-2. **完成正式字段迁移**：让所有真实生产者和消费者使用 `object_id`、`destination_id`；兼容别名只留在边界，并增加“旧字段不得穿透正式 Schema”的测试。
-3. **打通感知到执行的可信能力链**：把 `perception_observation` 与场景/执行能力注册表关联，明确哪些对象可抓取、哪些目标可放置；缺少可信能力时必须阻断。
-4. **接入 Isaac Sim**：实现独立的执行适配器，输出真实轨迹、碰撞/安全事件、耗时和可复现日志，继续复用 `execution.v1` 和 Mock 测试。
-5. **受控启用 CodeArts**：在不入库密钥的环境配置 agent/model，先运行 `auto` 和重复稳定性测试，再考虑 `required`；任何模型输出仍须经过本地校验和动作白名单。
-6. **受控启用 TraceCoder LLM**：先 `optional` 后 `required`，建立失败归因准确率、延迟、回退率和成本指标；没有证据时保持 `off`。
-7. **小范围真机试运行**：在仿真通过后增加急停、权限、超时、速度/工作空间限制、人工确认和审计日志，禁止跳过安全门禁直接执行。
-8. **持续治理仓库**：CI 强制契约测试和最小闭环验收；定期清理本地生成物，禁止把密钥、个人路径、真机地址和大体积日志提交到 Git。
+1. **完成 GitHub 基线保护**：确认 C1 提交已推送，添加可回滚标签，并让 CI 固定运行契约、集成和 E2E 测试。
+2. **冻结 v1 契约与正式字段**：继续保证 `object_id`、`destination_id` 只在边界兼容旧字段，禁止旧字段穿透正式 Schema。
+3. **打通可信能力链**：把 `perception_observation` 与场景/执行能力注册表关联；缺少抓取或目的地能力时必须阻断。
+4. **接入 Isaac Sim**：输出真实轨迹、碰撞/安全事件、耗时和可复现日志，复用 `execution.v1` 与 Mock 回归集。
+5. **受控启用 CodeArts**：配置不入库的 agent/model，完成 3 个成功样本及超时、非法 JSON、未知动作、错误实体 ID 失败矩阵。
+6. **受控启用 TraceCoder LLM**：先 `optional` 后 `required`，完成正常、抓取失败、目标未达、非法修复、持续失败五类证据采集。
+7. **小范围真机试运行**：在仿真通过后加入急停、权限、超时、速度/工作空间限制、人工确认和审计日志。
+8. **持续指标与仓库治理**：持续采集准确率、歧义 F1、漏澄清率、危险误执行率、延迟、回退率和成本；禁止提交密钥、个人路径、真机地址和大体积日志。
 
 每个阶段的合并请求都应写明：输入/输出协议、影响范围、回滚方式、测试命令与结果，以及是否改变了真实执行边界。出现大量代码冲突或接口重构时，先暂停合并并单独评审，不把冲突解决结果直接视为功能正确。
 
@@ -176,4 +184,4 @@ TraceCoder 支持三种运行模式：
 - 每个失败都要能用 `task_id` 在 `testdata/` 中复现。
 - 合并顺序遵循“先基线/契约，再模块接入，最后真实后端”：任何后续 PR 都应基于最新 `main` 重放并重新跑全量测试。
 
-详细操作说明见 [`docs/联调仓库使用手册.md`](docs/联调仓库使用手册.md)。
+详细操作说明见 [`docs/联调仓库使用手册.md`](docs/联调仓库使用手册.md)；本轮按 C1 最终清单实施的修复顺序、验证门槛和 GitHub 分阶段交付方式见 [`docs/C1最终修复与GitHub交付指南.md`](docs/C1最终修复与GitHub交付指南.md)。

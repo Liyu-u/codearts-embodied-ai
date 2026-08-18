@@ -4,7 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from integration.contract_validation import assert_contract
-from modules.executor.action_catalog import validate_action_arguments
+from modules.executor.action_catalog import ALLOWED_ACTIONS, validate_action_arguments
 from modules.executor.models import ExecutionLimits, ExecutorBackend, StepOutcome
 
 
@@ -51,9 +51,32 @@ class StrategyInterpreter:
         self.limits = limits or ExecutionLimits()
 
     def run(self, strategy: dict) -> dict:
-        assert_contract(strategy, "strategy.v1")
         if strategy.get("code") not in (None, ""):
             raise ValueError("strategy.code must be empty")
+        def _check_steps(steps: list[dict]) -> None:
+            for step in steps:
+                if not isinstance(step, dict):
+                    continue
+                action = step.get("action")
+                if action not in ALLOWED_ACTIONS:
+                    raise ValueError(f"UNKNOWN_ACTION:{action}")
+                recovery = step.get("on_failure")
+                if isinstance(recovery, dict):
+                    # Keep the interpreter's stable safety error even when the
+                    # JSON schema would otherwise reject the value first.
+                    max_attempts = recovery.get("max_attempts")
+                    if (
+                        isinstance(max_attempts, bool)
+                        or not isinstance(max_attempts, int)
+                        or not 1 <= max_attempts <= self.limits.max_recovery_attempts
+                    ):
+                        raise ValueError("max_attempts must be between 1 and 3")
+                    if recovery.get("on_exhausted") != "stop":
+                        raise ValueError("on_exhausted must be stop")
+                    _check_steps(recovery.get("steps", []) or [])
+
+        _check_steps(strategy.get("steps", []) or [])
+        assert_contract(strategy, "strategy.v1")
         self._preflight(strategy)
 
         records: list[dict] = []

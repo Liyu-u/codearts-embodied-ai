@@ -16,6 +16,10 @@ import os
 from typing import Any, List
 
 from modules.strategy_generation.codearts_agent import CodeArtsStrategyClient
+from integration.strategy_policy import (
+    normalize_capabilities,
+    validate_strategy,
+)
 
 
 # These are the task-level actions for which A's grounded constraints can be
@@ -88,6 +92,7 @@ def run(input_json: dict) -> dict:
         )
 
     action = input_json["action"]
+    capabilities = normalize_capabilities(input_json.get("capabilities"))
     if action not in SUPPORTED_PRIMITIVE_TASK_ACTIONS:
         return _blocked_result(
             input_json["task_id"],
@@ -132,6 +137,17 @@ def run(input_json: dict) -> dict:
                     strategy.setdefault("provenance", {})["critics"] = quality_result[
                         "critics"
                     ]
+                policy_errors = validate_strategy(
+                    strategy,
+                    task=input_json,
+                    capabilities=capabilities,
+                )["errors"]
+                if policy_errors:
+                    return _blocked_result(
+                        task_id,
+                        policy_errors,
+                        "CodeArts 策略未通过共享安全校验",
+                    )
                 return strategy
             result = {
                 "success": False,
@@ -161,6 +177,7 @@ def run(input_json: dict) -> dict:
             mode="primitive_plan_fallback",
             provider_error=result["error"],
             provenance=result["trace"],
+            capabilities=capabilities,
         )
 
     return _local_pick_and_place_strategy(
@@ -169,6 +186,7 @@ def run(input_json: dict) -> dict:
         destination_id,
         action=action,
         mode=("primitive_plan" if action == "pick_and_place" else "primitive_plan_extended"),
+        capabilities=capabilities,
     )
 
 
@@ -181,6 +199,7 @@ def _local_pick_and_place_strategy(
     mode: str,
     provider_error: str | None = None,
     provenance: dict | None = None,
+    capabilities: dict | None = None,
 ) -> dict:
     output = {
         "schema_version": "strategy.v1",
@@ -206,8 +225,35 @@ def _local_pick_and_place_strategy(
     }
     if provider_error:
         output["provider_error"] = provider_error
-    if provenance:
-        output["provenance"] = provenance
+    output["provenance"] = dict(
+        provenance
+        or {
+            "source": "local_rules",
+            "agent": "primitive_planner",
+            "model": None,
+            "request_id": task_id,
+            "run_id": task_id,
+            "latency_ms": 0,
+            "fallback": bool(provider_error),
+            "validation": {"passed": True, "errors": []},
+        }
+    )
+    output["provenance"].setdefault("source", "codearts_agent")
+    if provider_error:
+        output["provenance"]["provider_attempted"] = output["provenance"].get("provider")
+        output["provenance"]["source"] = "local_rules"
+        output["provenance"]["fallback"] = True
+    policy = validate_strategy(
+        output,
+        task={"task_id": task_id},
+        capabilities=normalize_capabilities(capabilities),
+    )
+    if not policy["passed"]:
+        return _blocked_result(
+            task_id,
+            policy["errors"],
+            "本地策略未通过共享安全校验",
+        )
     return output
 
 

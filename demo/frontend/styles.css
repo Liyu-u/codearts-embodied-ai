@@ -176,6 +176,8 @@ select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3p
 .kv code, .step-action code, .step-meta code, .object-meta code, .feedback-callout code { color: var(--accent); font-size: 10px; font-weight: 500; }
 .empty-state { color: #8fa1b6; line-height: 1.6; }
 .feedback-callout { padding: 11px; border: 1px solid rgba(181, 159, 227, .25); background: rgba(181, 159, 227, .08); border-radius: 9px; line-height: 1.55; }
+.provenance-detail { margin: 11px 0; padding: 10px; border: 1px solid rgba(87, 171, 214, .22); background: rgba(13, 34, 53, .42); border-radius: 9px; }
+.provenance-detail > strong { display: block; margin-bottom: 8px; color: var(--accent); }
 .attempt-list { display: grid; gap: 8px; margin-top: 11px; }
 .attempt-list-title { color: var(--muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
 .attempt-row { padding: 9px 10px; border: 1px solid rgba(159, 187, 213, .12); border-radius: 8px; background: rgba(29, 49, 72, .54); }

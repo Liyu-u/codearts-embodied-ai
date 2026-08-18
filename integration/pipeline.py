@@ -11,9 +11,15 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
+from uuid import uuid4
 
-from integration.contract_validation import validate_contract
+from integration.strategy_policy import (
+    DEFAULT_CAPABILITIES,
+    normalize_capabilities,
+    validate_patch,
+    validate_strategy,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,25 +56,52 @@ def run_pipeline(
     """
 
     _validate_retry_limit(max_retries)
+    run_id = str(request_id or uuid4())
     intent_input = {"instruction": instruction, "perception": perception}
     if engine is not None:
         intent_input["engine"] = engine
     if request_id is not None:
-        intent_input["task_id"] = str(request_id)
+        # request_id is correlation metadata.  A generates the independent
+        # task UUID and must not reuse a scene/request label as task_id.
+        intent_input["correlation_id"] = run_id
+    else:
+        intent_input["correlation_id"] = run_id
 
     task = adapters["intent"].run(intent_input)
     if task.get("status") != "READY":
-        return {"status": "BLOCKED", "task": task}
+        return {"status": "BLOCKED", "task": task, "run_id": run_id}
 
-    initial_strategy = adapters["strategy"].run(task)
+    executor = adapters["executor"]
+    capabilities = _adapter_capabilities(executor)
+    strategy_input = {**task, "capabilities": deepcopy(capabilities)}
+    initial_strategy = adapters["strategy"].run(strategy_input)
     if initial_strategy.get("blocked") or initial_strategy.get("success") is False:
         return {
             "status": "BLOCKED",
             "task": task,
             "strategy": initial_strategy,
+            "run_id": run_id,
+        }
+    strategy_validation = validate_strategy(
+        initial_strategy,
+        task=task,
+        capabilities=capabilities,
+    )
+    if not strategy_validation["passed"]:
+        return {
+            "status": "BLOCKED",
+            "task": task,
+            "strategy": {
+                **initial_strategy,
+                "blocked": True,
+                "success": False,
+                "steps": [],
+                "blocking_reasons": strategy_validation["errors"],
+                "validation": strategy_validation,
+            },
+            "run_id": run_id,
         }
 
-    executor = adapters["executor"]
     feedback_adapter = adapters.get("tracecoder")
     current_strategy = initial_strategy
     execution: Optional[dict] = None
@@ -87,6 +120,8 @@ def run_pipeline(
                     "strategy": current_strategy,
                     "execution": execution,
                     "perception": perception,
+                    "capabilities": capabilities,
+                    "run_id": run_id,
                 }
             )
 
@@ -117,12 +152,14 @@ def run_pipeline(
             break
 
         patch = feedback_out.get("patch")
-        patch_error = _validate_patch(patch, task_id=task.get("task_id"))
-        if patch_error:
-            stop_reason = patch_error
-            break
-        if _same_strategy(patch, current_strategy):
-            stop_reason = "PATCH_UNCHANGED"
+        patch_validation = validate_patch(
+            patch,
+            current_strategy=current_strategy,
+            task=task,
+            capabilities=capabilities,
+        )
+        if not patch_validation["passed"]:
+            stop_reason = "PATCH_INVALID:" + "; ".join(patch_validation["errors"])
             break
 
         current_strategy = patch
@@ -145,40 +182,29 @@ def run_pipeline(
         "attempts": attempts,
         "retry_count": retry_count,
         "stop_reason": stop_reason,
+        "run_id": run_id,
     }
 
 
 def _validate_retry_limit(max_retries: int) -> None:
     if isinstance(max_retries, bool) or not isinstance(max_retries, int):
         raise ValueError("max_retries must be an integer")
-    if max_retries < 0 or max_retries > 10:
-        raise ValueError("max_retries must be between 0 and 10")
+    if max_retries < 0 or max_retries > DEFAULT_MAX_RETRIES:
+        raise ValueError(f"max_retries must be between 0 and {DEFAULT_MAX_RETRIES}")
 
 
-def _validate_patch(patch: Any, *, task_id: Any) -> Optional[str]:
-    """Validate D's patch before allowing it to reach C."""
+def _adapter_capabilities(executor: object) -> dict:
+    """Read capabilities from C without requiring every test double to expose it."""
 
-    if not isinstance(patch, dict):
-        return "PATCH_MISSING"
-    errors = validate_contract(patch, "strategy.v1")
-    if errors:
-        return "PATCH_INVALID:" + "; ".join(errors)
-    if task_id and patch.get("task_id") != task_id:
-        return "PATCH_TASK_ID_MISMATCH"
-    if patch.get("code") not in (None, ""):
-        return "PATCH_CODE_NOT_ALLOWED"
-    return None
-
-
-def _same_strategy(left: dict, right: dict) -> bool:
-    """Compare execution-relevant strategy fields, ignoring adapter metadata."""
-
-    def execution_shape(strategy: dict) -> dict:
-        return {
-            "schema_version": strategy.get("schema_version"),
-            "task_id": strategy.get("task_id"),
-            "steps": strategy.get("steps"),
-            "code": strategy.get("code") or None,
-        }
-
-    return execution_shape(left) == execution_shape(right)
+    try:
+        method = getattr(executor, "capabilities", None)
+        if callable(method):
+            return normalize_capabilities(method())
+        health = getattr(executor, "health", None)
+        if callable(health):
+            value = health() or {}
+            if isinstance(value, dict):
+                return normalize_capabilities(value.get("capabilities") or value)
+    except Exception:
+        pass
+    return normalize_capabilities(DEFAULT_CAPABILITIES)

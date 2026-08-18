@@ -58,9 +58,25 @@ def _check_type(value: Any, expected: Any, path: str) -> list[str]:
     return []
 
 
-def validate(instance: Any, schema: dict, path: str = "$") -> list[str]:
+def validate(
+    instance: Any,
+    schema: dict,
+    path: str = "$",
+    _root_schema: dict | None = None,
+) -> list[str]:
     """校验 instance 是否符合 schema，返回错误列表（空 = 通过）。"""
     errors: list[str] = []
+    root_schema = _root_schema or schema
+
+    if "$ref" in schema:
+        reference = schema["$ref"]
+        if not reference.startswith("#/"):
+            errors.append(f"{path}: 不支持的 schema 引用 {reference!r}")
+            return errors
+        resolved: Any = root_schema
+        for segment in reference[2:].split("/"):
+            resolved = resolved[segment.replace("~1", "/").replace("~0", "~")]
+        return validate(instance, resolved, path, root_schema)
 
     if "const" in schema:
         if instance != schema["const"]:
@@ -77,6 +93,11 @@ def validate(instance: Any, schema: dict, path: str = "$") -> list[str]:
     if isinstance(instance, str) and "minLength" in schema:
         if len(instance) < schema["minLength"]:
             errors.append(f"{path}: 长度必须 >= {schema['minLength']}")
+    if isinstance(instance, (int, float)) and not isinstance(instance, bool):
+        if "minimum" in schema and instance < schema["minimum"]:
+            errors.append(f"{path}: 数值必须 >= {schema['minimum']}")
+        if "maximum" in schema and instance > schema["maximum"]:
+            errors.append(f"{path}: 数值必须 <= {schema['maximum']}")
 
     if isinstance(instance, dict):
         for required in schema.get("required", []):
@@ -85,15 +106,23 @@ def validate(instance: Any, schema: dict, path: str = "$") -> list[str]:
         for key, value in instance.items():
             prop_schema = schema.get("properties", {}).get(key)
             if prop_schema is not None:
-                errors.extend(validate(value, prop_schema, f"{path}.{key}"))
+                errors.extend(validate(value, prop_schema, f"{path}.{key}", root_schema))
             elif schema.get("additionalProperties") is False:
                 errors.append(f"{path}: 不允许额外字段 {key!r}")
 
     if isinstance(instance, list):
+        if "minItems" in schema and len(instance) < schema["minItems"]:
+            errors.append(f"{path}: 数组长度必须 >= {schema['minItems']}")
+        if "maxItems" in schema and len(instance) > schema["maxItems"]:
+            errors.append(f"{path}: 数组长度必须 <= {schema['maxItems']}")
+        if schema.get("uniqueItems"):
+            fingerprints = [repr(item) for item in instance]
+            if len(fingerprints) != len(set(fingerprints)):
+                errors.append(f"{path}: 数组元素必须唯一")
         items_schema = schema.get("items")
         if isinstance(items_schema, dict):
             for index, item in enumerate(instance):
-                errors.extend(validate(item, items_schema, f"{path}[{index}]"))
+                errors.extend(validate(item, items_schema, f"{path}[{index}]", root_schema))
 
     return errors
 

@@ -136,7 +136,11 @@ class MockBackend:
                 return self._failed("NOT_HOLDING_OBJECT", duration_ms)
             placement_pose = self._stack_pose(item, self._objects[self._held_id])
         else:
-            if not item.get("execution", {}).get("valid_destination", False):
+            execution = item.get("execution", {})
+            if (
+                not execution.get("valid_destination", False)
+                or execution.get("stackable_destination", False)
+            ):
                 return self._failed(
                     f"INVALID_DESTINATION:{destination_id}",
                     duration_ms,

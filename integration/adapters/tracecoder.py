@@ -44,7 +44,7 @@ import json
 from copy import deepcopy
 from typing import Any
 
-from integration.contract_validation import validate_contract
+from integration.strategy_policy import normalize_capabilities, validate_strategy as validate_shared_strategy
 
 # TraceCoder 引擎：统一联调仓库内以相对导入引用本仓库 modules 包。
 from modules.evaluator.tracecoder import process_policy
@@ -177,6 +177,7 @@ def _strategy_native_to_v1(strategy_native: dict) -> dict:
         "schema_version": "strategy.v1",
         "task_id": strategy_native.get("strategy_id"),
         "steps": steps,
+        "code": None,
     }
 
 
@@ -406,17 +407,39 @@ def _execution_summary(execution: dict) -> dict:
     }
 
 
-def _has_safety_violation(execution: dict) -> bool:
-    """判断执行日志是否记录了明确的安全违规。"""
+SAFETY_EVENT_TYPES = {
+    "WORKSPACE_VIOLATION",
+    "COLLISION_DETECTED",
+    "ACTION_TIMEOUT",
+    "RECOVERY_EXHAUSTED",
+}
+
+
+def _safety_event_reasons(execution: dict) -> list[str]:
+    """Return canonical safety reasons that prohibit automatic retry."""
+
+    reasons: list[str] = []
     for event in execution.get("safety_events") or []:
+        event_type = str(event.get("type", "")).upper()
+        severity = str(event.get("severity", "")).lower()
+        if event_type in SAFETY_EVENT_TYPES:
+            reasons.append(event_type)
+        elif severity in {"error", "critical"}:
+            reasons.append(event_type or f"SEVERITY_{severity.upper()}")
         count = event.get("count")
         if isinstance(count, (int, float)) and not isinstance(count, bool) and count > 0:
-            return True
+            reasons.append(event_type or "SAFETY_EVENT")
         if event.get("triggered") is True or str(event.get("status", "")).upper() in {
             "VIOLATION", "TRIGGERED", "FAILED"
         }:
-            return True
-    return False
+            reasons.append(event_type or "SAFETY_EVENT")
+    return list(dict.fromkeys(reasons))
+
+
+def _has_safety_violation(execution: dict) -> bool:
+    """判断执行日志是否记录了明确的安全违规。"""
+
+    return bool(_safety_event_reasons(execution))
 
 
 def _execution_passed(execution: dict) -> bool:
@@ -498,18 +521,29 @@ def _build_feedback(
     result: dict,
     execution: dict,
     current_strategy: dict,
+    *,
+    task: dict,
+    capabilities: dict,
+    llm_mode: str,
+    run_id: str | None = None,
 ) -> dict:
     """把引擎结果映射为 feedback.v1。"""
     final_passed = _execution_passed(execution)
-    safety_violation = _has_safety_violation(execution)
+    safety_reasons = _safety_event_reasons(execution)
+    safety_violation = bool(safety_reasons)
     patch = _strategy_native_to_v1(result.get("best_strategy") or {})
-    patch_errors = validate_contract(patch, "strategy.v1")
-    patch_valid = not patch_errors
+    patch_validation = validate_shared_strategy(
+        patch,
+        task=task,
+        capabilities=capabilities,
+    )
+    patch_errors = patch_validation["errors"]
+    patch_valid = patch_validation["passed"]
     patch_changed = _strategy_execution_shape(patch) != _strategy_execution_shape(current_strategy)
     if execution.get("status") != "FAILED":
         retry_reason = "EXECUTION_NOT_FAILED"
     elif safety_violation:
-        retry_reason = "SAFETY_EVENT"
+        retry_reason = "SAFETY_EVENT:" + ",".join(safety_reasons)
     elif not patch_valid:
         retry_reason = "PATCH_INVALID"
     elif not patch_changed:
@@ -523,6 +557,33 @@ def _build_feedback(
         and patch_valid
         and patch_changed
     )
+    if not retryable:
+        patch = None
+    llm_stats = result.get("llm_stats") or {}
+    calls = result.get("call_log") or []
+    call_models = [item.get("model") for item in calls if item.get("model")]
+    request_ids = [item.get("request_id") for item in calls if item.get("request_id")]
+    latency_values = [
+        float(item.get("latency_ms", 0) or 0)
+        for item in calls
+        if isinstance(item.get("latency_ms", 0), (int, float))
+    ]
+    provenance = {
+        "source": "tracecoder_llm" if llm_mode != "off" else "tracecoder_rules",
+        "agent": "TraceCoder",
+        "mode": llm_mode,
+        "model": call_models[0] if call_models else (_LLM_CONFIG.model or None),
+        "request_id": run_id,
+        "run_id": run_id,
+        "latency_ms": round(sum(latency_values), 3),
+        "request_ids": request_ids,
+        "fallback": bool(llm_stats.get("fallback_calls")),
+        "llm_stats": llm_stats,
+        "calls": calls,
+        "safety_events": safety_reasons,
+        "validation": patch_validation,
+        "patch_validation": patch_validation,
+    }
     return {
         "schema_version": "feedback.v1",
         "task_id": result.get("task_id"),
@@ -536,9 +597,9 @@ def _build_feedback(
         ),
         # retryable：真实执行 FAILED、无安全事件、且 patch 合法并发生变化。
         "retryable": retryable,
-        # patch：修复后的完整策略（strategy.v1）。无论通过与否都返回——
-        # 通过=质量优化后的最终版；未通过=当前最优可用版。
+        # patch 仅在 FAILED 且存在安全、合法且有变化的修复时返回。
         "patch": patch,
+        "provenance": provenance,
     }
 
 
@@ -601,6 +662,7 @@ def run(
     # 缺少核心输入时如实报错（符合仓库『危险/缺字段必须阻断』原则），
     # 不静默返回空 patch。
     task_id = task.get("task_id")
+    run_id = str(input_json.get("run_id") or task_id)
     strategy_task_id = strategy_v1.get("task_id")
     execution_task_id = execution.get("task_id")
     if not task_id or not strategy_v1.get("steps") or not execution:
@@ -624,6 +686,17 @@ def run(
     if not isinstance(execution.get("steps"), list) or not execution["steps"]:
         raise ValueError("execution.steps 必须是非空数组")
 
+    capabilities = normalize_capabilities(input_json.get("capabilities"))
+    strategy_validation = validate_shared_strategy(
+        strategy_v1,
+        task=task,
+        capabilities=capabilities,
+    )
+    if not strategy_validation["passed"]:
+        raise ValueError(
+            "strategy 安全校验失败：" + "; ".join(strategy_validation["errors"])
+        )
+
     native_strategy = normalize_strategy(_strategy_v1_to_native(strategy_v1))
     task_data = resolve_task_data(
         task,
@@ -646,7 +719,15 @@ def run(
         llm_provider=llm_provider,
         call_log=call_log,
     )
-    return _build_feedback(result, execution, strategy_v1)
+    return _build_feedback(
+        result,
+        execution,
+        strategy_v1,
+        task=task,
+        capabilities=capabilities,
+        llm_mode=llm_mode,
+        run_id=run_id,
+    )
 
 
 def reset_experience_store() -> None:

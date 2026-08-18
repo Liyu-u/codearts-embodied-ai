@@ -15,6 +15,7 @@
       "id": "zone_unstack_target",
       "category": "桌子",
       "pose": {"x": 0.4, "y": 0.0, "z": 0.03},
+      "dimensions": {"x": 0.50, "y": 0.05, "z": 0.50},
       "attributes": {"purpose": "safe_placement", "display_name": "桌子"},
       "execution": {"movable": false, "graspable": false, "valid_destination": true}
     }

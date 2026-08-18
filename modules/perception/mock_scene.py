@@ -17,6 +17,7 @@ STACKING_CUBES = {
                 "movable": True,
                 "graspable": True,
                 "stackable_destination": True,
+                "valid_destination": True,
             },
         },
         {
@@ -31,6 +32,7 @@ STACKING_CUBES = {
             "id": "zone_unstack_target",
             "category": "桌子",
             "pose": {"x": 0.4, "y": 0.0, "z": 0.03},
+            "dimensions": {"x": 0.50, "y": 0.05, "z": 0.50},
             "attributes": {"purpose": "safe_placement"},
             "execution": {
                 "movable": False,

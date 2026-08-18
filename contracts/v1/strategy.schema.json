@@ -5,9 +5,54 @@
   "required": ["schema_version", "task_id", "steps"],
   "properties": {
     "schema_version": {"const": "strategy.v1"},
-    "task_id": {"type": "string"},
-    "steps": {"type": "array", "items": {"type": "object", "required": ["step_id", "action", "arguments"], "properties": {"step_id": {"type": "string"}, "action": {"type": "string"}, "arguments": {"type": "object"}, "on_failure": {"type": "object"}}}},
-    "code": {"type": ["string", "null"]}
+    "task_id": {"type": "string", "minLength": 1},
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "code": {"const": null},
+    "success": {"type": "boolean"},
+    "blocked": {"type": "boolean"},
+    "blocking_reasons": {"type": "array", "items": {"type": "string"}},
+    "message": {"type": "string"},
+    "mode": {"type": "string"},
+    "provider_error": {"type": "string"},
+    "provenance": {"type": "object"},
+    "validation": {"type": "object"},
+    "strategy_policy": {"type": "string"},
+    "critics": {"type": "array"}
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "$defs": {
+    "step": {
+      "type": "object",
+      "required": ["step_id", "action", "arguments"],
+      "properties": {
+        "step_id": {"type": "string", "minLength": 1},
+        "action": {
+          "enum": [
+            "detect_object",
+            "move_to_object",
+            "grasp",
+            "move_to_target",
+            "release"
+          ]
+        },
+        "arguments": {"type": "object"},
+        "on_failure": {
+          "type": "object",
+          "required": ["max_attempts", "steps", "on_exhausted"],
+          "properties": {
+            "max_attempts": {"type": "integer", "minimum": 1, "maximum": 3},
+            "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/step"}},
+            "on_exhausted": {"const": "stop"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
 }

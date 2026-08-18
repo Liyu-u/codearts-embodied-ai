@@ -88,6 +88,11 @@ def _validate(
         errors.append(f"{path}: expected one of {schema['enum']!r}")
     if isinstance(value, str) and len(value) < schema.get("minLength", 0):
         errors.append(f"{path}: string is shorter than {schema['minLength']}")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            errors.append(f"{path}: number is below minimum {schema['minimum']}")
+        if "maximum" in schema and value > schema["maximum"]:
+            errors.append(f"{path}: number is above maximum {schema['maximum']}")
 
     if isinstance(value, dict):
         for name in schema.get("required", []):
@@ -107,6 +112,14 @@ def _validate(
                 errors.append(f"{path}.{name}: additional property is not allowed")
 
     if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        if "minItems" in schema and len(value) < schema["minItems"]:
+            errors.append(f"{path}: array has fewer than {schema['minItems']} items")
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            errors.append(f"{path}: array has more than {schema['maxItems']} items")
+        if schema.get("uniqueItems"):
+            fingerprints = [json.dumps(item, sort_keys=True, ensure_ascii=False) for item in value]
+            if len(fingerprints) != len(set(fingerprints)):
+                errors.append(f"{path}: array items must be unique")
         for index, item in enumerate(value):
             _validate(item, schema["items"], f"{path}[{index}]", errors, root_schema)
 

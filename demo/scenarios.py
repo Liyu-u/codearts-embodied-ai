@@ -30,6 +30,7 @@ def _target(*, valid_destination: bool = True) -> dict:
         "id": "zone_unstack_target",
         "category": "桌子",
         "pose": {"x": 0.4, "y": 0.0, "z": 0.03},
+        "dimensions": {"x": 0.50, "y": 0.05, "z": 0.50},
         "attributes": {
             "purpose": "safe_placement" if valid_destination else "blocked_placement",
             "display_name": "桌子",
@@ -45,6 +46,7 @@ def _target(*, valid_destination: bool = True) -> dict:
 def _stack_base(object_id: str = "red_cube") -> dict:
     base = _cube(object_id, "red", 0.25)
     base["execution"]["stackable_destination"] = True
+    base["execution"]["valid_destination"] = True
     base["attributes"]["purpose"] = "stack_base"
     return base
 
@@ -188,11 +190,11 @@ SCENARIOS: dict[str, dict] = {
         "scene": _scene("grasp_safe_stop", [_cube("red_cube", "red", 0.25), _cube("green_cube", "green", 0.25, 0.12), _target()]),
     },
     "invalid_destination": {
-        "name": "目标区不可放置（执行失败）",
-        "description": "A/B 可以形成任务和策略，但 C 发现目标区没有 valid_destination 能力，D 保留失败诊断。",
+        "name": "目标区不可放置（安全阻断）",
+        "description": "A 在执行门禁阶段发现目标区没有 valid_destination 能力，阻断后续策略和执行。",
         "focus": "C：执行能力校验 + D：失败诊断",
         "instruction": "把红色方块放到桌子上",
-        "expected": "FAILED",
+        "expected": "BLOCKED",
         "scene": _scene("invalid_destination", [_cube("red_cube", "red", 0.22), _target(valid_destination=False)]),
     },
     "sorting_workcell": {

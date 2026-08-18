@@ -24,12 +24,13 @@
         "schema_version": "strategy.v1",
         "task_id": "llm_normal",
         "steps": [
-          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_name": "red_cup"}},
+          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_id": "red_cup"}},
           {"step_id": "approach_cup", "action": "move_to_object", "arguments": {"object_id": "$detect_cup.object_id"}},
           {"step_id": "grasp_cup", "action": "grasp", "arguments": {"object_id": "$detect_cup.object_id"}},
-          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"target": "left_bin"}},
+          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"destination_id": "left_bin"}},
           {"step_id": "release_cup", "action": "release", "arguments": {}}
-        ]
+        ],
+        "code": null
       }
     },
     "grasp_failure": {
@@ -55,12 +56,13 @@
         "schema_version": "strategy.v1",
         "task_id": "llm_grasp_failure",
         "steps": [
-          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_name": "red_cup"}},
+          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_id": "red_cup"}},
           {"step_id": "approach_cup", "action": "move_to_object", "arguments": {"object_id": "$detect_cup.object_id"}},
           {"step_id": "grasp_cup", "action": "grasp", "arguments": {"object_id": "$detect_cup.object_id"}},
-          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"target": "left_bin"}},
+          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"destination_id": "left_bin"}},
           {"step_id": "release_cup", "action": "release", "arguments": {}}
-        ]
+        ],
+        "code": null
       }
     },
     "goal_not_reached": {
@@ -87,12 +89,13 @@
         "schema_version": "strategy.v1",
         "task_id": "llm_goal_not_reached",
         "steps": [
-          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_name": "red_cup"}},
+          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_id": "red_cup"}},
           {"step_id": "approach_cup", "action": "move_to_object", "arguments": {"object_id": "$detect_cup.object_id"}},
           {"step_id": "grasp_cup", "action": "grasp", "arguments": {"object_id": "$detect_cup.object_id"}},
-          {"step_id": "move_left_bin", "action": "move_to_target", "arguments": {"target": "left_bin"}},
+          {"step_id": "move_left_bin", "action": "move_to_target", "arguments": {"destination_id": "left_bin"}},
           {"step_id": "release_cup", "action": "release", "arguments": {}}
-        ]
+        ],
+        "code": null
       }
     },
     "invalid_repair": {
@@ -118,12 +121,13 @@
         "schema_version": "strategy.v1",
         "task_id": "llm_invalid_repair",
         "steps": [
-          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_name": "red_cup"}},
+          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_id": "red_cup"}},
           {"step_id": "approach_cup", "action": "move_to_object", "arguments": {"object_id": "$detect_cup.object_id"}},
           {"step_id": "grasp_cup", "action": "grasp", "arguments": {"object_id": "$detect_cup.object_id"}},
-          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"target": "left_bin"}},
+          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"destination_id": "left_bin"}},
           {"step_id": "release_cup", "action": "release", "arguments": {}}
-        ]
+        ],
+        "code": null
       }
     },
     "persistent_failure_safe_stop": {
@@ -149,12 +153,13 @@
         "schema_version": "strategy.v1",
         "task_id": "llm_persistent_failure",
         "steps": [
-          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_name": "red_cup"}},
+          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_id": "red_cup"}},
           {"step_id": "approach_cup", "action": "move_to_object", "arguments": {"object_id": "$detect_cup.object_id"}},
           {"step_id": "grasp_cup", "action": "grasp", "arguments": {"object_id": "$detect_cup.object_id"}},
-          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"target": "left_bin"}},
+          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"destination_id": "left_bin"}},
           {"step_id": "release_cup", "action": "release", "arguments": {}}
-        ]
+        ],
+        "code": null
       }
     }
   }

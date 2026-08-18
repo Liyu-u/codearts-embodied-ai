@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from uuid import uuid4
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -71,9 +72,15 @@ class CodeArtsStrategyClient:
         resolved = self._resolve_executable()
         trace = {
             "provider": "huaweicloud-codearts-agent",
+            "source": "codearts_agent",
             "transport": "codearts-cli",
             "agent": self.agent or None,
             "model": self.model or None,
+            "request_id": str(uuid4()),
+            "run_id": task.get("task_id"),
+            "fallback": False,
+            "validation": {"passed": False, "errors": []},
+            "_started_monotonic": time.monotonic(),
         }
         if resolved is None:
             return _failure("CODEARTS_CLI_NOT_FOUND", trace)
@@ -132,10 +139,13 @@ class CodeArtsStrategyClient:
             trace["binding_reason"] = "provider_task_id_mismatch_only"
             errors = validate_strategy(candidate, task)
         if errors:
+            trace["validation"] = {"passed": False, "errors": list(errors)}
             return _failure("CODEARTS_STRATEGY_REJECTED:" + errors[0], trace)
 
         strategy = dict(candidate)
         strategy["code"] = None
+        trace["validation"] = {"passed": True, "errors": []}
+        _finalize_trace(trace)
         strategy.update(
             {
                 "success": True,
@@ -165,11 +175,17 @@ class CodeArtsStrategyClient:
         resolved = self._resolve_executable()
         trace = {
             "provider": "huaweicloud-codearts-agent",
+            "source": "codearts_agent",
             "transport": "codearts-cli",
             "agent": self.agent or None,
             "model": self.model or None,
             "role": "critic",
             "round": round_no,
+            "request_id": str(uuid4()),
+            "run_id": task.get("task_id"),
+            "fallback": False,
+            "validation": {"passed": False, "errors": []},
+            "_started_monotonic": time.monotonic(),
         }
         if resolved is None:
             return _review_failure("CODEARTS_CLI_NOT_FOUND", trace)
@@ -211,7 +227,9 @@ class CodeArtsStrategyClient:
             return _review_failure(
                 "CODEARTS_REVIEW_REJECTED:" + review["status"], trace
             )
+        trace["validation"] = {"passed": True, "errors": []}
         trace["status"] = "PASS"
+        _finalize_trace(trace)
         return {"success": True, "review": review, "error": None, "trace": trace}
 
     def _run_cli(self, command: list[str]) -> Any:
@@ -270,11 +288,25 @@ def _truthy_env(name: str) -> bool:
 
 
 def _failure(error: str, trace: dict[str, Any]) -> dict[str, Any]:
+    validation = trace.get("validation")
+    if not isinstance(validation, dict) or not validation.get("errors"):
+        trace["validation"] = {"passed": False, "errors": [error]}
+    _finalize_trace(trace)
     return {"success": False, "strategy": None, "error": error, "trace": trace}
 
 
 def _review_failure(error: str, trace: dict[str, Any]) -> dict[str, Any]:
+    validation = trace.get("validation")
+    if not isinstance(validation, dict) or not validation.get("errors"):
+        trace["validation"] = {"passed": False, "errors": [error]}
+    _finalize_trace(trace)
     return {"success": False, "review": None, "error": error, "trace": trace}
+
+
+def _finalize_trace(trace: dict[str, Any]) -> None:
+    started = trace.pop("_started_monotonic", None)
+    if isinstance(started, (int, float)):
+        trace["latency_ms"] = round(max(0.0, (time.monotonic() - started) * 1000), 3)
 
 
 def _has_explicit_task_id(strategy: dict[str, Any]) -> bool:

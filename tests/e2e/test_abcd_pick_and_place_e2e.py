@@ -1,5 +1,6 @@
 import json
 import unittest
+from uuid import UUID
 
 from integration.adapters import intent, perception, strategy, tracecoder
 from integration.adapters.executor import ExecutorAdapter
@@ -39,7 +40,8 @@ class AbcdPickAndPlaceEndToEndTests(unittest.TestCase):
         self.assertIsNone(output["strategy"]["code"])
         self.assertEqual(output["execution"]["status"], "SUCCEEDED")
         self.assertEqual(output["feedback"]["schema_version"], "feedback.v1")
-        self.assertEqual(output["feedback"]["task_id"], "stacking_cubes")
+        UUID(output["task"]["task_id"])
+        self.assertEqual(output["feedback"]["task_id"], output["task"]["task_id"])
         diagnosis = json.loads(output["feedback"]["diagnosis"])
         self.assertTrue(diagnosis["final_passed"])
         self.assertTrue(diagnosis["execution_passed"])

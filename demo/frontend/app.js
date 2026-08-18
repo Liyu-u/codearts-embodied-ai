@@ -69,6 +69,19 @@ function idWithMeaning(value, meaning = "对象编号") {
   return `<span class="meaning-label">${escapeHtml(meaning)}</span><code>${escapeHtml(value)}</code>`;
 }
 
+function provenanceHtml(provenance, label = "来源证据") {
+  if (!provenance || typeof provenance !== "object") return "";
+  const source = provenance.source || provenance.provider || "—";
+  const agent = provenance.agent || "—";
+  const model = provenance.model || "—";
+  const requestId = provenance.request_id || provenance.run_id || "—";
+  const latency = provenance.latency_ms == null ? "—" : `${Number(provenance.latency_ms).toFixed(1)} ms`;
+  const fallback = provenance.fallback === true || provenance.used_fallback === true ? "是" : "否";
+  const validation = provenance.validation || provenance.patch_validation;
+  const validationText = validation && validation.passed === false ? "未通过" : validation ? "通过" : "—";
+  return `<div class="provenance-detail"><strong>${escapeHtml(label)}</strong><div class="kv-grid"><div class="kv"><small>实际来源</small><strong>${escapeHtml(String(source))}</strong></div><div class="kv"><small>Agent</small><strong>${escapeHtml(String(agent))}</strong></div><div class="kv"><small>模型</small><strong>${escapeHtml(String(model))}</strong></div><div class="kv"><small>请求/运行 ID</small><strong>${escapeHtml(String(requestId))}</strong></div><div class="kv"><small>调用耗时</small><strong>${escapeHtml(latency)}</strong></div><div class="kv"><small>发生回退</small><strong class="${fallback === "是" ? "status-warn" : "status-ok"}">${fallback}</strong></div><div class="kv"><small>校验结论</small><strong>${escapeHtml(validationText)}</strong></div></div></div>`;
+}
+
 document.addEventListener("DOMContentLoaded", init);
 
 async function init() {
@@ -246,11 +259,15 @@ function renderAcceptance(response = null) {
 
   const acceptance = response.acceptance || {};
   const passed = acceptance.passed === true;
+  const metrics = response.metrics || acceptance.metrics || {};
+  const metricText = metrics.sample_count
+    ? ` · 指标样本 ${metrics.sample_count} · 危险误执行率 ${Number(metrics.dangerous_false_execution_rate || 0).toFixed(2)}`
+    : "";
   banner.dataset.state = passed ? "passed" : "mismatch";
   status.innerHTML = passed
     ? '<span class="status-ok">PASS · 验收通过</span>'
     : '<span class="status-danger">需检查 · 验收不通过</span>';
-  detail.innerHTML = `预期：${codeWithMeaning(acceptance.expected_status, STATUS_LABELS)} · 实际：${codeWithMeaning(acceptance.actual_status, STATUS_LABELS)} · ${escapeHtml(acceptance.message || "已完成结果对比")}`;
+  detail.innerHTML = `预期：${codeWithMeaning(acceptance.expected_status, STATUS_LABELS)} · 实际：${codeWithMeaning(acceptance.actual_status, STATUS_LABELS)} · ${escapeHtml(acceptance.message || "已完成结果对比")}${escapeHtml(metricText)}`;
 }
 
 async function runDemo() {
@@ -389,7 +406,7 @@ function renderStrategy(strategy) {
   $("strategyMetrics").innerHTML = `<span>步骤数 <b>${steps.length}</b></span><span>模式 <b>${escapeHtml(STRATEGY_MODE_LABELS[strategy.mode] || strategy.mode || "—")}</b></span>`;
   renderStrategyPreview(strategy);
   const blockingReasons = strategy.blocking_reasons || [];
-  $("strategyResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>生成状态</small><strong class="${strategy.blocked ? "status-danger" : "status-ok"}">${codeWithMeaning(strategy.blocked ? "BLOCKED" : "READY", STATUS_LABELS)}</strong></div><div class="kv"><small>策略模式</small><strong>${codeWithMeaning(strategy.mode || "primitive_plan", STRATEGY_MODE_LABELS)}</strong></div></div>${strategy.blocked && blockingReasons.length ? `<div class="feedback-callout" style="margin-top:11px">${escapeHtml(blockingReasons.join("；"))}</div>` : ""}<div class="step-list">${steps.map((step, index) => `<div class="step-row"><span class="step-action"><b>${index + 1}</b> ${codeWithMeaning(step.action, ACTION_LABELS)}</span><span class="step-meta">${idWithMeaning(step.step_id, "步骤")}</span></div>`).join("")}</div>`;
+  $("strategyResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>生成状态</small><strong class="${strategy.blocked ? "status-danger" : "status-ok"}">${codeWithMeaning(strategy.blocked ? "BLOCKED" : "READY", STATUS_LABELS)}</strong></div><div class="kv"><small>策略模式</small><strong>${codeWithMeaning(strategy.mode || "primitive_plan", STRATEGY_MODE_LABELS)}</strong></div></div>${strategy.blocked && blockingReasons.length ? `<div class="feedback-callout" style="margin-top:11px">${escapeHtml(blockingReasons.join("；"))}</div>` : ""}${provenanceHtml(strategy.provenance, "B 策略实际来源") }<div class="step-list">${steps.map((step, index) => `<div class="step-row"><span class="step-action"><b>${index + 1}</b> ${codeWithMeaning(step.action, ACTION_LABELS)}</span><span class="step-meta">${idWithMeaning(step.step_id, "步骤")}</span></div>`).join("")}</div>`;
 }
 
 function renderExecution(execution) {
@@ -397,7 +414,7 @@ function renderExecution(execution) {
   const statusClass = execution.status === "SUCCEEDED" ? "status-ok" : "status-danger";
   $("executionQuick").innerHTML = `<span class="quick-label">C 执行结果</span><strong class="${statusClass}">${codeWithMeaning(execution.status, STATUS_LABELS)}</strong>`;
   $("executionMetrics").innerHTML = `<span>耗时 <b>${Number(execution.total_duration_ms || 0)} 毫秒</b></span><span>安全事件 <b>${(execution.safety_events || []).length}</b></span>`;
-  $("executionResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>最终状态</small><strong class="${statusClass}">${codeWithMeaning(execution.status, STATUS_LABELS)}</strong></div><div class="kv"><small>总耗时</small><strong>${Number(execution.total_duration_ms || 0)} 毫秒</strong></div><div class="kv"><small>轨迹点数量</small><strong>${(execution.trajectory_points || []).length}</strong></div><div class="kv"><small>安全事件数量</small><strong class="${(execution.safety_events || []).length ? "status-danger" : "status-ok"}">${(execution.safety_events || []).length}</strong></div></div><div class="step-list">${(execution.steps || []).map((step) => `<div class="step-row ${step.status === "FAILED" ? "failed" : step.status === "SKIPPED" ? "skipped" : ""}"><span class="step-action"><span class="step-status ${String(step.status || "").toLowerCase()}">${codeWithMeaning(step.status, STATUS_LABELS)}</span>${codeWithMeaning(step.action, ACTION_LABELS)}</span><span class="step-meta">${Number(step.duration_ms || 0)} 毫秒${step.phase ? `<br/>阶段：${escapeHtml(step.phase)}` : ""}${step.reason ? `<br/>${escapeHtml(step.reason)}` : ""}</span></div>`).join("")}</div>`;
+  $("executionResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>最终状态</small><strong class="${statusClass}">${codeWithMeaning(execution.status, STATUS_LABELS)}</strong></div><div class="kv"><small>总耗时</small><strong>${Number(execution.total_duration_ms || 0)} 毫秒</strong></div><div class="kv"><small>轨迹点数量</small><strong>${(execution.trajectory_points || []).length}</strong></div><div class="kv"><small>安全事件数量</small><strong class="${(execution.safety_events || []).length ? "status-danger" : "status-ok"}">${(execution.safety_events || []).length}</strong></div></div>${provenanceHtml(execution.provenance || { source: "mock", backend: "mock", agent: "executor", validation: { passed: true } }, "C 执行实际来源") }<div class="step-list">${(execution.steps || []).map((step) => `<div class="step-row ${step.status === "FAILED" ? "failed" : step.status === "SKIPPED" ? "skipped" : ""}"><span class="step-action"><span class="step-status ${String(step.status || "").toLowerCase()}">${codeWithMeaning(step.status, STATUS_LABELS)}</span>${codeWithMeaning(step.action, ACTION_LABELS)}</span><span class="step-meta">${Number(step.duration_ms || 0)} 毫秒${step.phase ? `<br/>阶段：${escapeHtml(step.phase)}` : ""}${step.reason ? `<br/>${escapeHtml(step.reason)}` : ""}</span></div>`).join("")}</div>`;
 }
 
 function renderFeedbackPreview(feedback, result, diagnosis = {}) {
@@ -437,7 +454,7 @@ function renderFeedback(feedback, result) {
         : "已返回策略 patch";
     return `<div class="attempt-row"><div class="attempt-heading"><strong>第 ${Number(attempt.attempt || 0)} 次 C 执行</strong><span class="${attempt.execution?.status === "SUCCEEDED" ? "status-ok" : attempt.execution?.status === "FAILED" ? "status-danger" : "status-warn"}">${codeWithMeaning(attempt.execution?.status, STATUS_LABELS)}</span></div><div class="attempt-meta">D 诊断 ${Number(attemptDiagnosis.repair_rounds || 0)} 轮 · ${attempt.feedback?.retryable ? "允许重试" : "不再重试"} · ${escapeHtml(patchLabel)}</div>${patch ? `<details class="attempt-patch"><summary>查看本轮 patch</summary><pre>${pretty(patch)}</pre></details>` : ""}</div>`;
   }).join("");
-  $("feedbackResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>可重试</small><strong class="${feedback.retryable ? "status-warn" : "status-ok"}">${feedback.retryable ? "是" : "否"}</strong></div><div class="kv"><small>重试次数</small><strong>${Number(result?.retry_count || 0)}</strong></div><div class="kv"><small>诊断轮次</small><strong>${repairRounds}</strong></div><div class="kv"><small>尝试次数</small><strong>${attempts.length}</strong></div><div class="kv"><small>停止原因</small><strong>${result?.stop_reason ? codeWithMeaning(result.stop_reason, STOP_REASON_LABELS) : "—"}</strong></div><div class="kv"><small>执行判定</small><strong class="${diagnosis.execution_passed ? "status-ok" : "status-danger"}">${diagnosis.execution_passed ? "通过" : "未通过"}</strong></div></div><div class="feedback-callout" style="margin-top:11px">${escapeHtml(diagnosis.execution_passed ? "执行证据通过，闭环结束。" : "执行未通过，反馈模块保留诊断并按安全规则决定是否重试。")}${diagnosisReason}</div>${attemptHtml ? `<div class="attempt-list"><div class="attempt-list-title">闭环尝试明细</div>${attemptHtml}</div>` : ""}`;
+  $("feedbackResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>可重试</small><strong class="${feedback.retryable ? "status-warn" : "status-ok"}">${feedback.retryable ? "是" : "否"}</strong></div><div class="kv"><small>重试次数</small><strong>${Number(result?.retry_count || 0)}</strong></div><div class="kv"><small>诊断轮次</small><strong>${repairRounds}</strong></div><div class="kv"><small>尝试次数</small><strong>${attempts.length}</strong></div><div class="kv"><small>停止原因</small><strong>${result?.stop_reason ? codeWithMeaning(result.stop_reason, STOP_REASON_LABELS) : "—"}</strong></div><div class="kv"><small>执行判定</small><strong class="${diagnosis.execution_passed ? "status-ok" : "status-danger"}">${diagnosis.execution_passed ? "通过" : "未通过"}</strong></div></div>${provenanceHtml(feedback.provenance, "D 反馈实际来源") }<div class="feedback-callout" style="margin-top:11px">${escapeHtml(diagnosis.execution_passed ? "执行证据通过，闭环结束。" : "执行未通过，反馈模块保留诊断并按安全规则决定是否重试。")}${diagnosisReason}</div>${attemptHtml ? `<div class="attempt-list"><div class="attempt-list-title">闭环尝试明细</div>${attemptHtml}</div>` : ""}`;
 }
 
 function renderExecutionScene(response) {

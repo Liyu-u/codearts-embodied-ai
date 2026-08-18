@@ -39,6 +39,17 @@ class ContractValidationTests(unittest.TestCase):
         self.assertIn("$.schema_version: expected constant 'strategy.v1'", errors)
         self.assertIn("$.steps[0].arguments: expected type object", errors)
 
+    def test_task_contract_rejects_destination_coordinates(self):
+        value = {
+            "schema_version": "task.v1",
+            "task_id": "task-001",
+            "action": "place",
+            "status": "READY",
+            "destination": {"x": 0.1, "y": 0.2, "z": 0.3},
+        }
+        errors = validate_contract(value, "task.v1")
+        self.assertTrue(any("destination: additional property" in item for item in errors))
+
     def test_assert_contract_raises_one_stable_error(self):
         with self.assertRaisesRegex(
             ContractValidationError,
