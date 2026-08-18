@@ -1,0 +1,27 @@
+# real 环境：真实机械臂小范围低速测试。强制人工确认、缩窄工作空间、限速限力。
+
+[profile]
+name = "real"
+backend = "real"
+
+[workspace]
+x_min = -0.3
+x_max = 0.3
+y_min = -0.3
+y_max = 0.3
+z_min = 0.02
+z_max = 0.45
+
+[motion]
+max_linear_velocity_m_s = 0.05
+max_angular_velocity_rad_s = 0.5
+max_force_n = 8.0
+action_timeout_s = 60.0
+default_linear_speed_m_s = 0.02
+grasp_verify_force_n = 0.5
+
+[safety]
+require_human_confirmation = true
+e_stop_enabled = true
+collision_check = true
+fail_closed_on_error = true
