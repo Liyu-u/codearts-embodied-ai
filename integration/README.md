@@ -4,7 +4,7 @@
 
 - `pipeline.py`：预留统一入口，按协议依次调用各模块适配器。
 - `adapters/`：把各同学的本地实现包装成统一接口。
-- `config/`：存放 `local`、`sim`、`real` 三种环境配置；密钥只放 `.env`，禁止提交。
+- `config/`：`local`、`sim`、`real` 三种环境配置（`profiles/*.toml`）与后端工厂；密钥只放 `.env`，禁止提交。详见 [`config/README.md`](config/README.md)。
 
 每个适配器至少提供：
 

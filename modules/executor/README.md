@@ -1,6 +1,12 @@
-# Executor v1 Mock 适配器
+# Executor v1 适配器
 
-本模块由 C 模块负责人维护，接收经过协议校验的 `strategy.v1`，解释有限动作并输出 `execution.v1`。当前后端是确定性 Mock；后续可替换为离线 Isaac Sim 后端，但适配器调用方式保持不变。
+本模块由 C 模块负责人维护，接收经过协议校验的 `strategy.v1`，解释有限动作并输出 `execution.v1`。后端可替换：
+
+- `MockBackend`（`modules/executor/mock_backend.py`）：确定性内存状态机，用于本地开发与 CI；
+- `IsaacSimBackend`（`modules/executor/isaac_backend.py`）：校内服务器 Isaac Sim 6.0 真实仿真；
+- `RealRobotBackend`（`modules/executor/real_backend.py`）：真机小范围低速测试（强制人工确认）。
+
+三者实现相同的 `execute / safe_stop / trajectory_points / snapshot` 接口，适配器调用方式不变。
 
 ## 构造与调用
 
@@ -88,6 +94,58 @@ B 可以在后续步骤参数中引用已经执行成功的结果：
 
 完整策略样例见 [`../../testdata/daily/stacking_strategy.json`](../../testdata/daily/stacking_strategy.json)，协议见 [`../../contracts/v1/strategy.schema.json`](../../contracts/v1/strategy.schema.json) 和 [`../../contracts/v1/execution.schema.json`](../../contracts/v1/execution.schema.json)。
 
-## Mock 与 Offline Isaac 的边界
+## Mock 与 Isaac / 真机的边界
 
-Mock 后端会真实维护“接近、夹持、移动、释放”内存状态，并支持确定性失败注入，适合服务器不可用时开发 A/B/D 联调。它不启动 Isaac Sim，也不能证明碰撞、动力学、渲染或真实机械臂控制正确。第二阶段将实现 Offline Isaac 后端；替换时保持 `ExecutorAdapter.run(strategy_v1) -> execution_v1` 不变。
+Mock 后端会真实维护“接近、夹持、移动、释放”内存状态，并支持确定性失败注入，适合服务器不可用时开发 A/B/D 联调。它不启动 Isaac Sim，也不能证明碰撞、动力学、渲染或真实机械臂控制正确。
+
+`IsaacSimBackend` / `RealRobotBackend` 在 Mock 之外增加了完整的安全守卫（见下），并通过 `MotionDriver` 抽象调用真实运动原语：
+
+- `modules/executor/safety.py`：工作空间、限速、超时、抓取验证等纯安全守卫；
+- `modules/executor/isaac_driver.py`：`MotionDriver` 协议 + 惰性导入的 `OmniDriver`；
+- `modules/executor/robot_backend.py`：受安全守卫的后端基类。
+
+### 用 local/sim/real 配置选择后端
+
+```python
+from integration.adapters import perception
+from integration.adapters.executor import ExecutorAdapter
+from integration.config.loader import load_profile
+
+scene = perception.run({"scene_id": "stacking_cubes", "backend": "mock"})
+profile = load_profile("sim")                 # local | sim | real
+executor = ExecutorAdapter.from_profile(profile, scene)
+execution = executor.run(strategy_v1)
+```
+
+`local` 映射到 `MockBackend`，`sim` 映射到 `IsaacSimBackend`，`real` 映射到
+`RealRobotBackend`；后端安全参数（工作空间、限速、限力、超时、人工确认等）由
+`integration/config/profiles/*.toml` 与环境变量 `RIA_*` 决定。
+
+### 安全守卫（Isaac / 真机）
+
+每次运动前，后端强制检查并 fail-closed：
+
+| 守卫 | 触发结果 |
+|---|---|
+| 工作空间越界 | `WORKSPACE_VIOLATION` → 安全停止 |
+| 碰撞风险 | `COLLISION_DETECTED` → 安全停止 |
+| 碰撞查询异常 | `COLLISION_CHECK_ERROR` → 安全停止（绝不假设安全） |
+| 线速度超限 / 上限非正 | `SPEED_LIMIT_EXCEEDED` → 安全停止 |
+| 动作超时 | `ACTION_TIMEOUT` → 安全停止 |
+| 真机未人工确认 | `HUMAN_CONFIRMATION_REQUIRED`（真机模式） |
+| 急停 | `E_STOP_TRIGGERED`（`emergency_stop()`） |
+| 驱动异常 | `BACKEND_ERROR` → 安全停止 |
+
+这些后端安全事件会按时间顺序并入 `execution.v1.safety_events`，动作的
+`pose` / `collisions` / `grasp_force_n` 会写入对应步骤记录。
+
+### 实机验证清单（必须在 isaacsim 环境完成，CI 不覆盖）
+
+`OmniDriver` 中的具体控制器 / IK / PhysX 调用点尚未经过真实环境验证。上线前按顺序：
+
+1. `isaacsim` 环境跑通 `OmniDriver.connect()`，确认 Franka 与夹爪 prim 路径；
+2. 单原语验证：`move_to`、`gripper_open`、`gripper_close`、`collision_free`；
+3. 确认 `end_effector.set_world_pose` 的 IK 返回语义与关节限位读取；
+4. 五动作 `detect → move_to_object → grasp → move_to_target → release` 顺序实测；
+5. 注入“IK 不可达 / 碰撞 / 超时 / 抓空”验证 fail-closed 路径；
+6. 真机必须先确认、限速（≤0.05 m/s）、限工作空间，再做小范围低速测试。
