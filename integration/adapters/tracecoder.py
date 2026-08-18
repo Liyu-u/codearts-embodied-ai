@@ -41,6 +41,7 @@ perception.v1 与真实执行日志提供，见 resolve_task_data() 的注释。
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any
 
 from integration.contract_validation import validate_contract
@@ -95,10 +96,20 @@ def _active_llm() -> tuple:
 def _step_v1_to_native(step: dict) -> dict:
     """Convert one strategy.v1 step, including nested recovery steps."""
 
+    arguments = deepcopy(step.get("arguments") or {})
+    # The evaluator's native catalog predates the formal B→C names. Translate
+    # at the adapter boundary; the native engine remains backward-compatible,
+    # while all external strategy.v1 messages stay canonical.
+    if step.get("action") == "detect_object" and "object_name" not in arguments:
+        if "object_id" in arguments:
+            arguments["object_name"] = arguments.pop("object_id")
+    if step.get("action") == "move_to_target" and "target" not in arguments:
+        if "destination_id" in arguments:
+            arguments["target"] = arguments.pop("destination_id")
     native = {
         "id": step.get("step_id", step.get("id")),
         "action": step.get("action"),
-        "arguments": step.get("arguments") or {},
+        "arguments": arguments,
     }
     if step.get("on_failure") is not None:
         recovery = step["on_failure"]
@@ -128,10 +139,21 @@ def _strategy_v1_to_native(strategy_v1: dict) -> dict:
 def _step_native_to_v1(step: dict) -> dict:
     """Convert one native step, including nested recovery steps."""
 
+    arguments = deepcopy(step.get("arguments") or {})
+    # TraceCoder's historical native simulator still speaks object_name/target,
+    # but feedback.v1 is the formal B→C contract. Normalize only at this
+    # boundary so old internal repair rules remain executable while every patch
+    # returned to the pipeline uses canonical IDs.
+    if step.get("action") == "detect_object" and "object_id" not in arguments:
+        if "object_name" in arguments:
+            arguments["object_id"] = arguments.pop("object_name")
+    if step.get("action") == "move_to_target" and "destination_id" not in arguments:
+        if "target" in arguments:
+            arguments["destination_id"] = arguments.pop("target")
     v1_step = {
         "step_id": step.get("id", step.get("step_id")),
         "action": step.get("action"),
-        "arguments": step.get("arguments") or {},
+        "arguments": arguments,
     }
     if step.get("on_failure") is not None:
         recovery = step["on_failure"]
@@ -195,9 +217,9 @@ def _derive_objects(native_strategy: dict) -> list[dict]:
     for step in native_strategy.get("steps", []):
         args = step.get("arguments") or {}
         if step.get("action") == "detect_object":
-            add(args.get("object_name"), is_container=False)
+            add(args.get("object_id", args.get("object_name")), is_container=False)
         elif step.get("action") == "move_to_target":
-            add(args.get("target"), is_container=True)
+            add(args.get("destination_id", args.get("target")), is_container=True)
     return objects
 
 

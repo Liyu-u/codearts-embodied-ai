@@ -52,10 +52,10 @@ CodeArts 成功时输出经过本地复核的结构化策略；`mode` 为
   "schema_version": "strategy.v1",
   "task_id": "task-001",
   "steps": [
-    {"step_id": "task-001-detect", "action": "detect_object", "arguments": {"object_name": "obj-001"}},
+    {"step_id": "task-001-detect", "action": "detect_object", "arguments": {"object_id": "obj-001"}},
     {"step_id": "task-001-approach", "action": "move_to_object", "arguments": {"object_id": "$task-001-detect.object_id"}},
     {"step_id": "task-001-grasp", "action": "grasp", "arguments": {"object_id": "$task-001-detect.object_id"}},
-    {"step_id": "task-001-move-target", "action": "move_to_target", "arguments": {"target": "zone-001"}},
+    {"step_id": "task-001-move-target", "action": "move_to_target", "arguments": {"destination_id": "zone-001"}},
     {"step_id": "task-001-release", "action": "release", "arguments": {}}
   ],
   "code": null,
@@ -137,7 +137,7 @@ python -m unittest tests.unit.test_codearts_agent tests.contract.test_strategy_s
 1. 公开适配器只接受 `READY` 且已完成稳定实体绑定的任务。
 2. 当前共同开放的用户级动作是 `pick/grasp`、`pick_and_place/place`、`transfer`、`fetch`（必须有明确目标区）和 `stack`。
 3. 抓取类动作必须且只能有一个稳定 `target_ids`；搬运/放置/堆叠还必须有稳定 `destination_id`，`stack` 不能把目标物自身作为底座。
-4. `object_name` 与 `target` 是为了兼容 D 现有字段名；字段值仍是 perception 的稳定 ID。
-5. `stack` 通过 C 已有的 `move_to_target` 原子动作传递 `placement_mode=stack_on`，不执行任意代码或新增隐式动作。
+4. 正式 B→C 接口只使用 `object_id` 与 `destination_id`；旧字段仅在 MockBackend 直接调用兼容层保留。
+5. `stack` 通过 C 的 `move_to_target` 传递 `placement_mode=stack_on`，不执行任意代码或新增隐式动作。
 6. `push`、`dynamic_grasp`、`handover`、`pour`、`wait`、`custom` 仍输出阻断/澄清结果，因为当前没有完整的 C 执行源或安全闭环。
 7. CodeArts 输出永远被视为不可信输入，必须通过本地校验才交给 C；内部旧版 Python 代码生成器不是 B-C 正式接口。

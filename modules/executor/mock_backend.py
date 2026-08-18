@@ -66,6 +66,8 @@ class MockBackend:
 
     def _detect_object(self, arguments: dict, duration_ms: int) -> dict:
         object_id = arguments.get("object_id")
+        # Compatibility is limited to direct MockBackend callers. Formal
+        # strategy.v1 is validated by action_catalog and only accepts object_id.
         if object_id is None:
             object_name = arguments.get("object_name")
             matches = [
@@ -112,6 +114,8 @@ class MockBackend:
         return self._succeeded(duration_ms, object_id=object_id)
 
     def _move_to_target(self, arguments: dict, duration_ms: int) -> dict:
+        # Legacy target is accepted only for direct backend calls; the formal
+        # strategy contract requires destination_id.
         destination_id = arguments.get("destination_id", arguments.get("target"))
         item = self._objects.get(destination_id)
         placement_mode = arguments.get("placement_mode", "direct")

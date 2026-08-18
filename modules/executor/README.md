@@ -8,6 +8,8 @@
 
 - 只允许 `detect_object`、`move_to_object`、`grasp`、`move_to_target`、`release`。
 - `move_to_target` 默认是直接放置；堆叠必须显式传 `placement_mode: "stack_on"`，且目标对象必须声明 `execution.stackable_destination=true`。
+- `detect_object`、`move_to_object`、`grasp` 只接受 `object_id`；`move_to_target` 只接受 `destination_id`；`release` 参数必须为空。
+- 正式 strategy.v1 不再使用遗留字段 `object_name` 和 `target`；它们仅在 MockBackend 的直接调用兼容层保留。
 - `strategy.code` 必须为 `null` 或空字符串；任何非空代码都会在执行前被拒绝。
 - 所有动作及恢复动作在执行前统一校验。
 - 主步骤最多 50，单个恢复最多 10 步，恢复尝试最多 3 次，总动作调用最多 100 次。
