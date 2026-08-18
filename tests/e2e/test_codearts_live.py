@@ -18,8 +18,9 @@ class TestCodeArtsLive(unittest.TestCase):
             live=True,
             model=os.environ.get("CODEARTS_STRATEGY_MODEL")
             or "huaweicloud-maas/openpangu-2.0-flash",
-            timeout_s=int(os.environ.get("CODEARTS_STRATEGY_TIMEOUT_S", "90")),
+            timeout_s=int(os.environ.get("CODEARTS_STRATEGY_TIMEOUT_S", "180")),
             pure=os.environ.get("CODEARTS_CLI_PURE") == "1",
+            policy=os.environ.get("CODEARTS_STRATEGY_POLICY", "planner"),
         )
         self.assertTrue(report["comparison"]["provider_calls_prove_codearts_intervened"])
         self.assertTrue(report["comparison"]["stable"], report)

@@ -30,6 +30,8 @@ ACTION_WHITELIST = {
 }
 OUTPUT_BEGIN = "STRATEGY_JSON_BEGIN"
 OUTPUT_END = "STRATEGY_JSON_END"
+REVIEW_BEGIN = "STRATEGY_REVIEW_BEGIN"
+REVIEW_END = "STRATEGY_REVIEW_END"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _CLI_LOCK = threading.Lock()
 
@@ -146,6 +148,72 @@ class CodeArtsStrategyClient:
         )
         return {"success": True, "strategy": strategy, "error": None, "trace": trace}
 
+    def review(
+        self,
+        task: dict[str, Any],
+        strategy: dict[str, Any],
+        *,
+        round_no: int = 1,
+    ) -> dict[str, Any]:
+        """Ask an independent CodeArts turn to review a candidate strategy.
+
+        The reviewer is deliberately a separate call from ``generate``.  It
+        cannot mutate the candidate and its answer is accepted only when it
+        is a small, explicit PASS document.  The local contract validator
+        remains the final authority even after a PASS.
+        """
+        resolved = self._resolve_executable()
+        trace = {
+            "provider": "huaweicloud-codearts-agent",
+            "transport": "codearts-cli",
+            "agent": self.agent or None,
+            "model": self.model or None,
+            "role": "critic",
+            "round": round_no,
+        }
+        if resolved is None:
+            return _review_failure("CODEARTS_CLI_NOT_FOUND", trace)
+
+        command = [resolved, "run", "--format", "json"]
+        if _truthy_env("CODEARTS_CLI_PURE"):
+            command.insert(2, "--pure")
+        if self.agent:
+            command.extend(["--agent", self.agent])
+        if self.model:
+            command.extend(["--model", self.model])
+        command.extend(
+            [
+                "--title",
+                f"robot-strategy-critic-{task.get('task_id', 'unknown')}-r{round_no}-{uuid4().hex[:10]}",
+                _build_review_prompt(task, strategy, round_no),
+            ]
+        )
+        try:
+            with _CLI_LOCK:
+                completed = self._run_cli(command)
+        except subprocess.TimeoutExpired:
+            return _review_failure("CODEARTS_CLI_TIMEOUT", trace)
+        except OSError as exc:
+            return _review_failure(f"CODEARTS_CLI_START_FAILED:{exc}", trace)
+
+        trace["exit_code"] = completed.returncode
+        if completed.returncode != 0:
+            detail = _compact_error(completed.stderr or completed.stdout)
+            return _review_failure(f"CODEARTS_CLI_FAILED:{detail}", trace)
+
+        review = extract_review(completed.stdout)
+        if review is None:
+            return _review_failure("CODEARTS_REVIEW_OUTPUT_MISSING", trace)
+        errors = validate_review(review)
+        if errors:
+            return _review_failure("CODEARTS_REVIEW_REJECTED:" + errors[0], trace)
+        if review["status"] != "PASS":
+            return _review_failure(
+                "CODEARTS_REVIEW_REJECTED:" + review["status"], trace
+            )
+        trace["status"] = "PASS"
+        return {"success": True, "review": review, "error": None, "trace": trace}
+
     def _run_cli(self, command: list[str]) -> Any:
         """Run the CLI without pipe back-pressure on Windows.
 
@@ -205,6 +273,10 @@ def _failure(error: str, trace: dict[str, Any]) -> dict[str, Any]:
     return {"success": False, "strategy": None, "error": error, "trace": trace}
 
 
+def _review_failure(error: str, trace: dict[str, Any]) -> dict[str, Any]:
+    return {"success": False, "review": None, "error": error, "trace": trace}
+
+
 def _has_explicit_task_id(strategy: dict[str, Any]) -> bool:
     """Return whether a provider supplied a concrete ID that can be bound.
 
@@ -258,6 +330,21 @@ code 必须为 null。不要输出解释、Markdown 或可执行代码。
 
 待修复策略：
 {candidate_json}
+    """
+
+
+def _build_review_prompt(
+    task: dict[str, Any], strategy: dict[str, Any], round_no: int
+) -> str:
+    task_json = json.dumps(task, ensure_ascii=False, separators=(",", ":"))
+    strategy_json = json.dumps(strategy, ensure_ascii=False, separators=(",", ":"))
+    return f"""只返回一个审查 JSON，不调用工具、读取文件或修改候选策略。
+这是第 {round_no} 轮独立安全审查。检查动作白名单、稳定 ID、步骤顺序、引用、恢复限制和 code=null。
+任务：{task_json}
+候选策略：{strategy_json}
+必须把唯一 JSON 放在 {REVIEW_BEGIN} 和 {REVIEW_END} 之间，严格使用：
+{{"status":"PASS","issues":[],"risk_level":"LOW"}}
+如果有问题，status 只能是 REPAIR_REQUIRED 或 BLOCK，issues 必须给出简短原因；不要输出解释或 Markdown。
 """
 
 
@@ -285,6 +372,28 @@ def extract_strategy(stdout: str) -> dict[str, Any] | None:
     return None
 
 
+def extract_review(stdout: str) -> dict[str, Any] | None:
+    """Extract the small review object from CodeArts event/JSON output."""
+    documents: list[Any] = []
+    stripped = (stdout or "").strip()
+    if not stripped:
+        return None
+    try:
+        documents.append(json.loads(stripped))
+    except json.JSONDecodeError:
+        for line in stripped.splitlines():
+            try:
+                documents.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        documents.append(stripped)
+    for document in documents:
+        for candidate in _walk_objects(document):
+            if "status" in candidate and "issues" in candidate:
+                return candidate
+    return None
+
+
 def _walk_candidates(value: Any) -> Iterator[dict[str, Any]]:
     if isinstance(value, dict):
         if value.get("schema_version") == "strategy.v1":
@@ -307,6 +416,27 @@ def _walk_candidates(value: Any) -> Iterator[dict[str, Any]]:
         yield from _walk_candidates(parsed)
 
 
+def _walk_objects(value: Any) -> Iterator[dict[str, Any]]:
+    """Yield every nested object, including objects wrapped in text events."""
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_objects(child)
+        return
+    if isinstance(value, list):
+        for child in value:
+            yield from _walk_objects(child)
+        return
+    if not isinstance(value, str):
+        return
+    for payload in _json_payloads_with_markers(value, REVIEW_BEGIN, REVIEW_END):
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        yield from _walk_objects(parsed)
+
+
 def _json_payloads(text: str) -> Iterator[str]:
     marker = re.search(
         re.escape(OUTPUT_BEGIN) + r"\s*(.*?)\s*" + re.escape(OUTPUT_END),
@@ -320,6 +450,37 @@ def _json_payloads(text: str) -> Iterator[str]:
     stripped = text.strip()
     if stripped.startswith("{") and stripped.endswith("}"):
         yield stripped
+
+
+def _json_payloads_with_markers(text: str, begin: str, end: str) -> Iterator[str]:
+    marker = re.search(
+        re.escape(begin) + r"\s*(.*?)\s*" + re.escape(end),
+        text,
+        re.DOTALL,
+    )
+    if marker:
+        yield marker.group(1)
+    stripped = text.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        yield stripped
+
+
+def validate_review(review: Any) -> list[str]:
+    """Validate the critic contract; the critic cannot approve mutations."""
+    if not isinstance(review, dict):
+        return ["review must be an object"]
+    if review.get("status") not in {"PASS", "REPAIR_REQUIRED", "BLOCK"}:
+        return ["status must be PASS, REPAIR_REQUIRED or BLOCK"]
+    issues = review.get("issues")
+    if not isinstance(issues, list) or not all(
+        isinstance(item, str) and item.strip() for item in issues
+    ):
+        return ["issues must be a string array"]
+    if review.get("risk_level") not in {"LOW", "MEDIUM", "HIGH"}:
+        return ["risk_level must be LOW, MEDIUM or HIGH"]
+    if review["status"] == "PASS" and issues:
+        return ["PASS review cannot contain issues"]
+    return []
 
 
 def validate_strategy(strategy: Any, task: dict[str, Any]) -> list[str]:

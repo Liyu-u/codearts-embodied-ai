@@ -83,6 +83,8 @@ def _run_one(task: dict[str, Any], mode: str, repeat: int) -> dict[str, Any]:
         "success": bool(output.get("success")) and not bool(output.get("blocked")),
         "blocked": bool(output.get("blocked")),
         "strategy_mode": output.get("mode"),
+        "strategy_policy": output.get("strategy_policy"),
+        "critic_passes": len(output.get("critics") or []),
         "provider": provider,
         "transport": (output.get("provenance") or {}).get("transport"),
         "error": (output.get("blocking_reasons") or [None])[0]
@@ -102,7 +104,11 @@ def _percentile(values: list[float], percentile: float) -> float | None:
     return round(ordered[index], 1)
 
 
-def _summary(records: list[dict[str, Any]], expected_mode: str) -> dict[str, Any]:
+def _summary(
+    records: list[dict[str, Any]],
+    expected_mode: str,
+    expected_critic_passes: int = 0,
+) -> dict[str, Any]:
     total = len(records)
     successes = sum(1 for record in records if record["success"])
     provider_calls = sum(
@@ -115,6 +121,7 @@ def _summary(records: list[dict[str, Any]], expected_mode: str) -> dict[str, Any
     )
     latencies = [record["elapsed_ms"] for record in records]
     contract_failures = sum(1 for record in records if record["contract_errors"])
+    critic_passes = sum(record["critic_passes"] for record in records)
     return {
         "total": total,
         "successes": successes,
@@ -124,6 +131,10 @@ def _summary(records: list[dict[str, Any]], expected_mode: str) -> dict[str, Any
         "fallback_count": fallback_count,
         "fallback_rate": round(fallback_count / total, 4) if total else 0.0,
         "contract_failure_count": contract_failures,
+        "critic_passes_total": critic_passes,
+        "all_expected_critic_passes": all(
+            record["critic_passes"] == expected_critic_passes for record in records
+        ),
         "latency_ms": {
             "mean": round(statistics.mean(latencies), 1) if latencies else None,
             "p50": _percentile(latencies, 0.50),
@@ -149,6 +160,7 @@ def run_benchmark(
     model: str | None = None,
     timeout_s: int | None = None,
     pure: bool = False,
+    policy: str = "planner",
 ) -> dict[str, Any]:
     if repeats < 1 or case_count < 1:
         raise ValueError("repeats 和 case_count 必须大于 0")
@@ -161,7 +173,10 @@ def run_benchmark(
 
     codearts_records: list[dict[str, Any]] = []
     if live:
-        values = {"CODEARTS_STRATEGY_MODE": "required"}
+        values = {
+            "CODEARTS_STRATEGY_MODE": "required",
+            "CODEARTS_STRATEGY_POLICY": policy,
+        }
         if model:
             values["CODEARTS_STRATEGY_MODEL"] = model
         if timeout_s:
@@ -173,8 +188,11 @@ def run_benchmark(
                 with _temporary_environment(values):
                     codearts_records.append(_run_one(task, "required", repeat))
 
-    baseline = _summary(baseline_records, "off")
-    codearts = _summary(codearts_records, "required") if live else None
+    expected_critic_passes = {"planner": 0, "quality": 1, "max": 2}[policy]
+    baseline = _summary(baseline_records, "off", 0)
+    codearts = (
+        _summary(codearts_records, "required", expected_critic_passes) if live else None
+    )
     comparison = {
         "provider_calls_prove_codearts_intervened": bool(
             codearts and codearts["provider_calls"] > 0
@@ -197,6 +215,7 @@ def run_benchmark(
             and codearts["contract_failure_count"] == 0
             and codearts["fallback_count"] == 0
             and codearts["all_successful_strategies_are_safe"]
+            and codearts["all_expected_critic_passes"]
         ),
     }
     return {
@@ -208,6 +227,7 @@ def run_benchmark(
             "task_action": "pick_and_place",
             "model": model or os.environ.get("CODEARTS_STRATEGY_MODEL") or None,
             "cli_pure": pure,
+            "policy": policy,
         },
         "baseline": baseline,
         "codearts": codearts,
@@ -222,7 +242,18 @@ def main() -> int:
     parser.add_argument("--repeats", type=int, default=2)
     parser.add_argument("--cases", type=int, default=3, dest="case_count")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--timeout-s", type=int, default=90)
+    parser.add_argument(
+        "--timeout-s",
+        type=int,
+        default=180,
+        help="每次 planner/critic 的超时预算（max 建议至少 180 秒）",
+    )
+    parser.add_argument(
+        "--policy",
+        choices=("planner", "quality", "max"),
+        default="planner",
+        help="planner=一次生成；quality=生成+一次审查；max=生成+两次审查",
+    )
     parser.add_argument(
         "--pure",
         action="store_true",
@@ -244,6 +275,7 @@ def main() -> int:
         model=args.model,
         timeout_s=args.timeout_s,
         pure=args.pure,
+        policy=args.policy,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

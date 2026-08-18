@@ -5,7 +5,9 @@ param(
     [string]$PythonPath = "",
     [ValidateSet("off", "auto", "required")]
     [string]$CodeArtsMode = "",
-    [string]$CodeArtsModel = ""
+    [string]$CodeArtsModel = "",
+    [ValidateSet("planner", "quality", "max")]
+    [string]$CodeArtsPolicy = ""
 )
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -42,6 +44,9 @@ if ($CodeArtsMode) {
 }
 if ($CodeArtsModel) {
     $env:CODEARTS_STRATEGY_MODEL = $CodeArtsModel
+}
+if ($CodeArtsPolicy) {
+    $env:CODEARTS_STRATEGY_POLICY = $CodeArtsPolicy
 }
 $tempRoot = [System.IO.Path]::GetTempPath()
 $stdoutLog = Join-Path $tempRoot "closed-loop-demo-$Port.out.log"

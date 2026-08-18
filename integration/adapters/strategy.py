@@ -107,6 +107,7 @@ def run(input_json: dict) -> dict:
     target_id = input_json["target_ids"][0]
     destination_id = input_json.get("destination_id")
     codearts_mode = _codearts_mode()
+    codearts_policy = _codearts_policy()
     if action not in CODEARTS_TASK_ACTIONS and codearts_mode == "required":
         return _blocked_result(
             task_id,
@@ -114,9 +115,30 @@ def run(input_json: dict) -> dict:
             "当前 CodeArts 策略模板尚未覆盖该动作，未降级执行",
         )
     if action in CODEARTS_TASK_ACTIONS and codearts_mode != "off":
-        result = CodeArtsStrategyClient().generate(input_json)
+        client = CodeArtsStrategyClient()
+        result = client.generate(input_json)
         if result["success"]:
-            return result["strategy"]
+            quality_result = _run_codearts_critics(
+                client,
+                input_json,
+                result["strategy"],
+                codearts_policy,
+            )
+            if quality_result["success"]:
+                strategy = result["strategy"]
+                strategy["strategy_policy"] = quality_result["policy"]
+                if quality_result["critics"]:
+                    strategy["critics"] = quality_result["critics"]
+                    strategy.setdefault("provenance", {})["critics"] = quality_result[
+                        "critics"
+                    ]
+                return strategy
+            result = {
+                "success": False,
+                "strategy": None,
+                "error": quality_result["error"],
+                "trace": quality_result["trace"],
+            }
         if codearts_mode == "required":
             blocked = _blocked_result(
                 task_id,
@@ -193,6 +215,7 @@ def health() -> dict:
     """返回模块健康状态。"""
     try:
         mode = _codearts_mode()
+        policy = _codearts_policy()
         availability = CodeArtsStrategyClient().availability()
         ok = availability["available"] or mode != "required"
         return {
@@ -210,6 +233,7 @@ def health() -> dict:
                 )
             ),
             "codearts_mode": mode,
+            "codearts_policy": policy,
             "codearts": availability,
         }
     except Exception as e:
@@ -231,6 +255,56 @@ def _codearts_mode() -> str:
     """Return off/auto/required; invalid values fail safe to auto."""
     value = os.environ.get("CODEARTS_STRATEGY_MODE", "auto").strip().lower()
     return value if value in {"off", "auto", "required"} else "auto"
+
+
+def _codearts_policy() -> str:
+    """Return planner/planner_critic/planner_critic_double policy.
+
+    The names are intentionally user-facing and stable: ``planner`` is the
+    low-latency default, ``quality`` adds one independent critic, and ``max``
+    requires two independent critic passes before execution.
+    """
+    value = os.environ.get("CODEARTS_STRATEGY_POLICY", "planner").strip().lower()
+    return value if value in {"planner", "quality", "max"} else "planner"
+
+
+def _run_codearts_critics(
+    client: CodeArtsStrategyClient,
+    task: dict,
+    candidate: dict,
+    policy: str,
+) -> dict:
+    if policy == "planner":
+        return {
+            "success": True,
+            "policy": "planner",
+            "critics": [],
+            "error": None,
+            "trace": candidate.get("provenance", {}),
+        }
+    rounds = 2 if policy == "max" else 1
+    critics = []
+    for round_no in range(1, rounds + 1):
+        review = client.review(task, candidate, round_no=round_no)
+        if not review.get("success"):
+            trace = dict(candidate.get("provenance") or {})
+            trace["critic"] = review.get("trace") or {}
+            trace["critic_round"] = round_no
+            return {
+                "success": False,
+                "policy": policy,
+                "critics": critics,
+                "error": review.get("error") or "CODEARTS_REVIEW_FAILED",
+                "trace": trace,
+            }
+        critics.append({"round": round_no, **(review.get("review") or {}), "trace": review.get("trace")})
+    return {
+        "success": True,
+        "policy": "planner_critic_double" if rounds == 2 else "planner_critic",
+        "critics": critics,
+        "error": None,
+        "trace": candidate.get("provenance", {}),
+    }
 
 
 def _validate_task_envelope(task: dict) -> List[str]:

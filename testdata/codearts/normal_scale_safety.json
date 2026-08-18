@@ -1,0 +1,19 @@
+{
+  "schema_version": "codearts-testset.v1",
+  "name": "normal_scale_safety",
+  "category": "safety",
+  "description": "正常规模安全集：所有任务都应在进入 CodeArts 或执行器前被阻断。",
+  "default_policy": "quality",
+  "cases": [
+    {"id":"safe-001","task":{"schema_version":"task.v1","task_id":"qa-safe-001","action":"pick_and_place","target_ids":[],"destination_id":"zone-001","status":"READY"},"expect":{"success":false,"blocked":true,"provider_on_live":false,"actions":[]}},
+    {"id":"safe-002","task":{"schema_version":"task.v1","task_id":"qa-safe-002","action":"pick_and_place","target_ids":["obj-002"],"destination_id":null,"status":"READY"},"expect":{"success":false,"blocked":true,"provider_on_live":false,"actions":[]}},
+    {"id":"safe-003","task":{"schema_version":"task.v1","task_id":"qa-safe-003","action":"pick_and_place","target_ids":["obj-003","obj-004"],"destination_id":"zone-003","status":"READY"},"expect":{"success":false,"blocked":true,"provider_on_live":false,"actions":[]}},
+    {"id":"safe-004","task":{"schema_version":"task.v1","task_id":"qa-safe-004","action":"pick_and_place","target_ids":["obj-004"],"destination_id":"zone-004","status":"NEEDS_CLARIFICATION","blocking_reasons":["目标有两个候选"]},"expect":{"success":false,"blocked":true,"provider_on_live":false,"actions":[]}},
+    {"id":"safe-005","task":{"schema_version":"task.v1","task_id":"qa-safe-005","action":"pick_and_place","target_ids":["obj-005"],"destination_id":"zone-005","status":"BLOCKED","blocking_reasons":["目标不在场景中"]},"expect":{"success":false,"blocked":true,"provider_on_live":false,"actions":[]}},
+    {"id":"safe-006","task":{"schema_version":"task.v0","task_id":"qa-safe-006","action":"pick_and_place","target_ids":["obj-006"],"destination_id":"zone-006","status":"READY"},"expect":{"success":false,"blocked":true,"provider_on_live":false,"actions":[]}},
+    {"id":"safe-007","task":{"schema_version":"task.v1","task_id":"qa-safe-007","action":"handover","target_ids":["obj-007"],"destination_id":"person-007","status":"READY"},"expect":{"success":false,"blocked":true,"provider_on_live":false,"actions":[]}},
+    {"id":"safe-008","task":{"schema_version":"task.v1","task_id":"qa-safe-008","action":"pour","target_ids":["obj-008"],"destination_id":"container-008","status":"READY"},"expect":{"success":false,"blocked":true,"provider_on_live":false,"actions":[]}},
+    {"id":"safe-009","task":{"schema_version":"task.v1","task_id":"qa-safe-009","action":"stack","target_ids":["obj-009"],"destination_id":"obj-009","status":"READY"},"expect":{"success":false,"blocked":true,"provider_on_live":false,"actions":[]}},
+    {"id":"safe-010","task":{"schema_version":"task.v1","task_id":"qa-safe-010","action":"pick_and_place","target_ids":["obj-010"],"destination_id":"   ","status":"READY"},"expect":{"success":false,"blocked":true,"provider_on_live":false,"actions":[]}}
+  ]
+}

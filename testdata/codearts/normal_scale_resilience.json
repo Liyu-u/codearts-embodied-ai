@@ -1,0 +1,15 @@
+{
+  "schema_version": "codearts-testset.v1",
+  "name": "normal_scale_resilience",
+  "category": "resilience",
+  "description": "故障恢复集：注入 planner/critic 故障，验证 auto 回退和 required 阻断。",
+  "default_policy": "quality",
+  "cases": [
+    {"id":"res-001-auto-timeout","mode":"auto","fault":{"phase":"planner","error":"CODEARTS_CLI_TIMEOUT"},"task":{"schema_version":"task.v1","task_id":"qa-res-001","action":"pick_and_place","target_ids":["obj-res-001"],"destination_id":"zone-res-001","status":"READY"},"expect":{"success":true,"blocked":false,"provider_attempted":true,"mode":"primitive_plan_fallback","error_contains":"CODEARTS_CLI_TIMEOUT","actions":["detect_object","move_to_object","grasp","move_to_target","release"]}},
+    {"id":"res-002-auto-cli-failure","mode":"auto","fault":{"phase":"planner","error":"CODEARTS_CLI_FAILED:network"},"task":{"schema_version":"task.v1","task_id":"qa-res-002","action":"pick_and_place","target_ids":["obj-res-002"],"destination_id":"zone-res-002","status":"READY"},"expect":{"success":true,"blocked":false,"provider_attempted":true,"mode":"primitive_plan_fallback","error_contains":"CODEARTS_CLI_FAILED","actions":["detect_object","move_to_object","grasp","move_to_target","release"]}},
+    {"id":"res-003-required-timeout","mode":"required","fault":{"phase":"planner","error":"CODEARTS_CLI_TIMEOUT"},"task":{"schema_version":"task.v1","task_id":"qa-res-003","action":"pick_and_place","target_ids":["obj-res-003"],"destination_id":"zone-res-003","status":"READY"},"expect":{"success":false,"blocked":true,"provider_attempted":true,"mode":"codearts_blocked","error_contains":"CODEARTS_CLI_TIMEOUT","actions":[]}},
+    {"id":"res-004-required-output","mode":"required","fault":{"phase":"planner","error":"CODEARTS_OUTPUT_MISSING_STRATEGY"},"task":{"schema_version":"task.v1","task_id":"qa-res-004","action":"pick_and_place","target_ids":["obj-res-004"],"destination_id":"zone-res-004","status":"READY"},"expect":{"success":false,"blocked":true,"provider_attempted":true,"mode":"codearts_blocked","error_contains":"CODEARTS_OUTPUT_MISSING_STRATEGY","actions":[]}},
+    {"id":"res-005-auto-critic","mode":"auto","fault":{"phase":"critic","error":"CODEARTS_REVIEW_REJECTED:BLOCK"},"task":{"schema_version":"task.v1","task_id":"qa-res-005","action":"pick_and_place","target_ids":["obj-res-005"],"destination_id":"zone-res-005","status":"READY"},"expect":{"success":true,"blocked":false,"provider_attempted":true,"mode":"primitive_plan_fallback","error_contains":"CODEARTS_REVIEW_REJECTED","actions":["detect_object","move_to_object","grasp","move_to_target","release"]}},
+    {"id":"res-006-required-critic","mode":"required","fault":{"phase":"critic","error":"CODEARTS_REVIEW_REJECTED:BLOCK"},"task":{"schema_version":"task.v1","task_id":"qa-res-006","action":"pick_and_place","target_ids":["obj-res-006"],"destination_id":"zone-res-006","status":"READY"},"expect":{"success":false,"blocked":true,"provider_attempted":true,"mode":"codearts_blocked","error_contains":"CODEARTS_REVIEW_REJECTED","actions":[]}}
+  ]
+}

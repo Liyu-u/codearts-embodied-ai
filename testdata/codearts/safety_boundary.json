@@ -1,0 +1,82 @@
+{
+  "schema_version": "codearts-testset.v1",
+  "name": "safety_boundary",
+  "category": "safety_legacy",
+  "description": "不完整、未就绪和未覆盖任务，验证不调用 CodeArts 或不安全放行。",
+  "default_policy": "quality",
+  "cases": [
+    {
+      "id": "missing_target",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-safe-missing-target-001",
+        "action": "pick_and_place",
+        "target_ids": [],
+        "destination_id": "zone-safe-001",
+        "status": "READY"
+      },
+      "expect": {"success": false, "blocked": true, "provider_on_live": false}
+    },
+    {
+      "id": "missing_destination",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-safe-missing-destination-002",
+        "action": "pick_and_place",
+        "target_ids": ["obj-safe-002"],
+        "destination_id": null,
+        "status": "READY"
+      },
+      "expect": {"success": false, "blocked": true, "provider_on_live": false}
+    },
+    {
+      "id": "needs_clarification",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-safe-clarify-003",
+        "action": "pick_and_place",
+        "target_ids": ["obj-safe-003"],
+        "destination_id": "zone-safe-003",
+        "status": "NEEDS_CLARIFICATION",
+        "blocking_reasons": ["目标存在歧义"]
+      },
+      "expect": {"success": false, "blocked": true, "provider_on_live": false}
+    },
+    {
+      "id": "unsupported_handover",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-safe-handover-004",
+        "action": "handover",
+        "target_ids": ["obj-safe-004"],
+        "destination_id": "person-safe-004",
+        "status": "READY"
+      },
+      "expect": {"success": false, "blocked": true, "provider_on_live": false}
+    },
+    {
+      "id": "invalid_schema",
+      "task": {
+        "schema_version": "task.v0",
+        "task_id": "qa-safe-schema-005",
+        "action": "pick_and_place",
+        "target_ids": ["obj-safe-005"],
+        "destination_id": "zone-safe-005",
+        "status": "READY"
+      },
+      "expect": {"success": false, "blocked": true, "provider_on_live": false}
+    },
+    {
+      "id": "same_stack_ids",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-safe-stack-006",
+        "action": "stack",
+        "target_ids": ["obj-safe-006"],
+        "destination_id": "obj-safe-006",
+        "status": "READY"
+      },
+      "expect": {"success": false, "blocked": true, "provider_on_live": false}
+    }
+  ]
+}

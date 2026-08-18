@@ -1,0 +1,80 @@
+{
+  "schema_version": "codearts-testset.v1",
+  "name": "normal_quality",
+  "category": "functional_legacy",
+  "description": "正常 READY pick_and_place 任务，验证 CodeArts 规划、审查和本地契约放行。",
+  "default_policy": "quality",
+  "cases": [
+    {
+      "id": "normal_red_cube",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-normal-red-001",
+        "action": "pick_and_place",
+        "target_ids": ["obj-red-001"],
+        "target_object": "红色方块",
+        "destination_id": "zone-a-001",
+        "status": "READY",
+        "blocking_reasons": []
+      },
+      "expect": {"success": true, "blocked": false, "provider_on_live": true}
+    },
+    {
+      "id": "normal_blue_cube",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-normal-blue-002",
+        "action": "pick_and_place",
+        "target_ids": ["obj-blue-002"],
+        "target_object": "蓝色方块",
+        "destination_id": "zone-b-002",
+        "status": "READY",
+        "blocking_reasons": []
+      },
+      "expect": {"success": true, "blocked": false, "provider_on_live": true}
+    },
+    {
+      "id": "normal_long_ids",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-normal-long-id-003",
+        "action": "pick_and_place",
+        "target_ids": ["workcell-01-bin-07-object-003"],
+        "target_object": "工位 01 的物体",
+        "destination_id": "workcell-01-shelf-02",
+        "status": "READY",
+        "blocking_reasons": []
+      },
+      "expect": {"success": true, "blocked": false, "provider_on_live": true}
+    },
+    {
+      "id": "normal_unicode_ids",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-normal-unicode-004",
+        "action": "pick_and_place",
+        "target_ids": ["物体-甲-004"],
+        "target_object": "带中文标识的物体",
+        "destination_id": "目标区-乙-004",
+        "status": "READY",
+        "blocking_reasons": []
+      },
+      "expect": {"success": true, "blocked": false, "provider_on_live": true}
+    },
+    {
+      "id": "normal_explicit_constraints",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-normal-constraints-005",
+        "action": "pick_and_place",
+        "target_ids": ["obj-green-005"],
+        "target_object": "绿色方块",
+        "destination_id": "zone-c-005",
+        "constraints": ["保持目标 ID 不变", "完成后释放夹爪"],
+        "status": "READY",
+        "blocking_reasons": []
+      },
+      "expect": {"success": true, "blocked": false, "provider_on_live": true}
+    }
+  ]
+}

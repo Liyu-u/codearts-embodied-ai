@@ -1,0 +1,16 @@
+{
+  "schema_version": "codearts-testset.v1",
+  "name": "normal_scale_stability",
+  "category": "stability",
+  "description": "正常规模稳定性集：每个任务建议重复 3 次，比较动作、ID、策略档位和审查结果。",
+  "default_policy": "planner",
+  "default_repeats": 3,
+  "cases": [
+    {"id":"st-001","task":{"schema_version":"task.v1","task_id":"qa-st-001","action":"pick_and_place","target_ids":["stable-object-001"],"destination_id":"stable-zone-001","status":"READY"},"expect":{"success":true,"blocked":false,"provider_on_live":true,"actions":["detect_object","move_to_object","grasp","move_to_target","release"],"target_id":"stable-object-001","destination_id":"stable-zone-001"}},
+    {"id":"st-002","task":{"schema_version":"task.v1","task_id":"qa-st-002","action":"pick_and_place","target_ids":["stable-object-002"],"destination_id":"stable-zone-002","status":"READY"},"expect":{"success":true,"blocked":false,"provider_on_live":true,"actions":["detect_object","move_to_object","grasp","move_to_target","release"],"target_id":"stable-object-002","destination_id":"stable-zone-002"}},
+    {"id":"st-003","task":{"schema_version":"task.v1","task_id":"qa-st-003","action":"pick_and_place","target_ids":["stable-object-003"],"destination_id":"stable-zone-003","status":"READY"},"expect":{"success":true,"blocked":false,"provider_on_live":true,"actions":["detect_object","move_to_object","grasp","move_to_target","release"],"target_id":"stable-object-003","destination_id":"stable-zone-003"}},
+    {"id":"st-004","task":{"schema_version":"task.v1","task_id":"qa-st-004","action":"pick_and_place","target_ids":["stable-object-004"],"destination_id":"stable-zone-004","status":"READY"},"expect":{"success":true,"blocked":false,"provider_on_live":true,"actions":["detect_object","move_to_object","grasp","move_to_target","release"],"target_id":"stable-object-004","destination_id":"stable-zone-004"}},
+    {"id":"st-005","task":{"schema_version":"task.v1","task_id":"qa-st-005","action":"pick_and_place","target_ids":["stable-object-005"],"destination_id":"stable-zone-005","status":"READY"},"expect":{"success":true,"blocked":false,"provider_on_live":true,"actions":["detect_object","move_to_object","grasp","move_to_target","release"],"target_id":"stable-object-005","destination_id":"stable-zone-005"}},
+    {"id":"st-006","task":{"schema_version":"task.v1","task_id":"qa-st-006","action":"pick_and_place","target_ids":["stable-object-006"],"destination_id":"stable-zone-006","status":"READY"},"expect":{"success":true,"blocked":false,"provider_on_live":true,"actions":["detect_object","move_to_object","grasp","move_to_target","release"],"target_id":"stable-object-006","destination_id":"stable-zone-006"}}
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": "codearts-testset.v1",
+  "name": "stability_repeat",
+  "category": "stability_legacy",
+  "description": "结构相同但实体不同的 READY 任务，用于重复运行稳定性和 ID 保真度验收。",
+  "default_policy": "planner",
+  "cases": [
+    {
+      "id": "repeat_case_01",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-stable-001",
+        "action": "pick_and_place",
+        "target_ids": ["obj-stable-001"],
+        "destination_id": "zone-stable-001",
+        "status": "READY"
+      },
+      "expect": {"success": true, "blocked": false, "provider_on_live": true}
+    },
+    {
+      "id": "repeat_case_02",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-stable-002",
+        "action": "pick_and_place",
+        "target_ids": ["obj-stable-002"],
+        "destination_id": "zone-stable-002",
+        "status": "READY"
+      },
+      "expect": {"success": true, "blocked": false, "provider_on_live": true}
+    },
+    {
+      "id": "repeat_case_03",
+      "task": {
+        "schema_version": "task.v1",
+        "task_id": "qa-stable-003",
+        "action": "pick_and_place",
+        "target_ids": ["obj-stable-003"],
+        "destination_id": "zone-stable-003",
+        "status": "READY"
+      },
+      "expect": {"success": true, "blocked": false, "provider_on_live": true}
+    }
+  ]
+}

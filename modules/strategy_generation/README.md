@@ -14,6 +14,7 @@ CodeArts 官方 CLI 调用代码智能体生成结构化 `strategy.v1`，本地�
 - 使用项目级 `robot-strategy` Skill 约束策略生成流程
 - 校验动作白名单、参数、稳定实体 ID、步骤上限和恢复策略
 - 支持 `off`、`auto`、`required` 三种运行模式
+- 支持 `planner`、`quality`、`max` 三档调用策略：生成后可由独立 CodeArts 审查
 - 保留本地确定性五步策略作为可审计的安全回退
 
 ## 文件说明
@@ -98,9 +99,14 @@ CODEARTS_STRATEGY_MODE=required
 CODEARTS_CLI=codearts
 CODEARTS_STRATEGY_AGENT=
 CODEARTS_STRATEGY_MODEL=huaweicloud-maas/openpangu-2.0-flash
-CODEARTS_STRATEGY_TIMEOUT_S=120
+CODEARTS_STRATEGY_TIMEOUT_S=180
+# 调用策略：planner（默认）、quality（一次独立审查）、max（两次独立审查）
+CODEARTS_STRATEGY_POLICY=quality
 # 可选：隔离项目插件，仅执行纯 CodeArts 非交互请求
 CODEARTS_CLI_PURE=1
+# 若 Windows 上出现 .config/opencode 的 EEXIST/EPERM，可指向一个可写目录
+# XDG_CONFIG_HOME=C:\\Users\\<user>\\.codeartsdoer\\cli-data\\xdg-config
+# XDG_DATA_HOME=C:\\Users\\<user>\\AppData\\Local\\CodeArts\\xdg-data
 ```
 
 三种模式：
@@ -108,6 +114,18 @@ CODEARTS_CLI_PURE=1
 - `required`：比赛演示推荐。CodeArts 未安装、调用失败或输出不安全时阻断。
 - `auto`：开发联调推荐。优先调用 CodeArts，失败时使用本地五步策略，并记录失败原因。
 - `off`：完全关闭 CodeArts，只使用本地确定性策略。
+
+调用策略（仅在 CodeArts 实际启用时生效）：
+
+- `planner`：一次 CodeArts 规划，延迟最低，适合开发和高吞吐。
+- `quality`：规划后再发起一次独立 critic；critic 只返回 `PASS/REPAIR_REQUIRED/BLOCK`，
+  只有 `PASS` 且本地契约再次通过才进入 C，适合正式演示。
+- `max`：规划后连续两次独立 critic 都必须 `PASS`，适合验收、回归和高风险动作；代价是约
+  3 倍 CodeArts 调用耗时/配额。
+
+推荐路由：日常使用 `auto + quality`，正式演示 `required + quality`，发布验收或抽样回归
+使用 `required + max`。无论档位如何，本地 action/ID/引用/code 安全闸门始终开启，CodeArts
+不能直接改写候选策略，也不能绕过执行器契约。
 
 Demo 使用线程锁串行化 CodeArts 请求；重复基准运行时不要同时启动其他 CodeArts
 评估任务，否则云端并发或本地会话资源会影响延迟和稳定性结论。

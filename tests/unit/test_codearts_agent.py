@@ -7,7 +7,11 @@ from modules.strategy_generation.codearts_agent import (
     CodeArtsStrategyClient,
     OUTPUT_BEGIN,
     OUTPUT_END,
+    REVIEW_BEGIN,
+    REVIEW_END,
     extract_strategy,
+    extract_review,
+    validate_review,
     validate_strategy,
 )
 
@@ -103,6 +107,14 @@ class CodeArtsOutputTests(unittest.TestCase):
         self.assertTrue(any("forward reference" in error for error in errors), errors)
         self.assertIn("pick_and_place actions are missing or out of safe order", errors)
 
+    def test_extracts_and_validates_review_contract(self):
+        review = {"status": "PASS", "issues": [], "risk_level": "LOW"}
+        content = f"{REVIEW_BEGIN}\n{json.dumps(review)}\n{REVIEW_END}"
+        stdout = json.dumps({"type": "message", "content": content})
+        self.assertEqual(extract_review(stdout), review)
+        self.assertEqual(validate_review(review), [])
+        self.assertTrue(validate_review({"status": "PASS", "issues": ["bad"], "risk_level": "LOW"}))
+
 
 class CodeArtsClientTests(unittest.TestCase):
     def test_binds_only_task_id_mismatch_before_accepting(self):
@@ -186,6 +198,32 @@ class CodeArtsClientTests(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "CODEARTS_CLI_TIMEOUT")
+
+    def test_review_uses_separate_critic_prompt_and_requires_pass(self):
+        calls = []
+        strategy = valid_strategy()
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            review = {"status": "PASS", "issues": [], "risk_level": "LOW"}
+            content = f"{REVIEW_BEGIN}\n{json.dumps(review)}\n{REVIEW_END}"
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"content": content}),
+                stderr="",
+            )
+
+        client = CodeArtsStrategyClient(
+            executable="codearts",
+            runner=runner,
+            which=lambda _: "C:\\Tools\\codearts.exe",
+        )
+        result = client.review(TASK, strategy)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["review"]["status"], "PASS")
+        self.assertEqual(result["trace"]["role"], "critic")
+        self.assertIn("STRATEGY_REVIEW_BEGIN", calls[0][-1])
 
 
 if __name__ == "__main__":

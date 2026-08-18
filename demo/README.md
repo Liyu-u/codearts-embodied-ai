@@ -68,8 +68,11 @@ powershell -ExecutionPolicy Bypass -File demo/check_acceptance.ps1 -Full
 powershell -ExecutionPolicy Bypass -File demo/start_demo.ps1 `
   -Port 8766 `
   -CodeArtsMode required `
+  -CodeArtsPolicy quality `
   -CodeArtsModel huaweicloud-maas/openpangu-2.0-flash
 ```
+
+验收时可将 `-CodeArtsPolicy quality` 改为 `max`，要求规划后的两轮独立审查都通过。
 
 结果区采用参考图的“上三模块 + 中间进度箭头 + 下三模块”布局；当前闭环状态和 P/A/B/C/D 进度节点都显示在中间箭头上。在较窄屏幕上会自动改为单列，避免模块内容被挤压。
 
