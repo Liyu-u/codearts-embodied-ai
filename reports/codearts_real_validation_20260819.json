@@ -1,0 +1,108 @@
+{
+  "schema_version": "codearts-comparison.v1",
+  "benchmark": {
+    "live": true,
+    "repeats": 1,
+    "case_count": 1,
+    "task_action": "pick_and_place",
+    "model": "deepseek/deepseek-v4-flash",
+    "cli_pure": true,
+    "policy": "planner"
+  },
+  "baseline": {
+    "total": 1,
+    "successes": 1,
+    "success_rate": 1.0,
+    "provider_calls": 0,
+    "provider_call_rate": 0.0,
+    "fallback_count": 0,
+    "fallback_rate": 0.0,
+    "contract_failure_count": 0,
+    "critic_passes_total": 0,
+    "all_expected_critic_passes": true,
+    "latency_ms": {
+      "mean": 0.8,
+      "p50": 0.8,
+      "p95": 0.8
+    },
+    "all_requested_modes_match": true,
+    "all_successful_strategies_are_safe": true
+  },
+  "codearts": {
+    "total": 1,
+    "successes": 1,
+    "success_rate": 1.0,
+    "provider_calls": 1,
+    "provider_call_rate": 1.0,
+    "fallback_count": 0,
+    "fallback_rate": 0.0,
+    "contract_failure_count": 0,
+    "critic_passes_total": 0,
+    "all_expected_critic_passes": true,
+    "latency_ms": {
+      "mean": 12377.3,
+      "p50": 12377.3,
+      "p95": 12377.3
+    },
+    "all_requested_modes_match": true,
+    "all_successful_strategies_are_safe": true
+  },
+  "comparison": {
+    "provider_calls_prove_codearts_intervened": true,
+    "all_codearts_runs_accepted": true,
+    "success_rate_delta_vs_baseline": 0.0,
+    "stable": true
+  },
+  "records": {
+    "baseline": [
+      {
+        "task_id": "codearts-compare-001",
+        "repeat": 1,
+        "mode_requested": "off",
+        "elapsed_ms": 0.8,
+        "success": true,
+        "blocked": false,
+        "strategy_mode": "primitive_plan",
+        "strategy_policy": null,
+        "critic_passes": 0,
+        "provider": null,
+        "transport": null,
+        "error": null,
+        "contract_errors": [],
+        "code_is_null": true,
+        "actions": [
+          "detect_object",
+          "move_to_object",
+          "grasp",
+          "move_to_target",
+          "release"
+        ]
+      }
+    ],
+    "codearts": [
+      {
+        "task_id": "codearts-compare-001",
+        "repeat": 1,
+        "mode_requested": "required",
+        "elapsed_ms": 12377.3,
+        "success": true,
+        "blocked": false,
+        "strategy_mode": "codearts_agent",
+        "strategy_policy": "planner",
+        "critic_passes": 0,
+        "provider": "huaweicloud-codearts-agent",
+        "transport": "codearts-cli",
+        "error": null,
+        "contract_errors": [],
+        "code_is_null": true,
+        "actions": [
+          "detect_object",
+          "move_to_object",
+          "grasp",
+          "move_to_target",
+          "release"
+        ]
+      }
+    ]
+  }
+}
