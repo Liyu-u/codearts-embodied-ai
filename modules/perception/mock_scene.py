@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+from .spatial_context import enrich_spatial_context
+
 
 STACKING_CUBES = {
     "scene_id": "stacking_cubes",
@@ -11,7 +13,11 @@ STACKING_CUBES = {
             "pose": {"x": 0.25, "y": 0.0, "z": 0.04},
             "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
             "attributes": {"display_name": "红色方块", "color": "red"},
-            "execution": {"movable": True, "graspable": True},
+            "execution": {
+                "movable": True,
+                "graspable": True,
+                "stackable_destination": True,
+            },
         },
         {
             "id": "green_cube",
@@ -55,7 +61,7 @@ SORTING_WORKCELL = {
         {
             "id": "green_sort_cube",
             "category": "绿色方块",
-            "pose": {"x": 0.24, "y": -0.18, "z": 0.04},
+            "pose": {"x": 0.16, "y": 0.0, "z": 0.04},
             "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
             "attributes": {
                 "display_name": "绿色方块",
@@ -67,7 +73,7 @@ SORTING_WORKCELL = {
         {
             "id": "blue_sort_cube",
             "category": "蓝色方块",
-            "pose": {"x": 0.32, "y": -0.18, "z": 0.04},
+            "pose": {"x": 0.16, "y": 0.18, "z": 0.04},
             "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
             "attributes": {
                 "display_name": "蓝色方块",
@@ -79,7 +85,7 @@ SORTING_WORKCELL = {
         {
             "id": "left_sort_tray",
             "category": "红色托盘",
-            "pose": {"x": 0.16, "y": 0.22, "z": 0.03},
+            "pose": {"x": 0.32, "y": -0.18, "z": 0.03},
             "dimensions": {"x": 0.12, "y": 0.12, "z": 0.03},
             "attributes": {
                 "display_name": "红色托盘",
@@ -96,7 +102,7 @@ SORTING_WORKCELL = {
         {
             "id": "middle_sort_tray",
             "category": "绿色托盘",
-            "pose": {"x": 0.24, "y": 0.22, "z": 0.03},
+            "pose": {"x": 0.32, "y": 0.0, "z": 0.03},
             "dimensions": {"x": 0.12, "y": 0.12, "z": 0.03},
             "attributes": {
                 "display_name": "绿色托盘",
@@ -113,7 +119,7 @@ SORTING_WORKCELL = {
         {
             "id": "right_sort_tray",
             "category": "蓝色托盘",
-            "pose": {"x": 0.32, "y": 0.22, "z": 0.03},
+            "pose": {"x": 0.32, "y": 0.18, "z": 0.03},
             "dimensions": {"x": 0.12, "y": 0.12, "z": 0.03},
             "attributes": {
                 "display_name": "蓝色托盘",
@@ -138,4 +144,10 @@ def get_mock_scene(scene_id: str) -> dict:
     }
     if scene_id not in scenes:
         raise ValueError(f"unsupported mock scene: {scene_id}")
-    return deepcopy(scenes[scene_id])
+    scene = deepcopy(scenes[scene_id])
+    scene["schema_version"] = "perception.v1"
+    scene["execution_context"] = {"backend": "mock", "scene_revision": "1"}
+    for item in scene.get("objects", []):
+        attributes = item.setdefault("attributes", {})
+        attributes.setdefault("display_name", item.get("category", item.get("id", "对象")))
+    return enrich_spatial_context(scene)

@@ -47,6 +47,26 @@ class MockExecutorBackendTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAILED")
         self.assertEqual(result["reason"], "INVALID_DESTINATION:red_cube")
 
+    def test_stack_placement_uses_explicit_mode_and_dimensions(self):
+        self.backend.execute("move_to_object", {"object_id": "green_cube"})
+        self.assertEqual(
+            self.backend.execute("grasp", {"object_id": "green_cube"})["status"],
+            "SUCCESS",
+        )
+        self.assertEqual(
+            self.backend.execute(
+                "move_to_target",
+                {"target": "red_cube", "placement_mode": "stack_on"},
+            )["status"],
+            "SUCCESS",
+        )
+        self.assertEqual(self.backend.execute("release", {})["status"], "SUCCESS")
+        state = self.backend.snapshot()
+        self.assertEqual(
+            state["objects"]["green_cube"]["pose"],
+            {"x": 0.25, "y": 0.0, "z": 0.08},
+        )
+
     def test_failure_injection_is_counted(self):
         scene = perception.run({"scene_id": "stacking_cubes", "backend": "mock"})
         backend = MockBackend.from_perception(scene, failures={"grasp": 1})

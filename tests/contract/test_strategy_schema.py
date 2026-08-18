@@ -105,7 +105,10 @@ class TestStrategyContract(unittest.TestCase):
     def test_unsupported_ready_actions_are_blocked(self):
         for action in (
             "push",
-            "stack",
+            "dynamic_grasp",
+            "wait",
+            "handover",
+            "pour",
             "sort_by_color",
             "sort_by_size",
             "filter_by_attribute",
@@ -128,6 +131,46 @@ class TestStrategyContract(unittest.TestCase):
                     f"UNSUPPORTED_ACTION:{action}",
                     output["blocking_reasons"],
                 )
+
+    def test_open_actions_lower_to_existing_primitive_source(self):
+        cases = {
+            "pick": ["detect_object", "move_to_object", "grasp"],
+            "grasp": ["detect_object", "move_to_object", "grasp"],
+            "transfer": [
+                "detect_object", "move_to_object", "grasp",
+                "move_to_target", "release",
+            ],
+            "fetch": [
+                "detect_object", "move_to_object", "grasp",
+                "move_to_target", "release",
+            ],
+            "stack": [
+                "detect_object", "move_to_object", "grasp",
+                "move_to_target", "release",
+            ],
+        }
+        for action, expected_actions in cases.items():
+            with self.subTest(action=action):
+                output = strategy.run({
+                    "schema_version": "task.v1",
+                    "task_id": f"open-{action}",
+                    "action": action,
+                    "target_ids": ["obj-001"],
+                    "destination_id": None if action in {"pick", "grasp"} else "zone-001",
+                    "status": "READY",
+                })
+                self.assert_strategy_schema(output)
+                self.assertTrue(output["success"])
+                self.assertFalse(output["blocked"])
+                self.assertEqual(
+                    [step["action"] for step in output["steps"]],
+                    expected_actions,
+                )
+                if action == "stack":
+                    self.assertEqual(
+                        output["steps"][3]["arguments"]["placement_mode"],
+                        "stack_on",
+                    )
 
     def test_pick_and_place_requires_one_target_id_and_destination_id(self):
         cases = (

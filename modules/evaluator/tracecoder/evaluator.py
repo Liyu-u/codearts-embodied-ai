@@ -21,6 +21,14 @@ def _check_goal(goal: dict, final_state: dict) -> tuple[bool, str]:
             if passed else
             f"{goal.get('object')} 未位于 {goal.get('container')} 内"
         )
+    if goal_type == "object_on":
+        item = find_object(final_state, goal.get("object"))
+        passed = bool(item and item.get("container") == goal.get("base"))
+        return passed, (
+            f"{goal.get('object')} 位于 {goal.get('base')} 上"
+            if passed else
+            f"{goal.get('object')} 未位于 {goal.get('base')} 上"
+        )
     if goal_type == "gripper_empty":
         actual = final_state.get("robot", {}).get("gripper_empty", True)
         expected = goal.get("expected", True)

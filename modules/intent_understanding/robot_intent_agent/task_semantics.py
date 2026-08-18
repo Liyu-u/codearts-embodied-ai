@@ -747,9 +747,9 @@ class EntityGrounder:
                 score += 0.25; evidence.append(f"spatial:leftmost +0.25")
             elif label == "right" and obj_y >= max(ys) - 0.05:
                 score += 0.25; evidence.append(f"spatial:rightmost +0.25")
-            elif label == "front" and obj_y >= max(ys) - 0.05:
+            elif label == "front" and obj_x >= max(xs) - 0.05:
                 score += 0.25; evidence.append(f"spatial:frontmost +0.25")
-            elif label == "back" and obj_y <= min(ys) + 0.05:
+            elif label == "back" and obj_x <= min(xs) + 0.05:
                 score += 0.25; evidence.append(f"spatial:backmost +0.25")
             elif label == "near" or label == "nearest":
                 dist = (obj_x**2 + obj_y**2 + obj_z**2) ** 0.5

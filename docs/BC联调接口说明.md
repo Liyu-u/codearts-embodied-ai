@@ -36,9 +36,10 @@ D TraceCoder
 要求：
 
 - `status` 必须为 `READY`；
-- `action` 必须为 `pick_and_place`；
-- `target_ids` 必须且只能有一个稳定 ID；
-- `destination_id` 必须是非空稳定 ID。
+- `action` 必须来自当前共同开放动作：`pick`、`grasp`、`pick_and_place`、`place`、`transfer`、`fetch`、`stack`；
+- `pick/grasp` 必须且只能有一个稳定 `target_ids`，不需要目的地；
+- `pick_and_place/place/transfer/fetch/stack` 必须且只能有一个稳定 `target_ids`，并提供非空稳定 `destination_id`；
+- `stack` 的目标物和底座不能是同一对象，C 还要求底座声明 `execution.stackable_destination=true`。
 
 ## 3. B 给 C 的输出
 
@@ -171,9 +172,9 @@ python -m unittest discover -s tests -t . -v
 
 ## 7. 当前限制
 
-1. 第一阶段只验收 `READY + pick_and_place`。
-2. B 的其他动作全部阻断，不会交给 C。
-3. 公共 Pipeline 目前只在 A 非 READY 时提前返回；若 B 返回阻断结果，Pipeline 仍会调用 C。因此阻断链路尚未纳入端到端验收，后续需要公共 Pipeline 负责人修改。
+1. 当前验收 `READY + pick/grasp`、`pick_and_place/place`、`transfer`、有明确目标区的 `fetch` 和 `stack`。
+2. `push`、`dynamic_grasp`、`handover`、`pour`、`wait`、`custom` 仍由 A 澄清或 B 阻断，不会交给 C。
+3. 公共 Pipeline 在 A 非 READY 或 B 返回阻断时都会提前结束；只有形成合法 `strategy.v1` 后才交给 C。
 4. 本轮通过的是确定性 Mock 闭环；Isaac Sim 后端、USD 场景、控制器和服务器实测仍是下一阶段。
 5. 任何 B 生成的 Python 代码都不属于联调协议，C 会拒绝非空 `strategy.code`。
-6. D 当前的轻量仿真会给推导对象生成内部 ID，而任务目标使用 perception 稳定 ID，因此诊断中的 `simulation_final_passed` 可能为 `false`；D 已把真实 `execution.v1` 设为最终事实来源，所以执行成功时 `final_passed=true`。彻底消除这项模拟差异需要 D 负责人后续统一对象 ID，本阶段不修改 D。
+6. D 当前的轻量仿真会给推导对象生成内部 ID，而任务目标使用 perception 稳定 ID，因此诊断中的 `simulation_final_passed` 可能为 `false`；D 已把真实 `execution.v1` 设为最终事实来源，所以执行成功时 `final_passed=true`。`stack` 的目标在 D 中以 `object_on` 复核，C 的真实快照负责尺寸落点证据。

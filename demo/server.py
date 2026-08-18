@@ -31,7 +31,9 @@ if str(ROOT) not in sys.path:
 
 # A demo should be repeatable and offline.  The UI still exposes the selected
 # intent engine, but strategy generation remains the local safe primitive plan.
-os.environ["CODEARTS_STRATEGY_MODE"] = "off"
+# Keep the demo reproducible by default, while allowing a caller to opt into
+# the real CodeArts provider with CODEARTS_STRATEGY_MODE=required/auto.
+os.environ.setdefault("CODEARTS_STRATEGY_MODE", "off")
 
 from demo.scenarios import get_scenario, list_scenarios  # noqa: E402
 from integration.adapters import intent, strategy, tracecoder  # noqa: E402
@@ -102,10 +104,21 @@ def _is_healthy(value: dict) -> bool:
     return value.get("status") in {"ok", "healthy"}
 
 
-def _acceptance_summary(scenario: dict, result: dict) -> dict:
+def _acceptance_summary(
+    scenario: dict,
+    result: dict,
+    instruction: str | None = None,
+) -> dict:
     """Compare the scenario expectation with the actual pipeline result."""
 
     expected = scenario.get("expected")
+    # A workcell can expose several preset commands with different expected
+    # outcomes. Compare the command currently being run, not the default
+    # outcome of the containing scene.
+    for command in scenario.get("commands", []):
+        if instruction and command.get("instruction") == instruction:
+            expected = command.get("expected", expected)
+            break
     actual = result.get("status")
     return {
         "expected_status": expected,
@@ -164,7 +177,7 @@ def _run_demo(payload: dict) -> dict:
         "id": scene_id,
         **{key: value for key, value in scenario.items() if key != "scene"},
     }
-    acceptance = _acceptance_summary(scenario, result)
+    acceptance = _acceptance_summary(scenario, result, instruction)
     return {
         "ok": True,
         "server_mode": "real-adapters-with-mock-executor",

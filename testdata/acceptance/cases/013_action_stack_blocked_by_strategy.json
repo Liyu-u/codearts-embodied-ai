@@ -1,16 +1,25 @@
 {
   "case_id": "acceptance_013_action_stack_blocked_by_strategy",
-  "title": "动作范围：堆叠由 B 阻断",
+  "title": "动作范围：堆叠开放",
   "category": "action_boundary",
   "scene": {"source": "perception_adapter", "scene_id": "stacking_cubes", "backend": "mock"},
   "instruction": "把绿色方块叠到红色方块上",
   "engine": "rule",
   "expected": {
-    "pipeline_status": "BLOCKED",
+    "pipeline_status": "SUCCEEDED",
     "task_status": "READY",
     "action": "stack",
-    "strategy_blocked": true,
-    "strategy_blocking_reasons_contains": "UNSUPPORTED_ACTION:stack",
-    "no_execution": true
+    "target_ids": ["green_cube"],
+    "destination_id": "red_cube",
+    "strategy_blocked": false,
+    "strategy_actions": ["detect_object", "move_to_object", "grasp", "move_to_target", "release"],
+    "execution_status": "SUCCEEDED",
+    "feedback_schema_version": "feedback.v1",
+    "feedback_retryable": false,
+    "diagnosis": {"final_passed": true, "execution_passed": true},
+    "retry_count": 0,
+    "attempt_count": 1,
+    "stop_reason": "EXECUTION_SUCCEEDED",
+    "final_placement": {"object_id": "green_cube", "destination_id": "red_cube", "placement_mode": "stack_on"}
   }
 }

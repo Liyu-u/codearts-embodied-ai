@@ -210,9 +210,10 @@ def _perception_objects(perception: dict | None) -> list[dict]:
 def _derive_goals(task: dict, native_strategy: dict) -> list[dict]:
     """从 task.v1 语义推导任务目标（轻量仿真阶段的尽力而为映射）。
 
-    覆盖最常见的三类动作：
-      - place/put/move：目标物放入目标容器 → object_inside
-      - pick：夹爪应占用目标物 → gripper_empty=False
+    覆盖当前已开放动作：
+      - place/put/move/transfer/fetch：目标物放入目标容器 → object_inside
+      - stack：目标物位于稳定底座上 → object_on
+      - pick/grasp：夹爪应占用目标物 → gripper_empty=False
       - rotate：目标物应旋转到指定角度 → object_oriented
     其它动作推导不出明确目标时返回空列表（仅做安全检查），并在 diagnosis
     中如实说明——不静默猜测。接入 Isaac Sim 后由真实执行日志佐证目标达成。
@@ -221,14 +222,26 @@ def _derive_goals(task: dict, native_strategy: dict) -> list[dict]:
     targets = task.get("target_ids") or []
     destination = task.get("destination_id")
 
-    if "place" in action or "put" in action or "move" in action:
+    if action == "stack":
+        if targets and destination:
+            return [{
+                "type": "object_on",
+                "object": targets[0],
+                "base": destination,
+            }]
+    if (
+        "place" in action
+        or "put" in action
+        or "move" in action
+        or action in {"transfer", "fetch"}
+    ):
         if targets and destination:
             return [{
                 "type": "object_inside",
                 "object": targets[0],
                 "container": destination,
             }]
-    if action == "pick":
+    if action in {"pick", "grasp"}:
         if targets:
             return [{"type": "gripper_empty", "expected": False}]
     if action == "rotate":

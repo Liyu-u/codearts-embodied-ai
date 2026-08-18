@@ -222,10 +222,18 @@ class ClosedLoopAcceptanceTests(unittest.TestCase):
         if placement:
             self.assertIsNotNone(backend)
             snapshot = backend.snapshot()
-            self.assertEqual(
-                snapshot["objects"][placement["object_id"]]["pose"],
-                snapshot["objects"][placement["destination_id"]]["pose"],
-            )
+            object_pose = snapshot["objects"][placement["object_id"]]["pose"]
+            destination_pose = snapshot["objects"][placement["destination_id"]]["pose"]
+            if placement.get("placement_mode") == "stack_on":
+                self.assertEqual(object_pose["x"], destination_pose["x"])
+                self.assertEqual(object_pose["y"], destination_pose["y"])
+                self.assertGreater(object_pose["z"], destination_pose["z"])
+            else:
+                self.assertEqual(object_pose, destination_pose)
+
+        if "final_held_id" in expected:
+            self.assertIsNotNone(backend)
+            self.assertEqual(backend.snapshot()["held_id"], expected["final_held_id"])
 
 
 if __name__ == "__main__":

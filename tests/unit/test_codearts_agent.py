@@ -105,6 +105,33 @@ class CodeArtsOutputTests(unittest.TestCase):
 
 
 class CodeArtsClientTests(unittest.TestCase):
+    def test_binds_only_task_id_mismatch_before_accepting(self):
+        calls = []
+        mismatched = valid_strategy()
+        mismatched["task_id"] = "task-from-example"
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            content = (
+                f"{OUTPUT_BEGIN}\n"
+                + json.dumps(mismatched, ensure_ascii=False)
+                + f"\n{OUTPUT_END}"
+            )
+            return SimpleNamespace(returncode=0, stdout=content, stderr="")
+
+        client = CodeArtsStrategyClient(
+            executable="codearts",
+            runner=runner,
+            which=lambda _: "C:\\Tools\\codearts.exe",
+        )
+
+        result = client.generate(TASK)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["strategy"]["task_id"], TASK["task_id"])
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(result["trace"]["task_id_bound_locally"])
+
     def test_invokes_official_cli_and_returns_provenance(self):
         calls = []
         content = (

@@ -1,16 +1,23 @@
 {
   "case_id": "acceptance_010_action_pick_blocked_by_strategy",
-  "title": "动作范围：单独抓取由 B 阻断",
+  "title": "动作范围：单独抓取开放",
   "category": "action_boundary",
   "scene": {"source": "file", "path": "scenes/single_red_cube.json"},
   "instruction": "抓起红色方块",
   "engine": "rule",
   "expected": {
-    "pipeline_status": "BLOCKED",
+    "pipeline_status": "SUCCEEDED",
     "task_status": "READY",
     "action": "pick",
-    "strategy_blocked": true,
-    "strategy_blocking_reasons_contains": "UNSUPPORTED_ACTION:pick",
-    "no_execution": true
+    "strategy_blocked": false,
+    "strategy_actions": ["detect_object", "move_to_object", "grasp"],
+    "execution_status": "SUCCEEDED",
+    "feedback_schema_version": "feedback.v1",
+    "feedback_retryable": false,
+    "diagnosis": {"final_passed": true, "execution_passed": true},
+    "retry_count": 0,
+    "attempt_count": 1,
+    "stop_reason": "EXECUTION_SUCCEEDED",
+    "final_held_id": "red_cube"
   }
 }

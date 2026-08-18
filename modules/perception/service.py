@@ -13,4 +13,7 @@ def observe_scene(request: dict) -> dict:
         "coordinate_frame": raw["coordinate_frame"],
         "objects": raw["objects"],
         "execution_context": {"backend": "mock", "scene_revision": "1"},
+        "relations": raw.get("relations", []),
+        "spatial_axes": raw.get("spatial_axes", {}),
+        "spatial_messages": raw.get("spatial_messages", []),
     }

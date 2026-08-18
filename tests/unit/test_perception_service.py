@@ -15,6 +15,13 @@ class PerceptionServiceTests(unittest.TestCase):
         self.assertTrue(
             by_id["zone_unstack_target"]["execution"]["valid_destination"]
         )
+        self.assertEqual(result["spatial_axes"], {
+            "left_right": "y",
+            "front_back": "x",
+            "vertical": "z",
+        })
+        self.assertTrue(result["spatial_messages"])
+        self.assertTrue(result["relations"])
 
     def test_unknown_scene_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "unsupported mock scene"):

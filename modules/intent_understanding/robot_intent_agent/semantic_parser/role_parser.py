@@ -86,8 +86,8 @@ def _find_mention(text: str, category: Optional[str] = None, after: int = 0) -> 
         r"操作区前方的|操作区后方的|前方的|后方的|"
         r"中等大小的|尺寸较大(?:的)?|尺寸较小(?:的)?|"
         r"偏小的|偏大的|小型的|大型的|矮胖的|短粗的|细长的|长条的|"
-        r"最左边的|最右边的|左侧的|右侧的|左边的|右边的|"
-        r"前面的|后面的|中间的|"
+        r"最左边(?:的)?|最右边(?:的)?|左侧(?:的)?|右侧(?:的)?|左边(?:的)?|右边(?:的)?|"
+        r"前面(?:的)?|后面(?:的)?|中间(?:的)?|上面(?:的)?|上方(?:的)?|下面(?:的)?|下方(?:的)?|"
         r"(?:红色|蓝色|绿色|黄色|白色|黑色|透明|红|蓝|绿|黄|白|黑)色?的?|"
         r"(?:玻璃|塑料|金属|木质|橡胶)的?)"
     )
@@ -109,7 +109,7 @@ def _find_mention(text: str, category: Optional[str] = None, after: int = 0) -> 
         # Preserve the compact legacy forms when they are not covered by the
         # wider chain (including an attribute without ``的``).
         for descriptor in (list(COLORS) + list(MATERIALS) +
-                           ["最左边的", "最右边的", "左边的", "右边的", "前面的", "后面的", "最大的", "最小的"]):
+                           ["最左边", "最右边", "左边", "右边", "前面", "后面", "上面", "上方", "下面", "下方", "最大的", "最小的"]):
             if start >= len(descriptor) + 1 and text[start-len(descriptor)-1:start] == descriptor + "的":
                 prefix_start = start-len(descriptor)-1
                 break
@@ -136,10 +136,13 @@ def _find_mention(text: str, category: Optional[str] = None, after: int = 0) -> 
         attrs["shape"] = "compact"
     relation = None
     for cue, rel in (("最左", "LEFTMOST"), ("最右", "RIGHTMOST"), ("左边", "LEFT"), ("右边", "RIGHT"),
-                     ("前面", "FRONT"), ("后面", "BEHIND"), ("中间", "MIDDLE")):
+                     ("前面", "FRONT"), ("后面", "BEHIND"), ("上面", "ABOVE"), ("上方", "ABOVE"),
+                     ("下面", "BELOW"), ("下方", "BELOW"), ("中间", "MIDDLE")):
         if cue in mention:
             relation = rel
             break
+    if relation:
+        attrs["spatial_relation"] = relation
     return mention, prefix_start, normalized, attrs
 
 
@@ -207,7 +210,7 @@ def parse_roles(instruction: str, actions: List[str]) -> tuple[List[SemanticEnti
         if local_ref is None:
             local_ref = f"entity-{len(entities) + 1}"
             seen[key] = local_ref
-            relation = next((rel for cue, rel in (("最左", "LEFTMOST"), ("最右", "RIGHTMOST"), ("左边", "LEFT"), ("右边", "RIGHT"), ("前面", "FRONT"), ("后面", "BEHIND"), ("中间", "MIDDLE")) if cue in mention), None)
+            relation = next((rel for cue, rel in (("最左", "LEFTMOST"), ("最右", "RIGHTMOST"), ("左边", "LEFT"), ("右边", "RIGHT"), ("前面", "FRONT"), ("后面", "BEHIND"), ("上面", "ABOVE"), ("上方", "ABOVE"), ("下面", "BELOW"), ("下方", "BELOW"), ("中间", "MIDDLE")) if cue in mention), None)
             entities.append(_entity(local_ref, mention, category, text, start, attrs, relation))
         role_refs[role] = local_ref
 

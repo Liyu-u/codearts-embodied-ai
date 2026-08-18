@@ -9,13 +9,16 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from modules.perception.mock_scene import get_mock_scene
+from modules.perception.spatial_context import enrich_spatial_context
 
-def _cube(object_id: str, color: str, x: float, z: float = 0.04) -> dict:
+
+def _cube(object_id: str, color: str, x: float, z: float = 0.04, y: float = 0.0) -> dict:
     names = {"red": "红色方块", "green": "绿色方块", "blue": "蓝色方块"}
     return {
         "id": object_id,
         "category": names.get(color, "方块"),
-        "pose": {"x": x, "y": 0.0, "z": z},
+        "pose": {"x": x, "y": y, "z": z},
         "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
         "attributes": {"display_name": names.get(color, "方块"), "color": color},
         "execution": {"movable": True, "graspable": True},
@@ -39,14 +42,23 @@ def _target(*, valid_destination: bool = True) -> dict:
     }
 
 
+def _stack_base(object_id: str = "red_cube") -> dict:
+    base = _cube(object_id, "red", 0.25)
+    base["execution"]["stackable_destination"] = True
+    base["attributes"]["purpose"] = "stack_base"
+    return base
+
+
 def _scene(scene_id: str, objects: list[dict]) -> dict:
-    return {
+    scene = {
         "schema_version": "perception.v1",
         "scene_id": scene_id,
         "coordinate_frame": "world",
         "objects": objects,
-        "execution_context": {"backend": "mock", "scene_revision": "demo-1"},
+        "execution_context": {"backend": "mock", "scene_revision": "1"},
+        "relations": [],
     }
+    return enrich_spatial_context(scene)
 
 
 SCENARIOS: dict[str, dict] = {
@@ -66,13 +78,62 @@ SCENARIOS: dict[str, dict] = {
         "expected": "SUCCEEDED",
         "scene": _scene("single_red_cube", [_cube("red_cube", "red", 0.22), _target()]),
     },
+    "standalone_grasp": {
+        "name": "单独抓取（成功）",
+        "description": "只执行感知、接近和抓取，验证 pick/grasp 不会被强制拼接成放置动作。",
+        "focus": "A/B/C：单独抓取闭环",
+        "instruction": "抓起绿色方块",
+        "expected": "SUCCEEDED",
+        "scene": _scene(
+            "standalone_grasp",
+            [_cube("red_cube", "red", 0.22), _cube("green_cube", "green", 0.30)],
+        ),
+    },
+    "transfer_green": {
+        "name": "搬运方块（成功）",
+        "description": "A 输出 transfer，B 复用抓取—搬运—释放原子策略，C 使用既有执行源。",
+        "focus": "A/B/C：transfer 约束复用",
+        "instruction": "把绿色方块搬运到桌子上",
+        "expected": "SUCCEEDED",
+        "scene": _scene(
+            "transfer_green",
+            [_cube("green_cube", "green", 0.22), _target()],
+        ),
+    },
+    "fetch_to_table": {
+        "name": "取物到目标区（成功）",
+        "description": "A 在同时出现取物和明确桌面落点时输出 fetch，B/C 复用有边界的抓取搬运源。",
+        "focus": "A/B/C：fetch 交付位置约束",
+        "instruction": "把红色方块拿过来放到桌子上",
+        "expected": "SUCCEEDED",
+        "scene": _scene(
+            "fetch_to_table",
+            [_cube("red_cube", "red", 0.22), _target()],
+        ),
+    },
+    "stack_green_on_red": {
+        "name": "方块堆叠（成功）",
+        "description": "A 输出 stack，B 在既有 move_to_target 上显式使用 stack_on，C 按尺寸计算安全落点。",
+        "focus": "A/B/C/D：stack 约束与几何落点",
+        "instruction": "把绿色方块叠到红色方块上",
+        "expected": "SUCCEEDED",
+        "scene": _scene(
+            "stack_green_on_red",
+            [_stack_base(), _cube("green_cube", "green", 0.22, 0.12)],
+        ),
+    },
     "ambiguous_red_cubes": {
         "name": "同名方块（安全阻断）",
         "description": "场景里有两个红色方块，意图无法唯一绑定时应停在 A，不进入执行。",
         "focus": "A：目标消歧与安全门禁",
         "instruction": "把红色方块放到桌子上",
         "expected": "BLOCKED",
-        "scene": _scene("ambiguous_red_cubes", [_cube("red_cube_left", "red", 0.2), _cube("red_cube_right", "red", 0.3), _target()]),
+        "commands": [
+            {"instruction": "把红色方块放到桌子上", "expected": "BLOCKED"},
+            {"instruction": "把左边红色方块放到桌子上", "expected": "SUCCEEDED", "target_id": "red_cube_left"},
+            {"instruction": "把右边红色方块放到桌子上", "expected": "SUCCEEDED", "target_id": "red_cube_right"},
+        ],
+        "scene": _scene("ambiguous_red_cubes", [_cube("red_cube_left", "red", 0.2, y=-0.1), _cube("red_cube_right", "red", 0.2, y=0.1), _target()]),
     },
     "no_destination": {
         "name": "缺少目标区（安全阻断）",
@@ -92,7 +153,7 @@ SCENARIOS: dict[str, dict] = {
     },
     "unsupported_push": {
         "name": "推送动作（策略阻断）",
-        "description": "A 能理解为 push，但第一阶段 B 只允许 pick_and_place，因此在策略门禁处阻断。",
+        "description": "A 能理解为 push，但当前 C 没有推送接触/路径执行源，因此在策略门禁处阻断。",
         "focus": "B：能力边界与策略门禁",
         "instruction": "把红色方块推到桌子上",
         "expected": "BLOCKED",
@@ -176,13 +237,13 @@ SCENARIOS: dict[str, dict] = {
         "scene": _scene(
             "sorting_workcell",
             [
-                _cube("red_sort_cube", "red", 0.16),
-                _cube("green_sort_cube", "green", 0.24),
-                _cube("blue_sort_cube", "blue", 0.32),
+                _cube("red_sort_cube", "red", 0.16, y=-0.18),
+                _cube("green_sort_cube", "green", 0.16, y=0.0),
+                _cube("blue_sort_cube", "blue", 0.16, y=0.18),
                 {
                     "id": "left_sort_tray",
                     "category": "红色托盘",
-                    "pose": {"x": 0.16, "y": 0.22, "z": 0.03},
+                    "pose": {"x": 0.32, "y": -0.18, "z": 0.03},
                     "dimensions": {"x": 0.12, "y": 0.12, "z": 0.03},
                     "attributes": {
                         "display_name": "红色托盘",
@@ -199,7 +260,7 @@ SCENARIOS: dict[str, dict] = {
                 {
                     "id": "middle_sort_tray",
                     "category": "绿色托盘",
-                    "pose": {"x": 0.24, "y": 0.22, "z": 0.03},
+                    "pose": {"x": 0.32, "y": 0.0, "z": 0.03},
                     "dimensions": {"x": 0.12, "y": 0.12, "z": 0.03},
                     "attributes": {
                         "display_name": "绿色托盘",
@@ -216,7 +277,7 @@ SCENARIOS: dict[str, dict] = {
                 {
                     "id": "right_sort_tray",
                     "category": "蓝色托盘",
-                    "pose": {"x": 0.32, "y": 0.22, "z": 0.03},
+                    "pose": {"x": 0.32, "y": 0.18, "z": 0.03},
                     "dimensions": {"x": 0.12, "y": 0.12, "z": 0.03},
                     "attributes": {
                         "display_name": "蓝色托盘",
@@ -235,6 +296,12 @@ SCENARIOS: dict[str, dict] = {
     },
 }
 
+# The two canonical perception fixtures are owned by the perception module.
+# Reuse those exact payloads in the catalog so the preset image, the P-stage
+# response, and the C-stage initial scene cannot drift apart.
+for _canonical_scene_id in ("stacking_cubes", "sorting_workcell"):
+    SCENARIOS[_canonical_scene_id]["scene"] = get_mock_scene(_canonical_scene_id)
+
 
 def list_scenarios() -> list[dict]:
     return [
@@ -245,7 +312,8 @@ def list_scenarios() -> list[dict]:
             "focus": item.get("focus", "闭环演示"),
             "instruction": item["instruction"],
             "expected": item["expected"],
-            "commands": item.get("commands", []),
+            "commands": deepcopy(item.get("commands", [])),
+            "scene": deepcopy(item["scene"]),
         }
         for scene_id, item in SCENARIOS.items()
     ]

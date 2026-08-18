@@ -21,7 +21,12 @@ const STATUS_LABELS = {
   SKIPPED: "已跳过",
 };
 const ACTION_LABELS = {
+  pick: "单独抓取",
   pick_and_place: "抓取并放置",
+  place: "放置",
+  transfer: "搬运",
+  fetch: "取物到目标",
+  stack: "堆叠",
   detect_object: "检测物体",
   move_to_object: "移动到物体",
   grasp: "抓取",
@@ -70,6 +75,12 @@ async function init() {
   buildTimeline();
   initModuleToggles();
   $("sceneSelect").addEventListener("change", onSceneChanged);
+  $("instruction").addEventListener("input", () => {
+    if (!state.response) {
+      updateEnvironmentQuick();
+      renderAcceptance(null);
+    }
+  });
   $("runButton").addEventListener("click", runDemo);
   $("resetButton").addEventListener("click", resetDemo);
   try {
@@ -117,10 +128,15 @@ function onSceneChanged() {
   const commands = scenario.commands?.length ? scenario.commands : [{ instruction: scenario.instruction }];
   $("quickCommands").innerHTML = commands.map((command) => `<button class="quick-btn" type="button">${escapeHtml(command.instruction)}</button>`).join("");
   $("quickCommands").querySelectorAll("button").forEach((button, index) => {
-    button.addEventListener("click", () => { $("instruction").value = commands[index].instruction; });
+    button.addEventListener("click", () => {
+      $("instruction").value = commands[index].instruction;
+      updateEnvironmentQuick();
+      renderAcceptance(null);
+    });
   });
-  renderMiniScene(scenario.id);
-  $("environmentQuick").innerHTML = `<span class="quick-label">${escapeHtml(scenario.focus || "闭环演示")}</span><strong>${escapeHtml(scenario.name)}</strong><span class="scenario-expectation">预期：${codeWithMeaning(scenario.expected, STATUS_LABELS)}</span>`;
+  renderMiniScene(scenario.scene);
+  renderEnvironmentDetails(scenario.scene);
+  updateEnvironmentQuick();
   resetDemo(false);
 }
 
@@ -140,10 +156,65 @@ function initModuleToggles() {
   });
 }
 
-function renderMiniScene(sceneId) {
-  const colors = sceneId === "ambiguous_red_cubes" ? ["red", "red"] : ["target_not_found", "unsupported_push", "invalid_destination", "single_red_cube"].includes(sceneId) ? ["red"] : ["red", "green"];
-  const target = sceneId !== "no_destination";
-  $("sceneMini").innerHTML = colors.map((color, index) => `<span class="mini-object ${color}" style="left:${35 + index * 18}%;top:${58 - index * 13}%"></span>`).join("") + (target ? '<span class="mini-object target" style="left:78%;top:67%"></span>' : "");
+const SCENE_BOUNDS = { xMin: -0.05, xMax: 0.50, yMin: -0.25, yMax: 0.25 };
+
+function selectedExpected() {
+  const scenario = selectedScenario();
+  if (!scenario) return "—";
+  const instruction = $("instruction")?.value?.trim();
+  const command = scenario.commands?.find((item) => item.instruction === instruction);
+  return command?.expected || scenario.expected;
+}
+
+function updateEnvironmentQuick() {
+  const scenario = selectedScenario();
+  if (!scenario || !$("environmentQuick")) return;
+  $("environmentQuick").innerHTML = `<span class="quick-label">${escapeHtml(scenario.focus || "闭环演示")}</span><strong>${escapeHtml(scenario.name)}</strong><span class="scenario-expectation">当前指令预期：${codeWithMeaning(selectedExpected(), STATUS_LABELS)}</span>`;
+}
+
+function worldToScreen(pose, width, height, margin) {
+  const x = Number(pose?.x || 0);
+  const y = Number(pose?.y || 0);
+  const lateral = Math.max(0, Math.min(1, (y - SCENE_BOUNDS.yMin) / (SCENE_BOUNDS.yMax - SCENE_BOUNDS.yMin)));
+  const depth = Math.max(0, Math.min(1, (x - SCENE_BOUNDS.xMin) / (SCENE_BOUNDS.xMax - SCENE_BOUNDS.xMin)));
+  return { x: margin + lateral * (width - margin * 2), y: height - margin - depth * (height - margin * 2) };
+}
+
+function sceneObjectColor(item) {
+  return item?.attributes?.color || (item?.execution?.valid_destination ? "target" : "blue");
+}
+
+function sceneObjectLabel(item) {
+  const displayName = item?.attributes?.display_name || item?.category || item?.id || "对象";
+  return displayName.length > 8 ? displayName.slice(0, 8) : displayName;
+}
+
+function sceneSpatialMessages(scene, limit = 4) {
+  return (scene?.spatial_messages || []).slice(0, limit).map((item) => item.message || item.text).filter(Boolean);
+}
+
+function renderMiniScene(scene) {
+  const objects = scene?.objects || [];
+  const html = objects.map((item) => {
+    const point = worldToScreen(item.pose, 100, 100, 14);
+    const color = sceneObjectColor(item);
+    return `<span class="mini-object ${escapeHtml(color)}${item.execution?.valid_destination ? " target" : ""}" style="left:${point.x.toFixed(1)}%;top:${point.y.toFixed(1)}%" title="${escapeHtml(`${sceneObjectLabel(item)} · ${item.id} · X=${Number(item.pose?.x || 0).toFixed(2)}, Y=${Number(item.pose?.y || 0).toFixed(2)}, Z=${Number(item.pose?.z || 0).toFixed(2)}`)}"></span>`;
+  }).join("");
+  $("sceneMini").innerHTML = html || '<span class="scene-empty">场景暂无对象</span>';
+  const messages = sceneSpatialMessages(scene, 3);
+  if ($("sceneSpatialMessage")) {
+    $("sceneSpatialMessage").innerHTML = messages.length
+      ? `<span class="scene-spatial-label">空间消息</span>${messages.map((message) => `<span>${escapeHtml(message)}</span>`).join("")}`
+      : '<span class="scene-spatial-label">空间消息</span><span>暂无可用空间关系</span>';
+  }
+}
+
+function renderEnvironmentDetails(scene) {
+  const detail = $("environmentDetail");
+  if (!detail || !scene) return;
+  const objects = scene.objects || [];
+  const messages = sceneSpatialMessages(scene, 8);
+  detail.innerHTML = `<div class="kv-grid"><div class="kv"><small>场景编号</small><strong>${idWithMeaning(scene.scene_id, "场景")}</strong></div><div class="kv"><small>坐标系</small><strong>${escapeHtml(scene.coordinate_frame || "world")} · X前后 / Y左右 / Z高度</strong></div></div><div class="object-list">${objects.map((item) => `<div class="object-row"><span class="object-name"><i class="object-dot ${escapeHtml(sceneObjectColor(item))}"></i>${escapeHtml(sceneObjectLabel(item))}</span><span class="object-meta">${idWithMeaning(item.id)}<br/>(${Number(item.pose?.x || 0).toFixed(2)}, ${Number(item.pose?.y || 0).toFixed(2)}, ${Number(item.pose?.z || 0).toFixed(2)})</span></div>`).join("")}</div><div class="spatial-detail"><strong>空间关系</strong>${messages.length ? messages.map((message) => `<div>${escapeHtml(message)}</div>`).join("") : "<div>暂无空间关系</div>"}</div>`;
 }
 
 function setHealth(data) {
@@ -165,11 +236,10 @@ function renderAcceptance(response = null) {
   if (!banner || !status || !detail) return;
 
   if (!response) {
-    const scenario = selectedScenario();
     banner.dataset.state = "pending";
     status.textContent = "等待运行";
-    detail.innerHTML = scenario
-      ? `预期结果：${codeWithMeaning(scenario.expected, STATUS_LABELS)} · 实际结果：尚未运行`
+    detail.innerHTML = selectedScenario()
+      ? `预期结果：${codeWithMeaning(selectedExpected(), STATUS_LABELS)} · 实际结果：尚未运行`
       : "选择场景并运行后，对比预期结果和系统实际结果。";
     return;
   }
@@ -269,9 +339,9 @@ function renderPerceptionPreview(scene) {
     return;
   }
   const objects = scene.objects || [];
-  const colorLabels = { red: "红色", green: "绿色", blue: "蓝色" };
+  const colorLabels = { red: "红色", green: "绿色", blue: "蓝色", target: "目标区" };
   const visibleObjects = objects.slice(0, 4);
-  preview.innerHTML = `<div class="preview-heading"><span>对象概览</span><span class="preview-state status-ok">${objects.length} 个对象</span></div>${visibleObjects.length ? `<div class="object-preview-list">${visibleObjects.map((item) => { const color = item.attributes?.color || "blue"; const pose = item.pose || {}; const targetLabel = item.execution?.valid_destination ? " · 目标区" : ""; return `<div class="object-preview-row"><span class="object-preview-name"><i class="object-preview-dot ${escapeHtml(color)}"></i>${escapeHtml(`${colorLabels[color] || "对象"} ${item.category || "物体"}`)}</span><span class="object-preview-meta">(${Number(pose.x || 0).toFixed(2)}, ${Number(pose.z || 0).toFixed(2)})${targetLabel}</span></div>`; }).join("")}</div>` : '<div class="object-preview-placeholder"><span>未发现对象</span></div>'}<p class="preview-note">${objects.length > visibleObjects.length ? `其余 ${objects.length - visibleObjects.length} 个对象请展开详情。` : "坐标为场景中的简要位置摘要。"}</p>`;
+  preview.innerHTML = `<div class="preview-heading"><span>对象概览</span><span class="preview-state status-ok">${objects.length} 个对象 · ${(scene.relations || []).length} 条关系</span></div>${visibleObjects.length ? `<div class="object-preview-list">${visibleObjects.map((item) => { const color = sceneObjectColor(item); const pose = item.pose || {}; const targetLabel = item.execution?.valid_destination ? " · 目标区" : ""; return `<div class="object-preview-row"><span class="object-preview-name"><i class="object-preview-dot ${escapeHtml(color)}"></i>${escapeHtml(`${colorLabels[color] || "对象"} ${item.category || "物体"}`)}</span><span class="object-preview-meta">X${Number(pose.x || 0).toFixed(2)} · Y${Number(pose.y || 0).toFixed(2)} · Z${Number(pose.z || 0).toFixed(2)}${targetLabel}</span></div>`; }).join("")}</div>` : '<div class="object-preview-placeholder"><span>未发现对象</span></div>'}<p class="preview-note">${objects.length > visibleObjects.length ? `其余 ${objects.length - visibleObjects.length} 个对象请展开详情。` : "统一坐标：X前后、Y左右、Z高度。下方同时展示空间消息。"}</p>`;
 }
 
 function renderPerception(scene) {
@@ -280,7 +350,8 @@ function renderPerception(scene) {
   $("perceptionQuick").innerHTML = `<span class="quick-label">已读取场景</span><strong>${escapeHtml(scene.scene_id)}</strong>`;
   $("perceptionMetrics").innerHTML = `<span>场景 <b>${escapeHtml(scene.scene_id)}</b></span><span>物体数量 <b>${objects.length}</b></span>`;
   renderPerceptionPreview(scene);
-  $("perceptionResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>场景编号</small><strong>${idWithMeaning(scene.scene_id, "场景")}</strong></div><div class="kv"><small>物体数量</small><strong>${objects.length}</strong></div></div><div class="object-list">${objects.map((item) => `<div class="object-row"><span class="object-name"><i class="object-dot ${escapeHtml(item.attributes?.color || "blue")}"></i>${escapeHtml(item.category)}</span><span class="object-meta">${idWithMeaning(item.id)}<br/>坐标 (${Number(item.pose?.x || 0).toFixed(2)}, ${Number(item.pose?.z || 0).toFixed(2)})</span></div>`).join("")}</div>`;
+  const messages = sceneSpatialMessages(scene, 10);
+  $("perceptionResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>场景编号</small><strong>${idWithMeaning(scene.scene_id, "场景")}</strong></div><div class="kv"><small>物体数量</small><strong>${objects.length}</strong></div><div class="kv"><small>空间关系</small><strong>${(scene.relations || []).length} 条</strong></div><div class="kv"><small>空间消息</small><strong>${messages.length} 条</strong></div></div><div class="object-list">${objects.map((item) => `<div class="object-row"><span class="object-name"><i class="object-dot ${escapeHtml(sceneObjectColor(item))}"></i>${escapeHtml(item.category)}</span><span class="object-meta">${idWithMeaning(item.id)}<br/>坐标 X/Y/Z = (${Number(item.pose?.x || 0).toFixed(2)}, ${Number(item.pose?.y || 0).toFixed(2)}, ${Number(item.pose?.z || 0).toFixed(2)})</span></div>`).join("")}</div><div class="spatial-detail"><strong>空间消息</strong>${messages.length ? messages.map((message) => `<div>${escapeHtml(message)}</div>`).join("") : "<div>暂无空间消息</div>"}</div>`;
 }
 
 function renderIntent(task) {
@@ -374,15 +445,33 @@ function renderExecutionScene(response) {
   const execution = response.result?.execution;
   const snapshot = response.backend_snapshot || {};
   const svg = $("mockVisual").querySelector("svg");
-  const map = (pose) => ({ x: 80 + ((Number(pose?.x || 0) + 0.05) / 0.5) * 490, y: 205 - ((Number(pose?.y || 0) + 0.18) / 0.36) * 125 });
+  const map = (pose) => worldToScreen(pose, 640, 300, 56);
   const objects = scene.objects || [];
-  const objectSvg = objects.map((item) => { const point = map(snapshot.objects?.[item.id]?.pose || item.pose); const color = item.attributes?.color || "blue"; const visualName = { red: "红方块", green: "绿方块", blue: "蓝方块" }[color] || item.category || item.id; const size = item.execution?.valid_destination ? { w: 92, h: 48 } : { w: 34, h: 34 }; return item.execution?.valid_destination ? `<rect class="target-zone" x="${point.x - size.w / 2}" y="${point.y - size.h / 2}" width="${size.w}" height="${size.h}" rx="8"/><text x="${point.x}" y="${point.y + 4}" text-anchor="middle" fill="#ffcf9d" font-size="11">目标区</text>` : `<rect class="cube ${escapeHtml(color)}" x="${point.x - size.w / 2}" y="${point.y - size.h / 2}" width="${size.w}" height="${size.h}" rx="6"/><text x="${point.x}" y="${point.y + 4}" text-anchor="middle" fill="#fff" font-size="10">${escapeHtml(visualName)}</text>`; }).join("");
+  const targetSvg = objects.filter((item) => item.execution?.valid_destination).map((item) => {
+    const point = map(item.pose);
+    const dimensions = item.dimensions || {};
+    const width = Math.max(72, Math.min(128, Number(dimensions.y || 0.12) * 500));
+    const height = Math.max(40, Math.min(62, Number(dimensions.x || 0.12) * 500));
+    return `<rect class="target-zone" x="${point.x - width / 2}" y="${point.y - height / 2}" width="${width}" height="${height}" rx="8"/><text x="${point.x}" y="${point.y + 4}" text-anchor="middle" fill="#ffcf9d" font-size="11">${escapeHtml(sceneObjectLabel(item))}</text>`;
+  }).join("");
+  const movableObjects = objects.filter((item) => !item.execution?.valid_destination);
+  const initialSvg = movableObjects.map((item) => {
+    const point = map(item.pose);
+    const color = sceneObjectColor(item);
+    return `<rect class="cube cube-ghost ${escapeHtml(color)}" x="${point.x - 18}" y="${point.y - 18}" width="36" height="36" rx="6"/><text x="${point.x}" y="${point.y + 4}" text-anchor="middle" fill="#a9bfd5" font-size="9">初始</text>`;
+  }).join("");
+  const finalSvg = movableObjects.map((item) => {
+    const point = map(snapshot.objects?.[item.id]?.pose || item.pose);
+    const color = sceneObjectColor(item);
+    return `<rect class="cube ${escapeHtml(color)}" x="${point.x - 18}" y="${point.y - 18}" width="36" height="36" rx="6"/><text x="${point.x}" y="${point.y + 4}" text-anchor="middle" fill="#fff" font-size="9">${escapeHtml(sceneObjectLabel(item))}</text>`;
+  }).join("");
   const points = (execution?.trajectory_points || []).map((item) => map(item.pose));
   const path = points.length ? points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ") : "";
   const eef = points[points.length - 1] || map(snapshot.eef_pose || { x: 0, y: 0 });
   const heldLabel = snapshot.held_id ? idWithMeaning(snapshot.held_id, "当前持有") : "无";
   const safeStopLabel = snapshot.safe_stopped ? "是（已停止）" : "否（正常）";
-  svg.innerHTML = `<rect class="scene-table" x="42" y="48" width="556" height="210" rx="15"/><text x="60" y="74" fill="#7e9bb5" font-size="11">C 模拟执行后端 · 世界坐标系</text>${objectSvg}${path ? `<path class="trajectory" d="${path}"/>` : ""}<circle class="eef" cx="${eef.x}" cy="${eef.y}" r="8"/><text x="${eef.x + 14}" y="${eef.y + 4}" fill="#ffcf9d" font-size="10">夹爪</text><text x="42" y="282" fill="#708ba5" font-size="10">${execution ? `轨迹点：${points.length} · 当前持有：${heldLabel} · 安全停止：${safeStopLabel}` : "等待 C 模块执行"}</text>`;
+  const legend = execution ? "虚线=初始位置 · 实线=当前位置 · 轨迹=夹爪路径" : "当前展示感知到的初始场景 · X前后 / Y左右";
+  svg.innerHTML = `<rect class="scene-table" x="42" y="48" width="556" height="210" rx="15"/><text x="60" y="74" fill="#7e9bb5" font-size="11">C 模拟执行后端 · 世界坐标系</text>${targetSvg}${initialSvg}${execution ? finalSvg : ""}${path ? `<path class="trajectory" d="${path}"/>` : ""}${execution ? `<circle class="eef" cx="${eef.x}" cy="${eef.y}" r="8"/><text x="${eef.x + 14}" y="${eef.y + 4}" fill="#ffcf9d" font-size="10">夹爪</text>` : ""}<text x="42" y="282" fill="#708ba5" font-size="10">${execution ? `轨迹点：${points.length} · 当前持有：${heldLabel} · 安全停止：${safeStopLabel} · ${legend}` : legend}</text>`;
 }
 
 function resultStatus(result) { if (!result) return "无结果"; if (result.status === "SUCCEEDED") return "闭环成功"; if (result.status === "BLOCKED") return "安全阻断"; if (result.status === "SAFE_STOP") return "安全停止"; if (result.status === "FAILED") return "执行失败"; return STATUS_LABELS[result.status] || result.status || "完成"; }

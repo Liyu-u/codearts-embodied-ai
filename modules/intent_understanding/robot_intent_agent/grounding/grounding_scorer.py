@@ -90,29 +90,21 @@ class GroundingScorer:
         positions = [getattr(item, "position", None) for item in peers]
         position = getattr(candidate, "position", None)
         if position is not None and positions:
-            ys = [float(getattr(item, "y", 0.0)) for item in positions]
-            xs = [float(getattr(item, "x", 0.0)) for item in positions]
-            cy, cx = float(getattr(position, "y", 0.0)), float(getattr(position, "x", 0.0))
-            # Perception adapters do not all expose the same horizontal axis.
-            # Prefer the conventional y axis when it contains a real spread;
-            # fall back to x only when y is constant.  This makes a spatial
-            # cue useful without hard-coding one simulator's coordinate
-            # convention, and leaves identical candidates ambiguous.
-            horizontal_values = ys if max(ys) - min(ys) > 1e-9 else xs
-            horizontal_value = cy if horizontal_values is ys else cx
-            if any(token in text for token in ("左侧", "左边", "靠近左", "left")) and horizontal_value <= min(horizontal_values) + 1e-9:
+            lateral_values = [float(getattr(item, "y", 0.0)) for item in positions]
+            depth_values = [float(getattr(item, "x", 0.0)) for item in positions]
+            lateral_value = float(getattr(position, "y", 0.0))
+            depth_value = float(getattr(position, "x", 0.0))
+            if any(token in text for token in ("左侧", "左边", "靠近左", "left")) and lateral_value <= min(lateral_values) + 1e-9:
                 score += 0.22; evidence.append("relative_position=left")
-            if any(token in text for token in ("右侧", "右边", "靠近右", "right")) and horizontal_value >= max(horizontal_values) - 1e-9:
+            if any(token in text for token in ("右侧", "右边", "靠近右", "right")) and lateral_value >= max(lateral_values) - 1e-9:
                 score += 0.22; evidence.append("relative_position=right")
-            depth_values = xs if max(xs) - min(xs) > 1e-9 else ys
-            depth_value = cx if depth_values is xs else cy
             if any(token in text for token in ("前方", "前面", "front")) and depth_value <= min(depth_values) + 1e-9:
                 score += 0.22; evidence.append("relative_position=front")
             if any(token in text for token in ("后方", "后面", "behind")) and depth_value >= max(depth_values) - 1e-9:
                 score += 0.22; evidence.append("relative_position=behind")
-            if any(token in text for token in ("中间", "middle")) and len(xs) >= 3:
-                median_x = sorted(xs)[len(xs) // 2]
-                if abs(cx - median_x) <= max(0.01, (max(xs) - min(xs)) * 0.35):
+            if any(token in text for token in ("中间", "middle")) and len(lateral_values) >= 3:
+                median_lateral = sorted(lateral_values)[len(lateral_values) // 2]
+                if abs(lateral_value - median_lateral) <= max(0.01, (max(lateral_values) - min(lateral_values)) * 0.35):
                     score += 0.18; evidence.append("relative_position=middle")
         if bbox is not None and any(token in text for token in ("细长", "长条", "elongated")):
             dims = [float(getattr(bbox, key, 0.0)) for key in ("width", "height", "depth")]

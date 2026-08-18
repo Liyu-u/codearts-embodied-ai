@@ -68,6 +68,10 @@ select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3p
 .mini-object { position: absolute; width: 21px; height: 21px; border-radius: 5px; transform: translate(-50%, -50%); box-shadow: 0 7px 15px rgba(0, 0, 0, .3); }
 .mini-object.red { background: #d8747a; } .mini-object.green { background: #66c9af; } .mini-object.blue { background: #7ea8d2; }
 .mini-object.target { width: 58px; height: 31px; border: 1px dashed rgba(244, 210, 175, .72); background: rgba(227, 170, 118, .27); border-radius: 7px; }
+.scene-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 11px; }
+.scene-spatial-message { display: flex; flex-wrap: wrap; gap: 5px; min-height: 24px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.scene-spatial-message span { padding: 4px 6px; border: 1px solid rgba(121, 209, 189, .16); border-radius: 6px; background: rgba(8, 17, 30, .22); }
+.scene-spatial-message .scene-spatial-label { color: var(--accent); border-color: transparent; background: transparent; padding-left: 0; }
 .module-quick { color: rgba(241, 245, 249, .86); min-height: 30px; padding: 9px 10px; border-radius: 8px; background: rgba(8, 17, 30, .34); font-size: 12px; line-height: 1.45; }
 .module-quick.prominent { font-size: 16px; font-weight: 700; color: #fff; background: rgba(8, 17, 30, .48); }
 .quick-label { color: rgba(241, 245, 249, .58); margin-right: 7px; font-size: 11px; font-weight: 400; }
@@ -95,7 +99,7 @@ select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3p
 .object-preview-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 25px; color: rgba(241, 245, 249, .88); font-size: 11px; }
 .object-preview-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .object-preview-dot { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
-.object-preview-dot.red { background: #d8747a; } .object-preview-dot.green { background: #66c9af; } .object-preview-dot.blue { background: #7ea8d2; }
+.object-preview-dot.red { background: #d8747a; } .object-preview-dot.green { background: #66c9af; } .object-preview-dot.blue { background: #7ea8d2; } .object-preview-dot.target { background: var(--orange); }
 .object-preview-meta { color: var(--muted); font-size: 10px; white-space: nowrap; }
 .object-preview-placeholder { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 7px; color: #c0ccda; font-size: 11px; }
 .object-preview-placeholder span { padding: 7px 8px; border-radius: 7px; background: rgba(8, 17, 30, .38); }
@@ -149,6 +153,9 @@ select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3p
 .target-zone { fill: rgba(227, 170, 118, .14); stroke: var(--orange); stroke-dasharray: 6 5; }
 .cube { stroke: rgba(255, 255, 255, .5); stroke-width: 1; }
 .cube.red { fill: #cc6d75; } .cube.green { fill: #57b99f; } .cube.blue { fill: #6e96c2; }
+.cube-ghost { fill-opacity: .08 !important; stroke: rgba(169, 191, 213, .72); stroke-dasharray: 4 3; }
+.spatial-detail { display: grid; gap: 5px; margin-top: 10px; padding: 10px; border-radius: 8px; color: var(--muted); background: rgba(29, 49, 72, .42); line-height: 1.5; }
+.spatial-detail strong { color: var(--accent); }
 .trajectory { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 8 8; animation: dash 1.5s linear infinite; }
 .eef { fill: var(--orange); stroke: #fff; stroke-width: 2; }
 @keyframes dash { to { stroke-dashoffset: -32; } }

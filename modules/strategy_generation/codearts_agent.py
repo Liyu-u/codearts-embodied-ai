@@ -12,6 +12,9 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+import threading
+from uuid import uuid4
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -28,6 +31,7 @@ ACTION_WHITELIST = {
 OUTPUT_BEGIN = "STRATEGY_JSON_BEGIN"
 OUTPUT_END = "STRATEGY_JSON_END"
 REPO_ROOT = Path(__file__).resolve().parents[2]
+_CLI_LOCK = threading.Lock()
 
 
 class CodeArtsStrategyClient:
@@ -73,23 +77,29 @@ class CodeArtsStrategyClient:
             return _failure("CODEARTS_CLI_NOT_FOUND", trace)
 
         command = [resolved, "run", "--format", "json"]
+        if _truthy_env("CODEARTS_CLI_PURE"):
+            command.insert(2, "--pure")
         if self.agent:
             command.extend(["--agent", self.agent])
         if self.model:
             command.extend(["--model", self.model])
+        # CodeArts derives a default session title from the beginning of the
+        # prompt.  Our prompts intentionally share that prefix; without an
+        # explicit unique title, consecutive non-interactive calls can attach
+        # to the same local session and stall on Windows.
+        command.extend(
+            [
+                "--title",
+                f"robot-strategy-{task.get('task_id', 'unknown')}-{uuid4().hex[:10]}",
+            ]
+        )
         command.append(_build_prompt(task))
 
         try:
-            completed = self._runner(
-                command,
-                cwd=str(REPO_ROOT),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=self.timeout_s,
-                check=False,
-            )
+            # Demo HTTP uses a threaded server; serialize provider calls so
+            # two requests cannot contend for one local CodeArts session.
+            with _CLI_LOCK:
+                completed = self._run_cli(command)
         except subprocess.TimeoutExpired:
             return _failure("CODEARTS_CLI_TIMEOUT", trace)
         except OSError as exc:
@@ -105,6 +115,20 @@ class CodeArtsStrategyClient:
             return _failure("CODEARTS_OUTPUT_MISSING_STRATEGY", trace)
 
         errors = validate_strategy(candidate, task)
+        if errors == ["task_id does not match input task"] and _has_explicit_task_id(candidate):
+            # ``task_id`` is transport metadata, not a planning decision.  A
+            # general-purpose agent can still copy it from a Skill example;
+            # spending a second remote request to repair that single field
+            # makes the real path unnecessarily slow and prone to timeouts.
+            # Bind the already validated candidate to the original task in an
+            # explicit local compilation step.  No other field is normalized:
+            # target/destination IDs, action order, references and recovery
+            # policy are validated again after the binding.
+            candidate = dict(candidate)
+            candidate["task_id"] = task["task_id"]
+            trace["task_id_bound_locally"] = True
+            trace["binding_reason"] = "provider_task_id_mismatch_only"
+            errors = validate_strategy(candidate, task)
         if errors:
             return _failure("CODEARTS_STRATEGY_REJECTED:" + errors[0], trace)
 
@@ -122,6 +146,42 @@ class CodeArtsStrategyClient:
         )
         return {"success": True, "strategy": strategy, "error": None, "trace": trace}
 
+    def _run_cli(self, command: list[str]) -> Any:
+        """Run the CLI without pipe back-pressure on Windows.
+
+        CodeArts can emit a multi-event JSON stream and may leave a helper
+        process attached to stdout for a short period.  Capturing that stream
+        with ``PIPE`` can deadlock the Python parent on Windows.  The real
+        runner therefore captures into temporary files; injected test runners
+        keep the lightweight in-memory path.
+        """
+        kwargs = {
+            "cwd": str(REPO_ROOT),
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "timeout": self.timeout_s,
+            "check": False,
+        }
+        if self._runner is not subprocess.run:
+            return self._runner(command, capture_output=True, **kwargs)
+
+        with (
+            tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as stdout_file,
+            tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as stderr_file,
+        ):
+            completed = self._runner(
+                command,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                **kwargs,
+            )
+            stdout_file.seek(0)
+            stderr_file.seek(0)
+            completed.stdout = stdout_file.read()
+            completed.stderr = stderr_file.read()
+            return completed
+
     def _resolve_executable(self) -> str | None:
         path = Path(self.executable)
         if path.parent != Path(".") and path.is_file():
@@ -137,8 +197,23 @@ def _positive_int_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _failure(error: str, trace: dict[str, Any]) -> dict[str, Any]:
     return {"success": False, "strategy": None, "error": error, "trace": trace}
+
+
+def _has_explicit_task_id(strategy: dict[str, Any]) -> bool:
+    """Return whether a provider supplied a concrete ID that can be bound.
+
+    Missing metadata is not eligible for binding: the provider must still
+    return a complete strategy object.  Only a concrete, mismatching ID is
+    treated as transport metadata; all semantic fields remain untrusted.
+    """
+    value = strategy.get("task_id")
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _compact_error(value: str) -> str:
@@ -147,19 +222,42 @@ def _compact_error(value: str) -> str:
 
 
 def _build_prompt(task: dict[str, Any]) -> str:
-    task_json = json.dumps(task, ensure_ascii=False, indent=2)
-    return f"""请使用 robot-strategy Skill，为下面的 task.v1 生成一个安全的 strategy.v1。
+    task_id = task.get("task_id")
+    target_ids = task.get("target_ids") or []
+    destination_id = task.get("destination_id")
+    target_id = target_ids[0] if target_ids else None
+    # Keep this prompt deliberately compact.  The CLI is non-interactive and
+    # long planning instructions make some CodeArts models enter tool/reasoning
+    # loops instead of returning the required JSON event.
+    return f"""只返回一个策略 JSON，不要调用工具、读取文件或输出解释。
+任务：task_id={task_id}; target_id={target_id}; destination_id={destination_id}
+必须放在 {OUTPUT_BEGIN} 和 {OUTPUT_END} 之间，且严格使用此结构：
+{{"schema_version":"strategy.v1","task_id":"{task_id}","steps":[
+{{"step_id":"detect","action":"detect_object","arguments":{{"object_name":"{target_id}"}}}},
+{{"step_id":"approach","action":"move_to_object","arguments":{{"object_id":"$detect.object_id"}}}},
+{{"step_id":"grasp","action":"grasp","arguments":{{"object_id":"$detect.object_id"}}}},
+{{"step_id":"target","action":"move_to_target","arguments":{{"target":"{destination_id}"}}}},
+{{"step_id":"release","action":"release","arguments":{{}}}}],"code":null}}
+只允许这五个 action；字段名必须是 step_id/action/arguments；不得输出 target_id、target_ids 或 object_id 顶层字段；不得改变三个 ID。
+"""
 
-硬性要求：
-1. 只输出结构化策略，不生成 Python、Shell 或其他可执行代码，code 必须为 null。
-2. action 只能使用 detect_object、move_to_object、grasp、move_to_target、release。
-3. task_id 必须原样保留；目标和目的地必须使用输入中的稳定 ID。
-4. 所有 step_id 唯一；引用格式为 $step_id.field。
-5. 输出必须放在 {OUTPUT_BEGIN} 与 {OUTPUT_END} 之间，标记之间只能有一个 JSON 对象。
-6. 不要修改仓库文件，不要运行命令；本次任务只返回策略 JSON。
+
+def _build_repair_prompt(task: dict[str, Any], candidate: dict[str, Any]) -> str:
+    """Ask the provider to repair one rejected strategy without broadening it."""
+    task_json = json.dumps(task, ensure_ascii=False, indent=2)
+    candidate_json = json.dumps(candidate, ensure_ascii=False, indent=2)
+    return f"""请修复下面已经生成但未通过本地契约校验的 strategy.v1。
+
+只允许修复 task_id：必须把 strategy.task_id 设置为输入任务的精确值 `{task.get('task_id')}`。
+保留所有步骤、动作、参数、稳定目标 ID 和目的地 ID，不得引入新动作或新 ID。
+code 必须为 null。不要输出解释、Markdown 或可执行代码。
+仍然必须使用 {OUTPUT_BEGIN} 与 {OUTPUT_END} 标记，标记之间只能有一个 JSON 对象。
 
 输入任务：
 {task_json}
+
+待修复策略：
+{candidate_json}
 """
 
 

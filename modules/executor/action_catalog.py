@@ -23,10 +23,16 @@ def validate_action_arguments(action: str, arguments: dict) -> list[str]:
         if keys != {"object_id"}:
             return [f"INVALID_ARGUMENT:{action}:object_id is required"]
     elif action == "move_to_target":
-        allowed = {"destination_id", "target"}
-        if len(keys & allowed) != 1 or keys - allowed:
+        allowed = {"destination_id", "target", "placement_mode"}
+        target_keys = keys & {"destination_id", "target"}
+        if len(target_keys) != 1 or keys - allowed:
             return [
                 "INVALID_ARGUMENT:move_to_target:use exactly one destination_id or target"
+            ]
+        placement_mode = arguments.get("placement_mode", "direct")
+        if placement_mode not in {"direct", "stack_on"}:
+            return [
+                "INVALID_ARGUMENT:move_to_target:placement_mode must be direct or stack_on"
             ]
     elif action == "release" and keys:
         return ["INVALID_ARGUMENT:release:arguments must be empty"]

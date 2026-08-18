@@ -21,9 +21,11 @@
 | 016-017 | 动作边界 | fetch/handover 因缺少交付或接收方信息在 A 阶段澄清 |
 | 018 | 动作边界 | custom 无法安全归类，在 A 阶段澄清并禁止执行 |
 
-当前闭环的业务动作边界是：只有 `PLACE` 在 A 输出为 `pick_and_place` 后能进入 B；
-`pick`、`fetch`、`handover`、`transfer`、`dynamic_grasp`、`push`、`pour`、
-`stack`、`wait` 可以被 A 识别或归类，但第一阶段 B 不生成可执行策略。
+当前闭环的业务动作边界是：A 输出 `READY` 且实体绑定完整时，`pick/grasp`、
+`PLACE`（映射为 `pick_and_place`）、`transfer`、有明确目标区的 `fetch` 和
+`stack` 可以进入 B；它们分别复用三步或五步 C 原子策略。
+`handover`、`dynamic_grasp`、`push`、`pour`、`wait` 仍可被 A 识别或归类，
+但当前没有共同的 C 执行源，因此 B 阻断或 A 要求澄清。
 无法安全归类的 `custom` 直接在 A 阶段阻断，不进入 B/C。
 C 的执行原子动作是 `detect_object`、`move_to_object`、`grasp`、
 `move_to_target`、`release`；恢复和 `stop` 是执行控制机制，不是当前用户级业务动作。

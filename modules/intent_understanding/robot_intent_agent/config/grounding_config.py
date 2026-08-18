@@ -20,8 +20,8 @@ class SpatialConfig:
     """Defines which coordinate axes map to which spatial directions.
 
     From the robot's perspective looking at the workspace:
-      - x: forward/backward
-      - y: left/right
+      - x: forward/backward depth
+      - y: left/right lateral position
       - z: up/down
     """
 

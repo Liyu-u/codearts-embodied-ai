@@ -46,6 +46,55 @@ class DemoQualityTests(unittest.TestCase):
                 self.assertTrue(item["instruction"])
                 self.assertIn(item["expected"], {"SUCCEEDED", "BLOCKED", "FAILED", "SAFE_STOP"})
 
+    def test_catalog_scene_is_the_same_scene_used_by_the_pipeline(self):
+        """The preset, P response, and C input must share object IDs and poses."""
+        for item in list_scenarios():
+            with self.subTest(scene_id=item["id"]):
+                response = _run(item["id"])
+                catalog_objects = {
+                    obj["id"]: obj for obj in item["scene"].get("objects", [])
+                }
+                response_objects = {
+                    obj["id"]: obj for obj in response["scene"].get("objects", [])
+                }
+                self.assertEqual(set(response_objects), set(catalog_objects))
+                for object_id, catalog_object in catalog_objects.items():
+                    self.assertEqual(
+                        response_objects[object_id]["pose"],
+                        catalog_object["pose"],
+                    )
+                self.assertIn("spatial_axes", response["scene"])
+                self.assertIn("spatial_messages", response["scene"])
+
+    def test_spatial_messages_and_left_right_language_ground_the_same_object(self):
+        scenario = get_scenario("ambiguous_red_cubes")
+        relation_keys = {
+            (item["subject"], item["predicate"], item["object"])
+            for item in scenario["scene"].get("relations", [])
+        }
+        self.assertIn(
+            ("red_cube_left", "left_of", "red_cube_right"),
+            relation_keys,
+        )
+        self.assertTrue(any("左侧" in item["message"] for item in scenario["scene"]["spatial_messages"]))
+
+        response = _run(
+            "ambiguous_red_cubes",
+            "把左边红色方块放到桌子上",
+        )
+        self.assertEqual(response["result"]["status"], "SUCCEEDED")
+        self.assertEqual(response["result"]["task"]["target_ids"], ["red_cube_left"])
+        self.assertTrue(response["acceptance"]["passed"])
+
+    def test_execution_trajectory_contains_grasp_and_release(self):
+        response = _run("single_red_cube")
+        execution = response["result"]["execution"]
+        actions = [item["action"] for item in execution["trajectory_points"]]
+        self.assertIn("move_to_object", actions)
+        self.assertIn("grasp", actions)
+        self.assertIn("move_to_target", actions)
+        self.assertIn("release", actions)
+
     def test_success_scenarios_have_complete_execution_evidence(self):
         for item in list_scenarios():
             if item["expected"] != "SUCCEEDED":
@@ -61,11 +110,14 @@ class DemoQualityTests(unittest.TestCase):
 
                 self.assertEqual(result["status"], "SUCCEEDED")
                 self.assertEqual(task["status"], "READY")
-                self.assertEqual(task["action"], "pick_and_place")
                 self.assertFalse(strategy.get("blocked", False))
+                task_action = task["action"]
+                expected_actions = ["detect_object", "move_to_object", "grasp"]
+                if task_action not in {"pick", "grasp"}:
+                    expected_actions += ["move_to_target", "release"]
                 self.assertEqual(
                     [step["action"] for step in strategy["steps"]],
-                    ["detect_object", "move_to_object", "grasp", "move_to_target", "release"],
+                    expected_actions,
                 )
                 self.assertEqual(execution["status"], "SUCCEEDED")
                 self.assertTrue(execution["steps"])
@@ -75,11 +127,19 @@ class DemoQualityTests(unittest.TestCase):
                 self.assertTrue(diagnosis["final_passed"])
                 self.assertTrue(diagnosis["execution_passed"])
 
-                snapshot = response["backend_snapshot"]["objects"]
-                self.assertEqual(
-                    snapshot[task["target_ids"][0]]["pose"],
-                    snapshot[task["destination_id"]]["pose"],
-                )
+                snapshot = response["backend_snapshot"]
+                if task_action in {"pick", "grasp"}:
+                    self.assertEqual(snapshot["held_id"], task["target_ids"][0])
+                else:
+                    objects = snapshot["objects"]
+                    target_pose = objects[task["target_ids"][0]]["pose"]
+                    destination_pose = objects[task["destination_id"]]["pose"]
+                    if task_action == "stack":
+                        self.assertEqual(target_pose["x"], destination_pose["x"])
+                        self.assertEqual(target_pose["y"], destination_pose["y"])
+                        self.assertGreater(target_pose["z"], destination_pose["z"])
+                    else:
+                        self.assertEqual(target_pose, destination_pose)
 
                 if item["id"] == "tracecoder_repair":
                     self.assertEqual(result["retry_count"], 1)

@@ -86,6 +86,11 @@ class DemoScenarioPipelineTests(unittest.TestCase):
                 )
                 result = response["result"]
                 self.assertEqual(result["status"], command["expected"], result)
+                self.assertEqual(
+                    response["acceptance"]["expected_status"],
+                    command["expected"],
+                )
+                self.assertTrue(response["acceptance"]["passed"])
 
                 if command["expected"] != "SUCCEEDED":
                     self.assertNotIn("execution", result)

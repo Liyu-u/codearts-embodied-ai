@@ -238,9 +238,13 @@ class RepairAgent:
         if failure_type == "GOAL_NOT_REACHED":
             goal = _first_failed_goal(evaluation)
             final_state = _first_final_state(evaluation)
-            if goal and goal.get("type") == "object_inside":
+            if goal and goal.get("type") in {"object_inside", "object_on"}:
                 robot = final_state.get("robot", {})
                 if robot.get("gripper_object") == goal.get("object"):
+                    target = goal.get("container") or goal.get("base")
+                    move_arguments = {"target": target}
+                    if goal.get("type") == "object_on":
+                        move_arguments["placement_mode"] = "stack_on"
                     return {
                         "summary": "物体仍在夹爪中，补充移动到目标并释放。",
                         "changes": [
@@ -249,7 +253,7 @@ class RepairAgent:
                                 "content": {
                                     "id": "repair_move_to_target",
                                     "action": "move_to_target",
-                                    "arguments": {"target": goal["container"]},
+                                    "arguments": move_arguments,
                                 },
                             },
                             {

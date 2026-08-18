@@ -97,8 +97,10 @@ codearts agent list
 CODEARTS_STRATEGY_MODE=required
 CODEARTS_CLI=codearts
 CODEARTS_STRATEGY_AGENT=
-CODEARTS_STRATEGY_MODEL=
+CODEARTS_STRATEGY_MODEL=huaweicloud-maas/openpangu-2.0-flash
 CODEARTS_STRATEGY_TIMEOUT_S=120
+# 可选：隔离项目插件，仅执行纯 CodeArts 非交互请求
+CODEARTS_CLI_PURE=1
 ```
 
 三种模式：
@@ -106,6 +108,9 @@ CODEARTS_STRATEGY_TIMEOUT_S=120
 - `required`：比赛演示推荐。CodeArts 未安装、调用失败或输出不安全时阻断。
 - `auto`：开发联调推荐。优先调用 CodeArts，失败时使用本地五步策略，并记录失败原因。
 - `off`：完全关闭 CodeArts，只使用本地确定性策略。
+
+Demo 使用线程锁串行化 CodeArts 请求；重复基准运行时不要同时启动其他 CodeArts
+评估任务，否则云端并发或本地会话资源会影响延迟和稳定性结论。
 
 如果已经创建专用的只读 CodeArts 智能体，将名称写入
 `CODEARTS_STRATEGY_AGENT`。运行时智能体应禁止文件写入和 Shell 权限。
@@ -129,10 +134,10 @@ python -m unittest tests.unit.test_codearts_agent tests.contract.test_strategy_s
 
 ## 当前边界
 
-1. 公开适配器第一阶段只接受 `READY + pick_and_place`。
-2. 必须有且只有一个稳定 `target_ids`，并且必须有稳定 `destination_id`。
-3. 其他动作和缺少绑定的任务输出阻断结果，不交给 C 执行。
+1. 公开适配器只接受 `READY` 且已完成稳定实体绑定的任务。
+2. 当前共同开放的用户级动作是 `pick/grasp`、`pick_and_place/place`、`transfer`、`fetch`（必须有明确目标区）和 `stack`。
+3. 抓取类动作必须且只能有一个稳定 `target_ids`；搬运/放置/堆叠还必须有稳定 `destination_id`，`stack` 不能把目标物自身作为底座。
 4. `object_name` 与 `target` 是为了兼容 D 现有字段名；字段值仍是 perception 的稳定 ID。
-5. CodeArts 输出永远被视为不可信输入，必须通过本地校验才交给 C。
-6. 内部旧版 Python 代码生成器仍可单独研究，但不是 B-C 正式接口。
-7. 当前只完成 CLI/Skill 接入；后续可把校验、Mock/Isaac 执行封装成 MCP 工具。
+5. `stack` 通过 C 已有的 `move_to_target` 原子动作传递 `placement_mode=stack_on`，不执行任意代码或新增隐式动作。
+6. `push`、`dynamic_grasp`、`handover`、`pour`、`wait`、`custom` 仍输出阻断/澄清结果，因为当前没有完整的 C 执行源或安全闭环。
+7. CodeArts 输出永远被视为不可信输入，必须通过本地校验才交给 C；内部旧版 Python 代码生成器不是 B-C 正式接口。

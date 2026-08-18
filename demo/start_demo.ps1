@@ -2,7 +2,10 @@
 param(
     [int]$Port = 8765,
     [int]$WaitSeconds = 15,
-    [string]$PythonPath = ""
+    [string]$PythonPath = "",
+    [ValidateSet("off", "auto", "required")]
+    [string]$CodeArtsMode = "",
+    [string]$CodeArtsModel = ""
 )
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -34,6 +37,12 @@ if ($existingListener) {
 }
 
 $env:DEMO_PORT = "$Port"
+if ($CodeArtsMode) {
+    $env:CODEARTS_STRATEGY_MODE = $CodeArtsMode
+}
+if ($CodeArtsModel) {
+    $env:CODEARTS_STRATEGY_MODEL = $CodeArtsModel
+}
 $tempRoot = [System.IO.Path]::GetTempPath()
 $stdoutLog = Join-Path $tempRoot "closed-loop-demo-$Port.out.log"
 $stderrLog = Join-Path $tempRoot "closed-loop-demo-$Port.err.log"

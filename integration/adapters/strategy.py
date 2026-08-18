@@ -18,6 +18,23 @@ from typing import Any, List
 from modules.strategy_generation.codearts_agent import CodeArtsStrategyClient
 
 
+# These are the task-level actions for which A's grounded constraints can be
+# lowered to the primitive source that C actually exposes.  This is a
+# deliberately small allow-list: understanding an action in A is not enough
+# to make it executable.
+SUPPORTED_PRIMITIVE_TASK_ACTIONS = {
+    "pick",
+    "grasp",
+    "pick_and_place",
+    "place",
+    "transfer",
+    "fetch",
+    "stack",
+}
+
+CODEARTS_TASK_ACTIONS = {"pick_and_place"}
+
+
 def run(input_json: dict) -> dict:
     """
     接收标准 task.v1，输出标准 strategy.v1。
@@ -71,14 +88,14 @@ def run(input_json: dict) -> dict:
         )
 
     action = input_json["action"]
-    if action != "pick_and_place":
+    if action not in SUPPORTED_PRIMITIVE_TASK_ACTIONS:
         return _blocked_result(
             input_json["task_id"],
             [f"UNSUPPORTED_ACTION:{action}"],
-            "第一阶段只允许执行 pick_and_place",
+            "当前动作没有 A 约束、B 策略和 C 执行源共同覆盖",
         )
 
-    ready_errors = _validate_ready_task(input_json)
+    ready_errors = _validate_ready_task(input_json, action)
     if ready_errors:
         return _blocked_result(
             input_json["task_id"],
@@ -88,9 +105,15 @@ def run(input_json: dict) -> dict:
 
     task_id = input_json["task_id"]
     target_id = input_json["target_ids"][0]
-    destination_id = input_json["destination_id"]
+    destination_id = input_json.get("destination_id")
     codearts_mode = _codearts_mode()
-    if codearts_mode != "off":
+    if action not in CODEARTS_TASK_ACTIONS and codearts_mode == "required":
+        return _blocked_result(
+            task_id,
+            [f"CODEARTS_ACTION_TEMPLATE_NOT_SUPPORTED:{action}"],
+            "当前 CodeArts 策略模板尚未覆盖该动作，未降级执行",
+        )
+    if action in CODEARTS_TASK_ACTIONS and codearts_mode != "off":
         result = CodeArtsStrategyClient().generate(input_json)
         if result["success"]:
             return result["strategy"]
@@ -112,6 +135,7 @@ def run(input_json: dict) -> dict:
             task_id,
             target_id,
             destination_id,
+            action=action,
             mode="primitive_plan_fallback",
             provider_error=result["error"],
             provenance=result["trace"],
@@ -121,15 +145,17 @@ def run(input_json: dict) -> dict:
         task_id,
         target_id,
         destination_id,
-        mode="primitive_plan",
+        action=action,
+        mode=("primitive_plan" if action == "pick_and_place" else "primitive_plan_extended"),
     )
 
 
 def _local_pick_and_place_strategy(
     task_id: str,
     target_id: str,
-    destination_id: str,
+    destination_id: str | None,
     *,
+    action: str = "pick_and_place",
     mode: str,
     provider_error: str | None = None,
     provenance: dict | None = None,
@@ -137,8 +163,9 @@ def _local_pick_and_place_strategy(
     output = {
         "schema_version": "strategy.v1",
         "task_id": task_id,
-        "steps": _build_pick_and_place_steps(
+        "steps": _build_primitive_steps(
             task_id,
+            action,
             target_id,
             destination_id,
         ),
@@ -150,7 +177,7 @@ def _local_pick_and_place_strategy(
         "message": (
             "CodeArts 不可用，已安全回退到本地五步原子策略"
             if provider_error
-            else "pick_and_place 已转换为五步原子策略"
+            else _strategy_message(action)
         ),
         "mode": mode,
         "validation": {"passed": True, "errors": []},
@@ -232,14 +259,31 @@ def _is_string_list(value: Any) -> bool:
     return isinstance(value, list) and all(_is_non_empty_string(item) for item in value)
 
 
-def _validate_ready_task(task: dict) -> List[str]:
-    """校验第一阶段 READY pick_and_place 的稳定实体绑定。"""
+def _validate_ready_task(
+    task: dict,
+    action: str = "pick_and_place",
+) -> List[str]:
+    """Validate the stable entity bindings required by each open task action."""
     errors = []
     target_ids = task.get("target_ids")
     if not _is_string_list(target_ids) or len(target_ids) != 1:
-        errors.append("第一阶段 pick_and_place 必须且只能提供一个 target_id")
-    if not _is_non_empty_string(task.get("destination_id")):
-        errors.append("第一阶段 pick_and_place 必须提供 destination_id")
+        errors.append(f"{action} 必须且只能提供一个 target_id")
+
+    needs_destination = action in {
+        "pick_and_place",
+        "place",
+        "transfer",
+        "fetch",
+        "stack",
+    }
+    destination_id = task.get("destination_id")
+    if needs_destination and not _is_non_empty_string(destination_id):
+        errors.append(f"{action} 必须提供 destination_id")
+    if not needs_destination and destination_id is not None:
+        errors.append(f"{action} 不应忽略 destination_id")
+    if action == "stack" and _is_string_list(target_ids) and len(target_ids) == 1:
+        if target_ids[0] == destination_id:
+            errors.append("stack 的 target_id 与 destination_id 不能相同")
 
     return errors
 
@@ -269,15 +313,16 @@ def _normalize_reasons(value: Any, fallback: str) -> List[str]:
         return [value]
     return [fallback]
 
-def _build_pick_and_place_steps(
+def _build_primitive_steps(
     task_id: str,
+    action: str,
     target_id: str,
-    destination_id: str,
+    destination_id: str | None,
 ) -> list[dict]:
-    """构造 C 和 D 共同支持的五步原子策略。"""
+    """Lower one grounded task into C's existing primitive action source."""
     detect_step_id = f"{task_id}-detect"
     object_reference = f"${detect_step_id}.object_id"
-    return [
+    steps = [
         {
             "step_id": detect_step_id,
             "action": "detect_object",
@@ -306,18 +351,39 @@ def _build_pick_and_place_steps(
                 "on_exhausted": "stop",
             },
         },
+    ]
+    if action in {"pick", "grasp"}:
+        return steps
+
+    move_arguments = {"target": destination_id}
+    if action == "stack":
+        # This is still the same C primitive; the explicit mode prevents a
+        # stack from silently becoming a direct placement at the base pose.
+        move_arguments["placement_mode"] = "stack_on"
+    steps.extend([
         {
             "step_id": f"{task_id}-move-target",
             "action": "move_to_target",
             # D 当前读取 target；C 同时接受 target/destination_id。
-            "arguments": {"target": destination_id},
+            "arguments": move_arguments,
         },
         {
             "step_id": f"{task_id}-release",
             "action": "release",
             "arguments": {},
         },
-    ]
+    ])
+    return steps
+
+
+def _strategy_message(action: str) -> str:
+    if action in {"pick", "grasp"}:
+        return "单独抓取已转换为三步原子策略"
+    if action == "stack":
+        return "stack 已转换为带 stack_on 放置约束的五步原子策略"
+    if action in {"transfer", "fetch"}:
+        return f"{action} 已复用抓取、搬运、释放原子策略"
+    return f"{action} 已转换为五步原子策略"
 
 
 if __name__ == "__main__":

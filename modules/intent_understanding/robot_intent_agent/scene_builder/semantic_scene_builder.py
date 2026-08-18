@@ -223,9 +223,9 @@ class SpatialReasoner:
     基于几何规则的空间关系推理器。
 
     支持的谓词:
-        left_of / right_of   — X 轴比较
+        left_of / right_of   — Y 轴比较
         above / below        — Z 轴比较
-        in_front_of / behind — Y 轴比较
+        in_front_of / behind — X 轴比较
         near                 — 欧氏距离
         blocking             — A 在 robot↔target 视线路径上
         supporting           — A 在 B 下方且 Z 接近
@@ -278,23 +278,23 @@ class SpatialReasoner:
                            confidence=round(conf,3),
                            metadata={"axis_delta_m": round(abs(axis_delta),4), "deadband_m": cfg.axis_deadband_m}))
 
-        # X轴: Pb.x > Pa.x → a LEFT_OF b, b RIGHT_OF a (规范: 只存 LEFT_OF)
-        if abs(dx) > cfg.axis_deadband_m:
-            if dx > 0:
-                _add_dir(a.id, SpatialPredicate.LEFT_OF, dx)
-                if cfg.bidirectional_relations:
-                    _add_dir(b.id, SpatialPredicate.RIGHT_OF, dx)
-            else:
-                _add_dir(b.id, SpatialPredicate.LEFT_OF, abs(dx))
-                if cfg.bidirectional_relations:
-                    _add_dir(a.id, SpatialPredicate.RIGHT_OF, abs(dx))
-
-        # Y轴: robot_base: y<0=右侧, y>0=左侧; in_front_of = y值更大
+        # Y轴: smaller y is left, larger y is right.
         if abs(dy) > cfg.axis_deadband_m:
             if dy > 0:
-                _add_dir(b.id, SpatialPredicate.IN_FRONT_OF, dy)
+                _add_dir(a.id, SpatialPredicate.LEFT_OF, dy)
+                if cfg.bidirectional_relations:
+                    _add_dir(b.id, SpatialPredicate.RIGHT_OF, dy)
             else:
-                _add_dir(a.id, SpatialPredicate.IN_FRONT_OF, abs(dy))
+                _add_dir(b.id, SpatialPredicate.LEFT_OF, abs(dy))
+                if cfg.bidirectional_relations:
+                    _add_dir(a.id, SpatialPredicate.RIGHT_OF, abs(dy))
+
+        # X轴: larger x is farther toward the front of the workcell.
+        if abs(dx) > cfg.axis_deadband_m:
+            if dx > 0:
+                _add_dir(b.id, SpatialPredicate.IN_FRONT_OF, dx)
+            else:
+                _add_dir(a.id, SpatialPredicate.IN_FRONT_OF, abs(dx))
 
         # Z轴: above/below (基于中点比较)
         z_mid_a, z_mid_b = pa.z + a.bbox.height/2, pb.z + b.bbox.height/2
