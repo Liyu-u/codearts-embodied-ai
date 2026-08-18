@@ -31,7 +31,7 @@ def valid_strategy() -> dict:
             {
                 "step_id": detect_id,
                 "action": "detect_object",
-                "arguments": {"object_name": "obj-001"},
+                "arguments": {"object_id": "obj-001"},
             },
             {
                 "step_id": "task-codearts-001-approach",
@@ -46,7 +46,7 @@ def valid_strategy() -> dict:
             {
                 "step_id": "task-codearts-001-target",
                 "action": "move_to_target",
-                "arguments": {"target": "zone-001"},
+                "arguments": {"destination_id": "zone-001"},
             },
             {
                 "step_id": "task-codearts-001-release",
@@ -81,8 +81,8 @@ class CodeArtsOutputTests(unittest.TestCase):
 
     def test_ids_in_unrelated_metadata_cannot_bypass_binding_checks(self):
         strategy = valid_strategy()
-        strategy["steps"][0]["arguments"] = {"object_name": "invented-object"}
-        strategy["steps"][3]["arguments"] = {"target": "invented-zone"}
+        strategy["steps"][0]["arguments"] = {"object_id": "invented-object"}
+        strategy["steps"][3]["arguments"] = {"destination_id": "invented-zone"}
         strategy["notes"] = "obj-001 zone-001"
 
         errors = validate_strategy(strategy, TASK)

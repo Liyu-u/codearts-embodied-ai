@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "robot-system/perception-observation/1.0.0",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "message_type",
+    "observation_id",
+    "scene_id",
+    "timestamp",
+    "clock_domain",
+    "coordinate_system",
+    "source",
+    "objects"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "message_type": {"const": "perception_observation"},
+    "observation_id": {"type": "string", "minLength": 1},
+    "scene_id": {"type": "string", "minLength": 1},
+    "timestamp": {"type": "integer"},
+    "clock_domain": {"type": "string", "minLength": 1},
+    "coordinate_system": {"type": "string", "minLength": 1},
+    "source": {
+      "type": "object",
+      "required": ["module", "pipeline_version", "sensor_ids"],
+      "properties": {
+        "module": {"type": "string", "minLength": 1},
+        "pipeline_version": {"type": "string", "minLength": 1},
+        "sensor_ids": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": false
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "object_id",
+          "category_candidates",
+          "pose",
+          "geometry",
+          "appearance",
+          "tracking"
+        ],
+        "properties": {
+          "object_id": {"type": "string", "minLength": 1},
+          "category_candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}},
+          "pose": {
+            "type": "object",
+            "required": ["position", "orientation"],
+            "properties": {
+              "position": {"$ref": "#/$defs/vector3"},
+              "orientation": {"$ref": "#/$defs/quaternion_xyzw"}
+            },
+            "additionalProperties": false
+          },
+          "geometry": {
+            "type": "object",
+            "required": ["type", "size"],
+            "properties": {
+              "type": {"type": "string", "minLength": 1},
+              "size": {
+                "type": "object",
+                "required": ["width", "height", "depth"],
+                "properties": {
+                  "width": {"type": "number"},
+                  "height": {"type": "number"},
+                  "depth": {"type": "number"}
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "appearance": {
+            "type": "object",
+            "required": ["color_candidates", "shape_candidates", "texture_candidates"],
+            "properties": {
+              "color_candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}},
+              "shape_candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}},
+              "texture_candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}}
+            },
+            "additionalProperties": false
+          },
+          "tracking": {
+            "type": "object",
+            "required": ["track_age_frames", "velocity", "velocity_confidence"],
+            "properties": {
+              "track_age_frames": {"type": "integer"},
+              "velocity": {"$ref": "#/$defs/vector3"},
+              "velocity_confidence": {"type": "number"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "simulation_metadata": {
+      "type": "object",
+      "required": ["evaluation_only", "ground_truth_objects"],
+      "properties": {
+        "evaluation_only": {"type": "boolean"},
+        "ground_truth_objects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "object_id",
+              "prim_path",
+              "mass_kg",
+              "material",
+              "friction",
+              "rigid_body",
+              "collision_enabled"
+            ],
+            "properties": {
+              "object_id": {"type": "string", "minLength": 1},
+              "prim_path": {"type": "string", "minLength": 1},
+              "mass_kg": {"type": "number"},
+              "material": {"type": "string"},
+              "friction": {"type": "number"},
+              "rigid_body": {"type": "boolean"},
+              "collision_enabled": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "required": ["name", "score"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "score": {"type": "number"}
+      },
+      "additionalProperties": false
+    },
+    "vector3": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+        "z": {"type": "number"}
+      },
+      "additionalProperties": false
+    },
+    "quaternion_xyzw": {
+      "type": "object",
+      "required": ["x", "y", "z", "w"],
+      "properties": {
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+        "z": {"type": "number"},
+        "w": {"type": "number"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

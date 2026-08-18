@@ -89,7 +89,10 @@ class RobotSimulator:
             # 按物体属性（如 color/shape/texture）筛选，返回第一个匹配项。
             item = self._find_by_attribute(attribute.get("name"), attribute.get("value"))
         else:
-            item = find_object(self.state, arguments.get("object_name"))
+            item = find_object(
+                self.state,
+                arguments.get("object_id", arguments.get("object_name")),
+            )
         self._last_duration = self._default_duration("detect_object") or 0.4
         if not item or not item.get("visible", True):
             return {"status": "FAILED", "reason": "OBJECT_NOT_FOUND"}
@@ -117,7 +120,10 @@ class RobotSimulator:
         return {"status": "SUCCESS", "position": deepcopy(item.get("position"))}
 
     def _move_to_target(self, arguments: dict) -> dict:
-        target = find_object(self.state, arguments.get("target"))
+        target = find_object(
+            self.state,
+            arguments.get("destination_id", arguments.get("target")),
+        )
         if not target:
             self._last_duration = 0.1
             return {"status": "FAILED", "reason": "TARGET_NOT_FOUND"}

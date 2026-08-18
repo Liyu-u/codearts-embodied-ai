@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0.0",
+  "message_type": "perception_observation",
+  "observation_id": "obs_1723456789123_0001",
+  "scene_id": "table_scene_001",
+  "timestamp": 1723456789123,
+  "clock_domain": "unix_utc",
+  "coordinate_system": "robot_base",
+  "source": {
+    "module": "perception_pipeline",
+    "pipeline_version": "1.0.0",
+    "sensor_ids": [
+      "camera_front",
+      "depth_front"
+    ]
+  },
+  "objects": [
+    {
+      "object_id": "obj_001",
+      "category_candidates": [
+        {"name": "cup", "score": 0.93},
+        {"name": "bottle", "score": 0.04},
+        {"name": "container", "score": 0.03}
+      ],
+      "pose": {
+        "position": {"x": 0.35, "y": 0.12, "z": 0.75},
+        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+      },
+      "geometry": {
+        "type": "oriented_bbox_3d",
+        "size": {"width": 0.06, "height": 0.12, "depth": 0.06}
+      },
+      "appearance": {
+        "color_candidates": [
+          {"name": "transparent", "score": 0.88}
+        ],
+        "shape_candidates": [
+          {"name": "cylindrical", "score": 0.91}
+        ],
+        "texture_candidates": [
+          {"name": "smooth", "score": 0.76}
+        ]
+      },
+      "tracking": {
+        "track_age_frames": 24,
+        "velocity": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "velocity_confidence": 0.95
+      }
+    }
+  ],
+  "simulation_metadata": {
+    "evaluation_only": true,
+    "ground_truth_objects": [
+      {
+        "object_id": "obj_001",
+        "prim_path": "/World/Table/Cup",
+        "mass_kg": 0.2,
+        "material": "glass",
+        "friction": 0.3,
+        "rigid_body": true,
+        "collision_enabled": true
+      }
+    ]
+  }
+}

@@ -167,7 +167,7 @@ class TestTraceCoderLLM(unittest.TestCase):
             s for s in reversed(result["patch"]["steps"])
             if s["action"] == "move_to_target"
         )
-        self.assertEqual(last_move["arguments"]["target"], "right_bin")
+        self.assertEqual(last_move["arguments"]["destination_id"], "right_bin")
 
     def test_required_invalid_repair_aborts_no_fallback(self):
         """无效修复：required 模式 LLM 输出过不了白名单 → 如实中止，绝不留规则补丁。"""

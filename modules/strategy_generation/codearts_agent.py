@@ -233,10 +233,10 @@ def _build_prompt(task: dict[str, Any]) -> str:
 任务：task_id={task_id}; target_id={target_id}; destination_id={destination_id}
 必须放在 {OUTPUT_BEGIN} 和 {OUTPUT_END} 之间，且严格使用此结构：
 {{"schema_version":"strategy.v1","task_id":"{task_id}","steps":[
-{{"step_id":"detect","action":"detect_object","arguments":{{"object_name":"{target_id}"}}}},
+{{"step_id":"detect","action":"detect_object","arguments":{{"object_id":"{target_id}"}}}},
 {{"step_id":"approach","action":"move_to_object","arguments":{{"object_id":"$detect.object_id"}}}},
 {{"step_id":"grasp","action":"grasp","arguments":{{"object_id":"$detect.object_id"}}}},
-{{"step_id":"target","action":"move_to_target","arguments":{{"target":"{destination_id}"}}}},
+{{"step_id":"target","action":"move_to_target","arguments":{{"destination_id":"{destination_id}"}}}},
 {{"step_id":"release","action":"release","arguments":{{}}}}],"code":null}}
 只允许这五个 action；字段名必须是 step_id/action/arguments；不得输出 target_id、target_ids 或 object_id 顶层字段；不得改变三个 ID。
 """

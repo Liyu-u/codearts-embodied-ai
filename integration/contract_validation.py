@@ -8,6 +8,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_FILES = {
+    "perception_observation.1.0.0": "perception_observation.schema.json",
     "perception.v1": "perception.schema.json",
     "task.v1": "task.schema.json",
     "strategy.v1": "strategy.schema.json",
@@ -43,7 +44,36 @@ def _matches_type(value: Any, expected: str) -> bool:
     return checks[expected](value)
 
 
-def _validate(value: Any, schema: dict, path: str, errors: list[str]) -> None:
+def _resolve_local_ref(root_schema: dict, ref: str) -> dict:
+    if not ref.startswith("#/"):
+        raise ValueError(f"unsupported schema reference: {ref}")
+    resolved: Any = root_schema
+    for segment in ref[2:].split("/"):
+        key = segment.replace("~1", "/").replace("~0", "~")
+        resolved = resolved[key]
+    if not isinstance(resolved, dict):
+        raise ValueError(f"schema reference does not resolve to an object: {ref}")
+    return resolved
+
+
+def _validate(
+    value: Any,
+    schema: dict,
+    path: str,
+    errors: list[str],
+    root_schema: dict | None = None,
+) -> None:
+    root_schema = root_schema or schema
+    if "$ref" in schema:
+        _validate(
+            value,
+            _resolve_local_ref(root_schema, schema["$ref"]),
+            path,
+            errors,
+            root_schema,
+        )
+        return
+
     expected_type = schema.get("type")
     if expected_type is not None:
         allowed = expected_type if isinstance(expected_type, list) else [expected_type]
@@ -66,13 +96,19 @@ def _validate(value: Any, schema: dict, path: str, errors: list[str]) -> None:
         properties = schema.get("properties", {})
         for name, child in value.items():
             if name in properties:
-                _validate(child, properties[name], f"{path}.{name}", errors)
+                _validate(
+                    child,
+                    properties[name],
+                    f"{path}.{name}",
+                    errors,
+                    root_schema,
+                )
             elif schema.get("additionalProperties") is False:
                 errors.append(f"{path}.{name}: additional property is not allowed")
 
     if isinstance(value, list) and isinstance(schema.get("items"), dict):
         for index, item in enumerate(value):
-            _validate(item, schema["items"], f"{path}[{index}]", errors)
+            _validate(item, schema["items"], f"{path}[{index}]", errors, root_schema)
 
 
 def validate_contract(value: object, schema_version: str) -> list[str]:

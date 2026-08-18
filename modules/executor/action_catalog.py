@@ -14,21 +14,17 @@ def validate_action_arguments(action: str, arguments: dict) -> list[str]:
         return [f"INVALID_ARGUMENT:{action}:arguments must be an object"]
     keys = set(arguments)
     if action == "detect_object":
-        allowed = {"object_id", "object_name"}
-        if len(keys & allowed) != 1 or keys - allowed:
-            return [
-                "INVALID_ARGUMENT:detect_object:use exactly one object_id or object_name"
-            ]
+        if keys != {"object_id"}:
+            return ["INVALID_ARGUMENT:detect_object:object_id is required"]
     elif action in {"move_to_object", "grasp"}:
         if keys != {"object_id"}:
             return [f"INVALID_ARGUMENT:{action}:object_id is required"]
     elif action == "move_to_target":
-        allowed = {"destination_id", "target", "placement_mode"}
-        target_keys = keys & {"destination_id", "target"}
-        if len(target_keys) != 1 or keys - allowed:
-            return [
-                "INVALID_ARGUMENT:move_to_target:use exactly one destination_id or target"
-            ]
+        # Formal B→C requires destination_id. placement_mode is an explicit
+        # execution modifier and is only meaningful for stack_on.
+        allowed = {"destination_id", "placement_mode"}
+        if keys - allowed or "destination_id" not in keys:
+            return ["INVALID_ARGUMENT:move_to_target:destination_id is required"]
         placement_mode = arguments.get("placement_mode", "direct")
         if placement_mode not in {"direct", "stack_on"}:
             return [
