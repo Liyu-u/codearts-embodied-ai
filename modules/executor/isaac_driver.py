@@ -4,11 +4,17 @@
 不在模块顶层导入 ``isaacsim`` / ``omni``，因此可以在 `huawei` 环境与 CI 中用
 假驱动（FakeDriver）做单元测试。
 
-``OmniDriver`` 是真实 Isaac Sim 6.0 实现。所有 ``isaacsim.*`` / ``omni.*`` 导入都
-延迟到方法内部执行，保证本模块在未安装 Isaac Sim 的机器上仍可被正常 import。
+``OmniDriver`` 是真实 Isaac Sim 6.0 实现，严格对照官方 standalone examples：
 
-注意：``OmniDriver`` 中涉及具体控制器/IK/PhysX 的调用点，必须在 `isaacsim` 环境
-中做一次最小实机冒烟验证（见 modules/executor/README.md 的“实机验证清单”）。
+- 机器人：``isaacsim.robot.experimental.manipulators.examples.franka.franka.Franka``
+  （继承 Articulation，内置差分 IK 与夹爪控制）；
+- 笛卡尔运动：差分 IK（``damped-least-squares``），每帧调用
+  ``set_end_effector_pose`` 再 ``app.update``；
+- 夹爪：``set_gripper_position`` / ``open_gripper`` / ``close_gripper``（DOF 7/8）；
+- 物理：``SimulationManager.set_physics_sim_device``（默认 CPU）。
+
+Franka 资产路径：``Isaac/Robots/FrankaRobotics/FrankaPanda/franka.usd``。
+所有 ``isaacsim.*`` / ``omni.*`` 导入都延迟到方法内部，模块可在无 Isaac 环境 import。
 """
 
 from __future__ import annotations
@@ -76,34 +82,31 @@ class MotionDriver(Protocol):
 
 
 class OmniDriver:
-    """真实 Isaac Sim 6.0 运动驱动（待实机验证）。
+    """真实 Isaac Sim 6.0 运动驱动（官方 Franka + 差分 IK）。
 
-    在 Kit 运行时内构造，通常由离线批处理入口脚本先创建 ``World`` 再传入：
+    在 Kit 运行时内构造，由服务器入口脚本先创建 ``SimulationApp`` 再传入：
 
-        world = World(sim_context=..., physics_dt=1.0 / 60.0, rendering_dt=1.0 / 60.0)
-        driver = OmniDriver(world=world, robot_prim_path="/World/Franka")
+        app = SimulationApp({"headless": True})
+        driver = OmniDriver(app, device="cpu")
+        driver.connect()
     """
 
-    FRANKA_USD_PATH = "Isaac/Robots/Franka/franka.usd"
-    POSITION_TOLERANCE_M = 0.005
+    ROBOT_PRIM_PATH = "/World/robot"
+    GRIPPER_DOF_INDICES = [7, 8]
     GRIPPER_TOLERANCE_M = 0.005
+    POSITION_TOLERANCE_M = 0.01
+    STEP_LIMIT_M = 0.02          # 每帧最多朝目标移动 2cm，避免差分 IK 冲过头
     COLLISION_RADIUS_M = 0.05
-    HOME_JOINTS = [0.0, -0.5, 0.0, -1.2, 0.0, 1.0, 0.5]
+    IK_METHOD = "damped-least-squares"
 
-    def __init__(
-        self,
-        world=None,
-        robot_prim_path: str = "/World/Franka",
-        gripper_prim_path: str = "/World/Franka/panda_hand",
-    ) -> None:
-        self._world = world
-        self._robot_prim_path = robot_prim_path
-        self._gripper_prim_path = gripper_prim_path
-        self._robot = None
-        self._gripper = None
+    def __init__(self, app, device: str = "cpu",
+                 robot_path: str = ROBOT_PRIM_PATH) -> None:
+        self._app = app
+        self._device = device
+        self._robot_path = robot_path
+        self._franka = None
         self._connected = False
         self._stopped = False
-        self._elapsed_ms = 0
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -111,188 +114,157 @@ class OmniDriver:
     def connect(self) -> None:
         if self._connected:
             return
-        if self._world is None:
-            raise DriverError(
-                "OmniDriver requires a World instance; construct it in the Kit "
-                "entry script and pass it in."
-            )
-        # 延迟导入：只有真正进入 Kit 运行时才会触碰 isaacsim。
-        try:
-            from isaacsim.core.utils.stage import get_current_stage
-            from isaacsim.core.experimental.prims import Articulation
-            from isaacsim.storage.native import get_assets_root_path
-        except ImportError as exc:  # pragma: no cover - 依赖真实环境
-            raise DriverError(f"isaacsim runtime unavailable: {exc}") from exc
+        import omni.kit.app
 
-        stage = get_current_stage()
-        assets_root = get_assets_root_path()
-        franka_usd = f"{assets_root}/{self.FRANKA_USD_PATH}"
-        prim = stage.DefinePrim(self._robot_prim_path, "Xform")
-        prim.GetReferences().AddReference(franka_usd)
-        if self._world is not None:
-            self._world.step(render=False)
+        # 官方例子要求先启用 manipulators examples 扩展，再导入 Franka 类。
+        omni.kit.app.get_app().get_extension_manager().set_extension_enabled_immediate(
+            "isaacsim.robot.experimental.manipulators.examples", True
+        )
+        import omni.timeline
+        import isaacsim.core.experimental.utils.stage as stage_utils
+        from isaacsim.core.experimental.objects import DomeLight, GroundPlane
+        from isaacsim.core.simulation_manager import SimulationManager
+        from isaacsim.robot.experimental.manipulators.examples.franka.franka import Franka
 
-        self._robot = Articulation(prim_path=self._robot_prim_path)
-        self._robot.initialize()
-        self._gripper = Articulation(prim_path=self._gripper_prim_path)
-        self._gripper.initialize()
+        SimulationManager.set_physics_sim_device(self._device)
+        self._app.update()
+
+        stage_utils.create_new_stage()
+        stage = stage_utils.get_current_stage()
+        if not stage.GetPrimAtPath("/World/ground_plane"):
+            GroundPlane("/World/ground_plane")
+            DomeLight("/World/DomeLight").set_intensities(1000)
+
+        self._franka = Franka(robot_path=self._robot_path, create_robot=True)
         self._connected = True
+
+        omni.timeline.get_timeline_interface().play()
+        self._app.update()
+
+        # 复位到已知 home 位姿（夹爪张开）。必须在 play() 之后，否则物理 tensor 未初始化。
+        self._franka.reset_to_default_pose()
+        for _ in range(10):
+            self._app.update()
 
     def shutdown(self) -> None:
         try:
             self.e_stop()
         finally:
             self._connected = False
-            self._robot = None
-            self._gripper = None
+            self._franka = None
 
     # ------------------------------------------------------------------
     # 运动原语
     # ------------------------------------------------------------------
     def move_to(self, pose: dict, linear_speed: float, timeout_s: float) -> dict:
+        """差分 IK 移动末端到目标位姿，直到收敛或超时。
+
+        每帧调用 ``set_end_effector_pose``（差分 IK 解算关节增量）再 ``app.update``，
+        然后回读末端位置判断是否到达。``linear_speed`` 仅作后端限速语义参考。
+        """
         self._ensure_connected()
-        from time import monotonic
+        import time
 
-        from isaacsim.core.utils.types import ArticulationAction
+        import numpy as np
 
-        position = (float(pose["x"]), float(pose["y"]), float(pose["z"]))
-        orientation = pose.get("orientation") or (0.0, 0.0, 0.0)
-        if isinstance(orientation, dict):
-            orientation = (
-                float(orientation.get("x", 0.0)),
-                float(orientation.get("y", 0.0)),
-                float(orientation.get("z", 0.0)),
-            )
-        else:
-            orientation = tuple(float(v) for v in orientation[:3])
+        target = np.array([float(pose["x"]), float(pose["y"]), float(pose["z"])])
+        orientation = np.array([self._franka.get_downward_orientation()])
 
-        # IK 求解：end_effector.set_world_pose 返回 (target_joints, ik_success)。
-        target_joints, ik_success = self._robot.end_effector.set_world_pose(
-            position=position,
-            orientation=orientation,
-        )
-        if not ik_success or target_joints is None or len(target_joints) == 0:
-            return _failed("IK_UNREACHABLE")
+        deadline = time.monotonic() + float(timeout_s)
+        start_wall = time.monotonic()
+        frames = 0
+        trajectory: list[dict] = []
+        best_distance = float("inf")
+        stall_frames = 0
 
-        deadline = monotonic() + float(timeout_s)
-        start_ms = self._elapsed_ms
-        trajectory = [self._current_eef_point()]
-        # 收敛循环：持续下发关节目标并回读，直到收敛或超时。
         while True:
-            self._robot.apply_action(
-                ArticulationAction(
-                    joint_positions=target_joints,
-                    joint_velocities=None,
-                )
-            )
-            if self._world is not None:
-                self._world.step(render=False)
-            current = self._read_eef_position()
+            _, ee_pos, _ = self._franka.get_current_state()
+            current = np.asarray(ee_pos[0], dtype=float)
+            direction = target - current
+            distance = float(np.linalg.norm(direction))
+            best_distance = min(best_distance, distance)
             trajectory.append(
-                {"timestamp_ms": self._elapsed_ms, "position": current}
+                {
+                    "timestamp_ms": int((time.monotonic() - start_wall) * 1000),
+                    "coordinate_frame": "world",
+                    "position": {"x": current[0], "y": current[1], "z": current[2]},
+                    "distance_m": distance,
+                    "joint_positions": self._joint_positions_np().tolist(),
+                }
             )
-            if self._distance(current, position) <= self.POSITION_TOLERANCE_M:
-                duration_ms = self._elapsed_ms - start_ms
+
+            if distance <= self.POSITION_TOLERANCE_M:
+                wall_ms = int((time.monotonic() - start_wall) * 1000)
                 return _succeeded(
-                    duration_ms,
-                    pose={"x": current[0], "y": current[1], "z": current[2]},
+                    wall_ms, pose={"x": current[0], "y": current[1], "z": current[2]},
                     trajectory=trajectory,
+                    wall_ms=wall_ms,
+                    wall_ms_per_frame=(wall_ms / frames) if frames else 0.0,
                 )
-            if monotonic() >= deadline:
-                duration_ms = self._elapsed_ms - start_ms
+
+            # 每帧最多朝目标移动 STEP_LIMIT_M，避免全步长 IK 冲过头。
+            step = min(distance, self.STEP_LIMIT_M)
+            step_target = current + (direction / max(distance, 1e-9)) * step
+            self._franka.set_end_effector_pose(
+                position=step_target.reshape(1, -1),
+                orientation=orientation,
+                ik_method=self.IK_METHOD,
+            )
+            self._app.update()
+            frames += 1
+
+            # 卡死检测：连续 60 帧距离未改善（>2mm）。
+            if distance < best_distance - 0.002:
+                stall_frames = 0
+            else:
+                stall_frames += 1
+            if stall_frames >= 60:
+                wall_ms = int((time.monotonic() - start_wall) * 1000)
                 return motion_result(
-                    "FAILED",
-                    "ACTION_TIMEOUT",
-                    duration_ms,
-                    timed_out=True,
+                    "FAILED", "IK_STALLED", wall_ms,
                     trajectory=trajectory,
+                    joint_positions=self._joint_positions_np().tolist(),
+                    best_distance_m=best_distance,
+                    wall_ms=wall_ms,
+                )
+
+            if time.monotonic() >= deadline:
+                wall_ms = int((time.monotonic() - start_wall) * 1000)
+                return motion_result(
+                    "FAILED", "ACTION_TIMEOUT", wall_ms,
+                    timed_out=True, trajectory=trajectory,
+                    joint_positions=self._joint_positions_np().tolist(),
+                    best_distance_m=best_distance,
+                    wall_ms=wall_ms,
+                    wall_ms_per_frame=(wall_ms / frames),
                 )
 
     def gripper_open(self, width: float, timeout_s: float) -> dict:
         self._ensure_connected()
-        from time import monotonic
-
-        from isaacsim.core.utils.types import ArticulationAction
-
-        deadline = monotonic() + float(timeout_s)
-        start_ms = self._elapsed_ms
-        while True:
-            self._gripper.apply_action(
-                ArticulationAction(joint_positions=[width / 2, width / 2])
-            )
-            if self._world is not None:
-                self._world.step(render=False)
-            actual = self._read_gripper_width()
-            if abs(actual - width) <= self.GRIPPER_TOLERANCE_M:
-                return _succeeded(
-                    self._elapsed_ms - start_ms,
-                    width=actual,
-                )
-            if monotonic() >= deadline:
-                return motion_result(
-                    "FAILED",
-                    "ACTION_TIMEOUT",
-                    self._elapsed_ms - start_ms,
-                    timed_out=True,
-                )
+        half = float(width) / 2.0
+        return self._set_gripper([half, half], timeout_s)
 
     def gripper_close(self, force: float, timeout_s: float) -> dict:
         self._ensure_connected()
-        from time import monotonic
-
-        from isaacsim.core.utils.types import ArticulationAction
-
-        deadline = monotonic() + float(timeout_s)
-        start_ms = self._elapsed_ms
-        while True:
-            self._gripper.apply_action(
-                ArticulationAction(
-                    joint_positions=[0.0, 0.0],
-                    joint_efforts=[float(force), float(force)],
-                )
-            )
-            if self._world is not None:
-                self._world.step(render=False)
-            width = self._read_gripper_width()
-            effort = self._read_gripper_force()
-            if width < self.GRIPPER_TOLERANCE_M and effort > 0.0:
-                return _succeeded(
-                    self._elapsed_ms - start_ms,
-                    width=width,
-                    grasp_force_n=effort,
-                )
-            if monotonic() >= deadline:
-                return motion_result(
-                    "FAILED",
-                    "ACTION_TIMEOUT",
-                    self._elapsed_ms - start_ms,
-                    timed_out=True,
-                    width=width,
-                    grasp_force_n=effort,
-                )
+        result = self._set_gripper([0.0, 0.0], timeout_s)
+        # 夹持力尚未接入真实力传感器，暂以“是否完全闭合”作为抓取成功代理。
+        result["grasp_force_n"] = float(force) if result["status"] == "SUCCESS" else 0.0
+        return result
 
     def read_object_pose(self, object_id: str) -> dict:
         self._ensure_connected()
-        try:
-            from isaacsim.core.experimental.prims import XFormPrim
-        except ImportError as exc:  # pragma: no cover
-            raise DriverError(f"isaacsim runtime unavailable: {exc}") from exc
-        prim_path = self._prim_path_for(object_id)
-        xform = XFormPrim(prim_path=str(prim_path))
-        world_pos, _ = xform.get_world_pose()
-        return {
-            "x": float(world_pos[0]),
-            "y": float(world_pos[1]),
-            "z": float(world_pos[2]),
-        }
+        from isaacsim.core.experimental.prims import GeomPrim
+
+        geom = GeomPrim(self._prim_path_for(object_id))
+        positions, _ = geom.get_world_poses()
+        pos = positions[0]
+        return {"x": float(pos[0]), "y": float(pos[1]), "z": float(pos[2])}
 
     def collision_free(self, pose: dict, radius: float) -> bool:
         """查询目标位姿附近是否无碰撞。查询本身失败时抛 ``DriverError``（fail-closed）。"""
         self._ensure_connected()
-        try:
-            from omni.physx import get_physx_interface
-        except ImportError as exc:  # pragma: no cover
-            raise DriverError(f"omni.physx unavailable: {exc}") from exc
+        from omni.physx import get_physx_interface
+
         try:
             physx = get_physx_interface()
             overlapping = physx.overlap_sphere(
@@ -300,35 +272,26 @@ class OmniDriver:
                 (float(pose["x"]), float(pose["y"]), float(pose["z"])),
             )
         except Exception as exc:
-            # 关键安全修复：查询异常不再“假设安全”，而是向上抛出 fail-closed。
             raise DriverError(f"PhysX overlap query failed: {exc}") from exc
 
-        robot_prefix = self._robot_prim_path
         for prim_path in overlapping:
             sp = str(prim_path)
-            if robot_prefix in sp:
+            if self._robot_path in sp:
                 continue
-            if "GroundPlane" in sp or "defaultGroundPlane" in sp:
+            if "GroundPlane" in sp or "ground_plane" in sp:
                 continue
-            return False  # 发现与场景物体的碰撞风险
+            return False
         return True
 
     def e_stop(self) -> None:
-        """急停：立即停止电机。"""
+        """急停：停止时间轴（冻结物理）并置位停止标志。"""
         self._stopped = True
-        if self._robot is None:
-            return
         try:
-            from isaacsim.core.utils.types import ArticulationAction
-        except ImportError:  # pragma: no cover
-            return
-        # 零速度指令，停止运动；关节位置保持当前值。
-        self._robot.apply_action(
-            ArticulationAction(
-                joint_positions=self._robot.get_joint_positions(),
-                joint_velocities=[0.0] * 7,
-            )
-        )
+            import omni.timeline
+
+            omni.timeline.get_timeline_interface().stop()
+        except Exception:  # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------------
     # 内部工具
@@ -341,31 +304,35 @@ class OmniDriver:
 
     @staticmethod
     def _prim_path_for(object_id: str) -> str:
-        # 统一仓库约定：稳定 object_id 同时用作场景 prim 名称。
         return f"/World/{object_id}"
 
-    def _read_eef_position(self):
-        pos, _ = self._robot.end_effector.get_world_pose()
-        return (float(pos[0]), float(pos[1]), float(pos[2]))
+    def _joint_positions_np(self):
+        import numpy as np
 
-    def _read_gripper_width(self) -> float:
-        joints = self._gripper.get_joint_positions()
-        if len(joints) >= 2:
-            return float(joints[0]) + float(joints[1])
-        return float(joints[0]) * 2 if len(joints) == 1 else 0.0
+        joints = self._franka.get_dof_positions()
+        arr = joints.numpy() if hasattr(joints, "numpy") else np.asarray(joints)
+        return np.asarray(arr).reshape(-1)
 
-    def _read_gripper_force(self) -> float:
-        efforts = self._gripper.get_applied_joint_efforts()
-        return float(max(efforts)) if efforts else 0.0
+    def _set_gripper(self, targets: list[float], timeout_s: float) -> dict:
+        import time
 
-    def _current_eef_point(self) -> dict:
-        pos = self._read_eef_position()
-        return {
-            "timestamp_ms": self._elapsed_ms,
-            "coordinate_frame": "world",
-            "position": {"x": pos[0], "y": pos[1], "z": pos[2]},
-        }
+        import numpy as np
 
-    @staticmethod
-    def _distance(a, b) -> float:
-        return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
+        deadline = time.monotonic() + float(timeout_s)
+        start_wall = time.monotonic()
+        frames = 0
+        while True:
+            self._franka.set_gripper_position(np.asarray(targets))
+            self._app.update()
+            frames += 1
+            fingers = self._joint_positions_np()[self.GRIPPER_DOF_INDICES]
+            error = float(np.max(np.abs(fingers - np.asarray(targets))))
+            if error <= self.GRIPPER_TOLERANCE_M:
+                wall_ms = int((time.monotonic() - start_wall) * 1000)
+                return _succeeded(wall_ms, width=float(fingers.sum()))
+            if time.monotonic() >= deadline:
+                wall_ms = int((time.monotonic() - start_wall) * 1000)
+                return motion_result(
+                    "FAILED", "ACTION_TIMEOUT", wall_ms,
+                    timed_out=True, width=float(fingers.sum()),
+                )
