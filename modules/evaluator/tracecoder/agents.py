@@ -3,9 +3,89 @@
 from __future__ import annotations
 
 import json
-import re
 from copy import deepcopy
 from typing import Any
+
+from .llm_provider import LLMConfig, LLMProvider, LLMResult
+from .patcher import ALLOWED_OPERATIONS, validate_patch
+
+# 三角色 LLM 输出的结构契约。真实模型（尤其轻量 flash）对『仅字段列表』的遵循
+# 很差，常自己发明键名（如 focused_steps / focused_state_fields）。因此：
+#   - 每个角色声明必须包含的键（required）+ 一个可直接套用的示例（example）；
+#   - _call 把『契约+示例』放在 prompt 最顶部，要求模型严格照抄键名；
+#   - _call 解析后做别名归一化（观察）与必含键校验，不符 → required 中止 /
+#     optional 回退，绝不把脏结构悄悄带进修复流水线。
+_ROLE_OUTPUT_SCHEMA = {
+    "observation": {
+        "required": ["focus_steps", "observe", "reason"],
+        "aliases": {
+            "focused_steps": "focus_steps",
+            "focused_state_fields": "observe",
+            "observe_fields": "observe",
+        },
+        "example": {
+            "focus_steps": ["grasp_cup"],
+            "observe": ["robot.position", "robot.gripper_empty", "action.result"],
+            "reason": "步骤 grasp_cup 执行失败，需要重点观察抓取前后的状态。",
+        },
+    },
+    "analysis": {
+        "required": ["failure_step", "failure_type", "evidence", "root_cause", "repair_plan"],
+        "aliases": {},
+        "example": {
+            "failure_step": "grasp_cup",
+            "failure_type": "ACTION_FAILED",
+            "evidence": ["场景 S1 中步骤 grasp_cup 返回 抓取失败。"],
+            "root_cause": "抓取失败后缺少恢复处理。",
+            "repair_plan": ["为 grasp_cup 增加有限重试并安全停止。"],
+        },
+    },
+    "repair": {
+        "required": ["summary", "changes"],
+        "aliases": {},
+        "hint": (
+            "更新 on_failure 时必须包含 steps（恢复动作列表）与 on_exhausted（"
+            "只能为 \"stop\"）；只有 max_attempts 而没有 steps 的 on_failure "
+            "不会执行任何恢复，任务仍会失败。变量引用必须用单美元符语法 "
+            "$step_id.field（如 $detect_cup.object_id），严禁使用 "
+            "${step_id}.field 形式——引擎只解析 $step_id.field。"
+        ),
+        "example": {
+            "summary": "抓取失败时重新识别并有限重试，耗尽后安全停止。",
+            "changes": [{
+                "operation": "update_step",
+                "target_step": "grasp_cup",
+                "content": {
+                    "on_failure": {
+                        "max_attempts": 2,
+                        "steps": [
+                            {"id": "grasp_cup_redetect", "action": "detect_object",
+                             "arguments": {"object_name": "red_cup"}},
+                            {"id": "grasp_cup_retry", "action": "grasp",
+                             "arguments": {"object_id": "$grasp_cup_redetect.object_id"}},
+                        ],
+                        "on_exhausted": "stop",
+                    }
+                },
+            }],
+        },
+    },
+}
+
+
+def _normalize_output(role: str, output: dict) -> dict:
+    """把模型常见的键名别名归一化到契约键（如 focused_steps → focus_steps）。"""
+    aliases = _ROLE_OUTPUT_SCHEMA.get(role, {}).get("aliases", {})
+    if not aliases:
+        return output
+    normalized = {}
+    for key, value in output.items():
+        target = aliases.get(key, key)
+        if target in normalized and target != key:
+            # 契约键已存在时保留契约键，忽略别名
+            continue
+        normalized[target] = value
+    return normalized
 
 
 def _failed_events(evaluation: dict) -> list[dict]:
@@ -308,17 +388,64 @@ class PolicyAgentSuite:
         )
 
 
-class LLMPolicyAgentSuite(PolicyAgentSuite):
-    """Use the configured model for each role, falling back to safe local rules."""
+class LLMRequiredError(RuntimeError):
+    """required 模式下 LLM 未产出可用结果的中止信号。
 
-    def __init__(self, model: str):
+    处理器捕获后立即停跑并如实记录——绝不回退到规则，
+    从结构上杜绝『模型没参与、悄悄用规则』的情况。
+    """
+
+    def __init__(self, role: str, error: str):
+        super().__init__("[{}] {}".format(role, error))
+        self.role = role
+        self.error = error
+
+
+class LLMPolicyAgentSuite(PolicyAgentSuite):
+    """用 LLM Provider 驱动三角色，实现 off / optional / required 三模式。
+
+    - off：纯规则（本类不参与）。
+    - optional：三角色先问 LLM，成功用 LLM 输出；调用失败或 patch 过不了
+      本地白名单时回退规则，并记录 used_fallback=True（绝不静默）。
+    - required：每轮必须用 LLM；调用失败或输出不可用 → 抛 LLMRequiredError
+      中止整轮，绝不产出规则 patch。
+
+    本套件只负责『产出建议』，LLM 生成的 patch 一律回到 processor 统一过
+    validate_patch（本地白名单 + 安全检查），本套件不放行。
+    """
+
+    def __init__(
+        self,
+        provider=None,
+        mode: str = "optional",
+        call_log: list = None,
+        model: str = "",
+    ):
         super().__init__()
-        self.model = model
+        if provider is None:
+            config = LLMConfig.from_env()
+            if model:
+                config.model = model
+            config.mode = mode
+            provider = LLMProvider(config)
+        self.provider = provider
+        self.mode = mode
+        self.call_log = call_log if call_log is not None else []
+        self._seq = 0
+        self._last_record = None
+
+    def _next_seq(self) -> int:
+        self._seq += 1
+        return self._seq
+
+    # ------------------------------------------------------------------
+    # 三角色：LLM 优先，失败按模式处理
+    # ------------------------------------------------------------------
 
     def observation_advice(self, strategy, evaluation, history):
         fallback = self.observation.advise(strategy, evaluation, history)
-        return self._ask(
-            "观察角色",
+        return self._call(
+            "observation",
             {
                 "task": "选择下一轮需要重点观察的步骤和状态字段",
                 "strategy": strategy,
@@ -335,8 +462,8 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
 
     def diagnosis(self, strategy, evaluation, advice, history):
         fallback = self.analysis.diagnose(strategy, evaluation, advice, history)
-        return self._ask(
-            "分析角色",
+        return self._call(
+            "analysis",
             {
                 "task": "只根据执行证据定位第一个关键失败并提出修复计划",
                 "strategy": strategy,
@@ -349,57 +476,105 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
 
     def patch(self, strategy, diagnosis, evaluation, history):
         fallback = self.repair.propose(strategy, diagnosis, evaluation, history)
-        return self._ask(
-            "修改角色",
+        llm_patch = self._call(
+            "repair",
             {
                 "task": "生成最小范围的策略修改，只允许使用既定 patch 操作",
                 "strategy": strategy,
                 "diagnosis": diagnosis,
                 "evaluation": evaluation,
-                "allowed_operations": [
-                    "update_argument", "update_step", "insert_before",
-                    "insert_after", "append_step", "delete_step", "replace_action",
-                ],
+                "allowed_operations": sorted(ALLOWED_OPERATIONS),
+                "operation_contract": {
+                    "update_argument": ["operation", "target_step", "argument", "value"],
+                    "update_step": ["operation", "target_step", "content"],
+                    "insert_before": ["operation", "target_step", "content"],
+                    "insert_after": ["operation", "target_step", "content"],
+                    "append_step": ["operation", "content"],
+                    "delete_step": ["operation", "target_step"],
+                    "replace_action": ["operation", "target_step", "action"],
+                },
             },
             fallback,
         )
-
-    def _ask(self, role: str, payload: dict, fallback: dict) -> dict:
-        prompt = (
-            f"你是新版 TraceCoder 的{role}。仅输出一个 JSON 对象，不要输出 Markdown。\n"
-            f"{json.dumps(payload, ensure_ascii=False, default=str)}"
-        )
-        try:
-            # LLM 增强是可选能力（默认离线规则即可运行）。
-            # 本包（modules/evaluator/tracecoder）不内置 LLM 调用代码——
-            # 独立仓库 Codearts-Tracecoder 的 src.generation 提供 OpenAI 兼容
-            # 接口，通过 TRACECODER_API_KEY / TRACECODER_BASE_URL 配置。
-            # 在统一联调仓库中该依赖不可用时抛 ImportError，被外层 except
-            # 捕获后自动回退到纯离线规则修复，不阻塞闭环。
-            from src.generation import generator
-
-            response, _, _ = generator(prompt, "policy_json", self.model)
-            parsed = _extract_json(response)
-            return parsed if isinstance(parsed, dict) else fallback
-        except Exception:
+        # required：LLM 输出必须可用——策略未通过时 patch 过不了白名单即中止
+        if self.mode == "required":
+            validation = validate_patch(llm_patch)
+            if not validation["passed"] and not bool(evaluation.get("passed")):
+                if self._last_record is not None:
+                    self._last_record["status"] = "failed"
+                    self._last_record["error"] = "; ".join(validation["issues"])
+                raise LLMRequiredError("repair", "; ".join(validation["issues"]))
+            return llm_patch
+        # optional：LLM patch 必须过本地白名单；策略未通过时无效则回退规则
+        validation = validate_patch(llm_patch)
+        if not validation["passed"] and not bool(evaluation.get("passed")):
+            if self._last_record is not None:
+                self._last_record["status"] = "fallback"
+                self._last_record["used_fallback"] = True
             return fallback
+        return llm_patch
 
+    # ------------------------------------------------------------------
+    # 统一调用与证据记录
+    # ------------------------------------------------------------------
 
-def _extract_json(text: str) -> dict | None:
-    if not isinstance(text, str):
-        return None
-    fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-    candidate = fenced.group(1) if fenced else text
-    try:
-        return json.loads(candidate.strip())
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", candidate, re.DOTALL)
-        if not match:
-            return None
+    def _call(self, role: str, payload: dict, fallback: dict) -> dict:
+        schema = _ROLE_OUTPUT_SCHEMA.get(role, {})
+        prompt = f"你是新版 TraceCoder 的{role}。仅输出一个 JSON 对象，不要输出 Markdown。\n"
+        if schema:
+            prompt += (
+                "\n输出必须严格包含以下键，键名禁止改动，禁止添加额外顶层字段：\n"
+                f"{json.dumps(schema.get('required', []), ensure_ascii=False)}\n"
+                "结构参考以下示例（内容需结合任务数据改写，键名保持一致）：\n"
+                f"{json.dumps(schema.get('example', {}), ensure_ascii=False, default=str)}\n"
+            )
+            if schema.get("hint"):
+                prompt += f"重要约束：{schema['hint']}\n"
+        prompt += json.dumps(payload, ensure_ascii=False, default=str)
+        seq = self._next_seq()
         try:
-            return json.loads(match.group(0))
-        except json.JSONDecodeError:
-            return None
+            result = self.provider.complete(
+                "你是精确的结构化 JSON 输出助手，只输出合法 JSON。",
+                prompt,
+                json_mode=True,
+            )
+        except Exception as error:  # 兜底：任何 provider 异常都按调用失败处理
+            result = LLMResult(ok=False, error="provider 异常: {}".format(error))
+
+        if result.ok and isinstance(result.json, dict):
+            output = _normalize_output(role, result.json)
+            missing = [
+                key for key in schema.get("required", []) if key not in output
+            ]
+            if missing:
+                # 结构不满足契约：如实记录为失败，required 中止 / optional 回退，
+                # 绝不把键名对不上的脏结构悄悄带进修复流水线。
+                result = LLMResult(
+                    ok=False,
+                    model=result.model,
+                    error="模型输出缺少必需字段 {}（角色 {!r}）".format(
+                        missing, role
+                    ),
+                )
+            else:
+                record = result.to_record(seq, role, self.mode, status="ok")
+                self._last_record = record
+                self.call_log.append(record)
+                return output
+
+        if self.mode == "required":
+            record = result.to_record(
+                seq, role, self.mode, status="failed", used_fallback=False,
+            )
+            self.call_log.append(record)
+            raise LLMRequiredError(role, result.error or "模型输出无法解析为 JSON")
+
+        record = result.to_record(
+            seq, role, self.mode, status="fallback", used_fallback=True,
+        )
+        self._last_record = record
+        self.call_log.append(record)
+        return fallback
 
 
 def _recent_lessons(history: list[dict]) -> list[str]:

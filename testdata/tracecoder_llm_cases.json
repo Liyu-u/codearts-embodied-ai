@@ -1,0 +1,161 @@
+{
+  "description": "TraceCoder 真实接入 LLM 的五类验收场景固定素材（task.v1 + strategy.v1）。供 tests/integration/test_tracecoder_llm.py 与 benchmarks/tracecoder_llm_bench.py 复用，保证测试与对比基准共用同一批输入。",
+  "cases": {
+    "normal": {
+      "description": "正常任务：贪心策略初始即通过，验证 LLM 质量确认轮确实发生（不静默）。",
+      "task_v1": {
+        "schema_version": "task.v1",
+        "task_id": "llm_normal",
+        "action": "place_object",
+        "target_ids": ["red_cup"],
+        "destination_id": "left_bin",
+        "constraints": ["max_api_calls=20"],
+        "status": "READY",
+        "tracecoder": {
+          "objects": [
+            {"id": "red_cup", "name": "red_cup", "position": [0.5, 0.0, 0.0], "visible": true, "reachable": true, "orientation": 0.0},
+            {"id": "left_bin", "name": "left_bin", "position": [0.5, 0.5, 0.0], "visible": true, "reachable": true, "orientation": 0.0}
+          ],
+          "goals": [{"type": "object_inside", "object": "red_cup", "container": "left_bin"}],
+          "scenarios": [{"name": "normal", "required": true}]
+        }
+      },
+      "strategy_v1": {
+        "schema_version": "strategy.v1",
+        "task_id": "llm_normal",
+        "steps": [
+          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_name": "red_cup"}},
+          {"step_id": "approach_cup", "action": "move_to_object", "arguments": {"object_id": "$detect_cup.object_id"}},
+          {"step_id": "grasp_cup", "action": "grasp", "arguments": {"object_id": "$detect_cup.object_id"}},
+          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"target": "left_bin"}},
+          {"step_id": "release_cup", "action": "release", "arguments": {}}
+        ]
+      }
+    },
+    "grasp_failure": {
+      "description": "抓取失败（grasp:1，可恢复）：LLM 给失败抓取补 on_failure 恢复后通过。",
+      "task_v1": {
+        "schema_version": "task.v1",
+        "task_id": "llm_grasp_failure",
+        "action": "place_object",
+        "target_ids": ["red_cup"],
+        "destination_id": "left_bin",
+        "constraints": ["max_api_calls=20"],
+        "status": "READY",
+        "tracecoder": {
+          "objects": [
+            {"id": "red_cup", "name": "red_cup", "position": [0.5, 0.0, 0.0], "visible": true, "reachable": true, "orientation": 0.0},
+            {"id": "left_bin", "name": "left_bin", "position": [0.5, 0.5, 0.0], "visible": true, "reachable": true, "orientation": 0.0}
+          ],
+          "goals": [{"type": "object_inside", "object": "red_cup", "container": "left_bin"}],
+          "scenarios": [{"name": "normal", "required": true, "failures": {"grasp": 1}}]
+        }
+      },
+      "strategy_v1": {
+        "schema_version": "strategy.v1",
+        "task_id": "llm_grasp_failure",
+        "steps": [
+          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_name": "red_cup"}},
+          {"step_id": "approach_cup", "action": "move_to_object", "arguments": {"object_id": "$detect_cup.object_id"}},
+          {"step_id": "grasp_cup", "action": "grasp", "arguments": {"object_id": "$detect_cup.object_id"}},
+          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"target": "left_bin"}},
+          {"step_id": "release_cup", "action": "release", "arguments": {}}
+        ]
+      }
+    },
+    "goal_not_reached": {
+      "description": "目标未达成：动作全部成功但物体放进错误的容器（目标 right_bin），LLM 补充移动+释放到正确容器。",
+      "task_v1": {
+        "schema_version": "task.v1",
+        "task_id": "llm_goal_not_reached",
+        "action": "place_object",
+        "target_ids": ["red_cup"],
+        "destination_id": "right_bin",
+        "constraints": ["max_api_calls=20"],
+        "status": "READY",
+        "tracecoder": {
+          "objects": [
+            {"id": "red_cup", "name": "red_cup", "position": [0.5, 0.0, 0.0], "visible": true, "reachable": true, "orientation": 0.0},
+            {"id": "left_bin", "name": "left_bin", "position": [0.5, 0.5, 0.0], "visible": true, "reachable": true, "orientation": 0.0},
+            {"id": "right_bin", "name": "right_bin", "position": [0.6, 0.5, 0.0], "visible": true, "reachable": true, "orientation": 0.0}
+          ],
+          "goals": [{"type": "object_inside", "object": "red_cup", "container": "right_bin"}],
+          "scenarios": [{"name": "normal", "required": true}]
+        }
+      },
+      "strategy_v1": {
+        "schema_version": "strategy.v1",
+        "task_id": "llm_goal_not_reached",
+        "steps": [
+          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_name": "red_cup"}},
+          {"step_id": "approach_cup", "action": "move_to_object", "arguments": {"object_id": "$detect_cup.object_id"}},
+          {"step_id": "grasp_cup", "action": "grasp", "arguments": {"object_id": "$detect_cup.object_id"}},
+          {"step_id": "move_left_bin", "action": "move_to_target", "arguments": {"target": "left_bin"}},
+          {"step_id": "release_cup", "action": "release", "arguments": {}}
+        ]
+      }
+    },
+    "invalid_repair": {
+      "description": "无效修复：LLM 输出过不了本地白名单的操作。required 必须中止（LLM_REQUIRED_FAILED），optional 必须回退规则并记录 used_fallback=True。",
+      "task_v1": {
+        "schema_version": "task.v1",
+        "task_id": "llm_invalid_repair",
+        "action": "place_object",
+        "target_ids": ["red_cup"],
+        "destination_id": "left_bin",
+        "constraints": ["max_api_calls=20"],
+        "status": "READY",
+        "tracecoder": {
+          "objects": [
+            {"id": "red_cup", "name": "red_cup", "position": [0.5, 0.0, 0.0], "visible": true, "reachable": true, "orientation": 0.0},
+            {"id": "left_bin", "name": "left_bin", "position": [0.5, 0.5, 0.0], "visible": true, "reachable": true, "orientation": 0.0}
+          ],
+          "goals": [{"type": "object_inside", "object": "red_cup", "container": "left_bin"}],
+          "scenarios": [{"name": "normal", "required": true, "failures": {"grasp": 1}}]
+        }
+      },
+      "strategy_v1": {
+        "schema_version": "strategy.v1",
+        "task_id": "llm_invalid_repair",
+        "steps": [
+          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_name": "red_cup"}},
+          {"step_id": "approach_cup", "action": "move_to_object", "arguments": {"object_id": "$detect_cup.object_id"}},
+          {"step_id": "grasp_cup", "action": "grasp", "arguments": {"object_id": "$detect_cup.object_id"}},
+          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"target": "left_bin"}},
+          {"step_id": "release_cup", "action": "release", "arguments": {}}
+        ]
+      }
+    },
+    "persistent_failure_safe_stop": {
+      "description": "持续失败安全停止：grasp:3 注入无法被 max_attempts=2 恢复吸收，机器人 safe_stop；修复循环提前收敛，绝不无限重试。",
+      "task_v1": {
+        "schema_version": "task.v1",
+        "task_id": "llm_persistent_failure",
+        "action": "place_object",
+        "target_ids": ["red_cup"],
+        "destination_id": "left_bin",
+        "constraints": ["max_api_calls=30"],
+        "status": "READY",
+        "tracecoder": {
+          "objects": [
+            {"id": "red_cup", "name": "red_cup", "position": [0.5, 0.0, 0.0], "visible": true, "reachable": true, "orientation": 0.0},
+            {"id": "left_bin", "name": "left_bin", "position": [0.5, 0.5, 0.0], "visible": true, "reachable": true, "orientation": 0.0}
+          ],
+          "goals": [{"type": "object_inside", "object": "red_cup", "container": "left_bin"}],
+          "scenarios": [{"name": "normal", "required": true, "failures": {"grasp": 3}}]
+        }
+      },
+      "strategy_v1": {
+        "schema_version": "strategy.v1",
+        "task_id": "llm_persistent_failure",
+        "steps": [
+          {"step_id": "detect_cup", "action": "detect_object", "arguments": {"object_name": "red_cup"}},
+          {"step_id": "approach_cup", "action": "move_to_object", "arguments": {"object_id": "$detect_cup.object_id"}},
+          {"step_id": "grasp_cup", "action": "grasp", "arguments": {"object_id": "$detect_cup.object_id"}},
+          {"step_id": "move_bin", "action": "move_to_target", "arguments": {"target": "left_bin"}},
+          {"step_id": "release_cup", "action": "release", "arguments": {}}
+        ]
+      }
+    }
+  }
+}

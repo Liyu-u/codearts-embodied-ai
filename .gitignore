@@ -23,6 +23,7 @@ dist/
 # Local configuration and secrets
 .env
 .env.*
+tracecoder_llm.env
 !.env.example
 
 # IDE and operating-system files
@@ -33,3 +34,4 @@ Thumbs.db
 
 # Runtime output
 *.log
+results/

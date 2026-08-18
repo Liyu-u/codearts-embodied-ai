@@ -48,6 +48,7 @@ from integration.contract_validation import validate_contract
 # TraceCoder 引擎：统一联调仓库内以相对导入引用本仓库 modules 包。
 from modules.evaluator.tracecoder import process_policy
 from modules.evaluator.tracecoder.experience import ExperienceStore
+from modules.evaluator.tracecoder.llm_provider import LLMConfig, LLMProvider
 from modules.evaluator.tracecoder.models import normalize_strategy
 
 MODULE_NAME = "tracecoder"
@@ -56,6 +57,35 @@ MODULE_VERSION = "1.0.0"  # 与 Codearts-Tracecoder 上游 src/robot_policy 对�
 # 经验库持久化路径（gitignore 已排除，见仓库 .env/.gitignore 约定）。
 # 在进程内存活即可让 HLLM『记事本』跨任务生效；落盘留作后续增强。
 _EXPERIENCE_STORE: ExperienceStore | None = None
+
+# LLM 配置（TRACECODER_LLM_*，API Key 显式留空占位、用时再填）。
+# 支持 configure_llm() 运行时注入（联调/测试用），未注入时用 env 默认。
+_LLM_CONFIG = LLMConfig.from_env()
+_LLM_PROVIDER = LLMProvider(_LLM_CONFIG)
+_LLM_OVERRIDE: dict = {"mode": None, "provider": None}
+
+
+def configure_llm(mode=None, provider=None) -> None:
+    """运行时注入 LLM 模式/Provider。传 None 的字段恢复 env 默认。
+
+    测试/联调时传假 Provider 即可在 required 模式下验证『模型确实参与』，
+    无需真实 API Key。
+    """
+    _LLM_OVERRIDE["mode"] = mode
+    _LLM_OVERRIDE["provider"] = provider
+
+
+def _active_llm() -> tuple:
+    """当前生效的 (llm_mode, llm_provider)。"""
+    mode = (
+        _LLM_OVERRIDE["mode"]
+        if _LLM_OVERRIDE["mode"] is not None else _LLM_CONFIG.mode
+    )
+    provider = (
+        _LLM_OVERRIDE["provider"]
+        if _LLM_OVERRIDE["provider"] is not None else _LLM_PROVIDER
+    )
+    return mode, provider
 
 
 # ---------------------------------------------------------------------------
@@ -407,13 +437,23 @@ def _build_diagnosis(
         "repair_log": [
             {
                 "attempt": item.get("attempt"),
-                "source": item.get("source"),  # "rules" | "hllm"
+                "source": item.get("source"),  # "rules" | "llm" | "hllm" | "llm_required_failed"
                 "result": (item.get("result") or {}).get("result"),
                 "lesson": item.get("lesson"),
+                # 修复前后证据：本轮 LLM/规则产出的诊断与 patch、完整执行结果
+                # （含 safe_stop 等事件），供闭环/人工判断『为什么失败、改了什么』。
+                "diagnosis": item.get("diagnosis"),
+                "patch": item.get("patch"),
+                "result_detail": item.get("result"),
             }
             for item in history
         ],
         "hllm_stats": result.get("hllm_stats"),
+        "llm": {
+            "stats": result.get("llm_stats"),
+            "required_failed": result.get("llm_required_failed"),
+            "calls": result.get("call_log") or [],
+        },
         "quality": {
             "score": score.get("quality_score"),
             "dimensions": score.get("dimensions"),
@@ -489,6 +529,7 @@ def health() -> dict:
     global _EXPERIENCE_STORE
     if _EXPERIENCE_STORE is None:
         _EXPERIENCE_STORE = ExperienceStore()
+    mode, _ = _active_llm()
     return {
         "status": "ok",
         "module": MODULE_NAME,
@@ -499,6 +540,8 @@ def health() -> dict:
         "llm_optional": True,
         "engine_ready": True,
         "experience_entries": len(_EXPERIENCE_STORE.entries),
+        # LLM 真实接入状态：当前模式 + 是否已配置 Key/模型。
+        "llm": dict(_LLM_CONFIG.health_info(), **{"active_mode": mode}),
     }
 
 
@@ -567,6 +610,9 @@ def run(
         perception=perception,
     )
 
+    # LLM 三模式（TRACECODER_LLM_MODE）接入修复闭环：每次 run() 独立证据。
+    llm_mode, llm_provider = _active_llm()
+    call_log: list = []
     result = process_policy(
         task_data,
         initial_strategy=native_strategy,
@@ -574,6 +620,9 @@ def run(
         optimize_quality=True,
         # HLLM 经验库：进程内记忆，跨 run() 调用复用成功修复组合。
         experience_store=experience_store,
+        llm_mode=llm_mode,
+        llm_provider=llm_provider,
+        call_log=call_log,
     )
     return _build_feedback(result, execution, strategy_v1)
 
