@@ -41,11 +41,16 @@ class ExecutorAdapter:
         return dict(self._capabilities)
 
     def health(self) -> dict:
+        backend_health = {}
+        health_method = getattr(self._backend, "health", None)
+        if callable(health_method):
+            backend_health = health_method()
         return {
-            "status": "ok",
+            "status": backend_health.get("status", "ok"),
             "module": "executor",
             "version": "1.0.0",
             "backend": self._backend.mode,
+            "backend_health": backend_health,
             "supported_actions": sorted(ALLOWED_ACTIONS),
             "capabilities": self.capabilities(),
         }

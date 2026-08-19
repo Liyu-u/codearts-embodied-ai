@@ -91,6 +91,13 @@ class IsaacSimBackendTests(unittest.TestCase):
         self.assertTrue(result["reason"].startswith("COLLISION_CHECK_ERROR"))
         self.assertTrue(backend.snapshot()["safe_stopped"])
 
+    def test_collision_reported_after_motion_is_fail_closed(self):
+        backend, _ = make_backend(move_collisions=["/World/obstacle"])
+        result = backend.execute("move_to_object", {"object_id": "green_cube"})
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["reason"], "COLLISION_DETECTED")
+        self.assertTrue(backend.snapshot()["safe_stopped"])
+
     def test_zero_speed_limit_rejects_motion(self):
         backend, _ = make_backend(safety=zero_speed_safety())
         result = backend.execute("move_to_object", {"object_id": "green_cube"})
@@ -110,6 +117,23 @@ class IsaacSimBackendTests(unittest.TestCase):
         result = backend.execute("grasp", {"object_id": "green_cube"})
         self.assertEqual(result["status"], "FAILED")
         self.assertEqual(result["reason"], "GRASP_WEAK")
+
+    def test_grasp_requires_lift_verification(self):
+        backend, _ = make_backend(grasp_verified=False)
+        backend.execute("move_to_object", {"object_id": "green_cube"})
+        result = backend.execute("grasp", {"object_id": "green_cube"})
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["reason"], "GRASP_UNVERIFIED")
+        self.assertTrue(backend.snapshot()["safe_stopped"])
+
+    def test_gripper_timeout_is_fail_closed(self):
+        backend, _ = make_backend(gripper_close_timeout=True)
+        backend.execute("move_to_object", {"object_id": "green_cube"})
+        result = backend.execute("grasp", {"object_id": "green_cube"})
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["reason"], "ACTION_TIMEOUT")
+        self.assertEqual(result["safety_events"][0]["type"], "ACTION_TIMEOUT")
+        self.assertTrue(backend.snapshot()["safe_stopped"])
 
     def test_safe_stop_prevents_further_actions(self):
         backend, _ = make_backend()

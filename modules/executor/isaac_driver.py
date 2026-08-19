@@ -74,7 +74,19 @@ class MotionDriver(Protocol):
 
     def read_object_pose(self, object_id: str) -> dict: ...
 
-    def collision_free(self, pose: dict, radius: float) -> bool: ...
+    def verify_grasp(
+        self,
+        object_id: str,
+        initial_pose: dict | None = None,
+        lift_z: float = 0.20,
+    ) -> dict: ...
+
+    def collision_free(
+        self,
+        pose: dict,
+        radius: float,
+        excluded_paths: tuple[str, ...] = (),
+    ) -> bool: ...
 
     def e_stop(self) -> None: ...
 
@@ -98,6 +110,7 @@ class OmniDriver:
     STEP_LIMIT_M = 0.02          # 每帧最多朝目标移动 2cm，避免差分 IK 冲过头
     COLLISION_RADIUS_M = 0.05
     IK_METHOD = "damped-least-squares"
+    DEFAULT_PHYSICS_DT_S = 1.0 / 60.0
 
     def __init__(self, app, device: str = "cpu",
                  robot_path: str = ROBOT_PRIM_PATH) -> None:
@@ -107,6 +120,7 @@ class OmniDriver:
         self._franka = None
         self._connected = False
         self._stopped = False
+        self._physics_dt_s = self.DEFAULT_PHYSICS_DT_S
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -123,7 +137,7 @@ class OmniDriver:
         import omni.timeline
         import isaacsim.core.experimental.utils.stage as stage_utils
         from isaacsim.core.experimental.objects import DomeLight, GroundPlane
-        from isaacsim.core.simulation_manager import SimulationManager
+        from isaacsim.core.simulation_manager import PhysicsScene, SimulationManager
         from isaacsim.robot.experimental.manipulators.examples.franka.franka import Franka
 
         SimulationManager.set_physics_sim_device(self._device)
@@ -137,6 +151,16 @@ class OmniDriver:
 
         self._franka = Franka(robot_path=self._robot_path, create_robot=True)
         self._connected = True
+
+        # Use the active physics scene timestep for the Cartesian speed limit.
+        try:
+            scenes = PhysicsScene.get_physics_scenes()
+            if scenes:
+                dt = float(scenes[0].get_dt())
+                if dt > 0:
+                    self._physics_dt_s = dt
+        except Exception:  # noqa: BLE001
+            self._physics_dt_s = self.DEFAULT_PHYSICS_DT_S
 
         omni.timeline.get_timeline_interface().play()
         self._app.update()
@@ -160,7 +184,8 @@ class OmniDriver:
         """差分 IK 移动末端到目标位姿，直到收敛或超时。
 
         每帧调用 ``set_end_effector_pose``（差分 IK 解算关节增量）再 ``app.update``，
-        然后回读末端位置判断是否到达。``linear_speed`` 仅作后端限速语义参考。
+        然后回读末端位置判断是否到达。每个物理步的目标位移不超过
+        ``linear_speed * physics_dt``，从而把策略层限速传递到驱动层。
         """
         self._ensure_connected()
         import time
@@ -189,6 +214,7 @@ class OmniDriver:
                     "coordinate_frame": "world",
                     "position": {"x": current[0], "y": current[1], "z": current[2]},
                     "distance_m": distance,
+                    "velocity_m_s": float(linear_speed),
                     "joint_positions": self._joint_positions_np().tolist(),
                 }
             )
@@ -200,10 +226,17 @@ class OmniDriver:
                     trajectory=trajectory,
                     wall_ms=wall_ms,
                     wall_ms_per_frame=(wall_ms / frames) if frames else 0.0,
+                    velocity_m_s=float(linear_speed),
                 )
 
-            # 每帧最多朝目标移动 STEP_LIMIT_M，避免全步长 IK 冲过头。
-            step = min(distance, self.STEP_LIMIT_M)
+            # 每个物理步的位移同时受几何步长和配置速度上限约束。
+            step = min(
+                distance,
+                self.STEP_LIMIT_M,
+                max(float(linear_speed), 0.0) * self._physics_dt_s,
+            )
+            if step <= 0:
+                return _failed("SPEED_LIMIT_EXCEEDED", 0)
             step_target = current + (direction / max(distance, 1e-9)) * step
             self._franka.set_end_effector_pose(
                 position=step_target.reshape(1, -1),
@@ -226,6 +259,7 @@ class OmniDriver:
                     joint_positions=self._joint_positions_np().tolist(),
                     best_distance_m=best_distance,
                     wall_ms=wall_ms,
+                    velocity_m_s=float(linear_speed),
                 )
 
             if time.monotonic() >= deadline:
@@ -237,6 +271,7 @@ class OmniDriver:
                     best_distance_m=best_distance,
                     wall_ms=wall_ms,
                     wall_ms_per_frame=(wall_ms / frames),
+                    velocity_m_s=float(linear_speed),
                 )
 
     def gripper_open(self, width: float, timeout_s: float) -> dict:
@@ -246,10 +281,9 @@ class OmniDriver:
 
     def gripper_close(self, force: float, timeout_s: float) -> dict:
         self._ensure_connected()
-        result = self._set_gripper([0.0, 0.0], timeout_s)
-        # 夹持力尚未接入真实力传感器，暂以“是否完全闭合”作为抓取成功代理。
-        result["grasp_force_n"] = float(force) if result["status"] == "SUCCESS" else 0.0
-        return result
+        # 关节闭合本身不能证明物体已被抓住；实际抓取由
+        # ``verify_grasp`` 在抬升后根据物体真实位姿确认。
+        return self._set_gripper([0.0, 0.0], timeout_s)
 
     def read_object_pose(self, object_id: str) -> dict:
         self._ensure_connected()
@@ -262,15 +296,66 @@ class OmniDriver:
         pos = positions[0]
         return {"x": float(pos[0]), "y": float(pos[1]), "z": float(pos[2])}
 
-    def collision_free(self, pose: dict, radius: float) -> bool:
-        """查询目标位姿附近是否无碰撞。查询本身失败时抛 ``DriverError``（fail-closed）。
+    def verify_grasp(
+        self,
+        object_id: str,
+        initial_pose: dict | None = None,
+        lift_z: float = 0.20,
+    ) -> dict:
+        """确认物体是否随末端抬升，避免用夹爪指令值冒充抓取力。"""
+        pose = self.read_object_pose(object_id)
+        initial_z = float((initial_pose or {}).get("z", pose["z"]))
+        threshold = max(initial_z + 0.04, float(lift_z) - 0.04)
+        verified = pose["z"] >= threshold
+        return {
+            "verified": verified,
+            "object_pose": pose,
+            "reason": "" if verified else "OBJECT_DID_NOT_LIFT",
+        }
 
-        TODO(executor): Isaac Sim 6.0 移除了 ``get_physx_interface().overlap_sphere``，
-        且旧实现会把「夹爪接近被抓物体」误判为碰撞。此处暂时跳过碰撞查询（返回 True）；
-        恢复时改用正确的 PhysX 场景查询接口，并把目标物体排除在障碍之外。
+    def collision_free(
+        self,
+        pose: dict,
+        radius: float,
+        excluded_paths: tuple[str, ...] = (),
+    ) -> bool:
+        """使用 Isaac Sim 官方 PhysX 球体重叠查询检查目标区域。
+
+        查询异常、命中路径无法识别或场景查询 API 不可用时一律抛出
+        ``DriverError``，由执行器安全门 fail-closed；不会再以 ``True`` 放行。
         """
         self._ensure_connected()
-        return True
+        try:
+            import carb
+            from omni.physx import get_physx_scene_query_interface
+
+            hits: list[str] = []
+            excluded = tuple(str(path).rstrip("/") for path in excluded_paths)
+
+            def report_hit(hit) -> bool:
+                path = getattr(hit, "rigid_body", None)
+                if path is None:
+                    path = getattr(hit, "actor", None)
+                path_text = str(path) if path is not None else ""
+                if not any(
+                    path_text == item or path_text.startswith(item + "/")
+                    for item in excluded
+                ):
+                    hits.append(path_text or "<unknown>")
+                return True
+
+            origin = carb.Float3(float(pose["x"]), float(pose["y"]), float(pose["z"]))
+            query = get_physx_scene_query_interface()
+            hit_count = query.overlap_sphere(float(radius), origin, report_hit, False)
+            if hit_count is None or int(hit_count) < 0:
+                raise DriverError("invalid PhysX overlap query result")
+            if hit_count > 0 and not hits:
+                raise DriverError("PhysX overlap hit path unavailable")
+            return not hits
+        except DriverError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise DriverError(f"collision query failed: {exc}") from exc
 
     def e_stop(self) -> None:
         """急停：停止时间轴（冻结物理）并置位停止标志。"""

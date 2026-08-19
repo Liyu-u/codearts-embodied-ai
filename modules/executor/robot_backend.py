@@ -127,6 +127,38 @@ class BaseRobotBackend:
                 pass
         return {"status": "SAFE_STOP", "reason": reason, "duration_ms": 0}
 
+    def _safety_failure(
+        self,
+        action: str,
+        reason: str,
+        duration_ms: int,
+        message: str,
+    ) -> dict:
+        event = self._record_safety_event(reason, "error", None, message)
+        self._enter_fail_closed(action, [event])
+        return _failed(reason, duration_ms, safety_events=[event])
+
+    def health(self) -> dict:
+        driver = self._driver
+        connected = bool(
+            driver is not None
+            and getattr(driver, "connected", getattr(driver, "_connected", True))
+        )
+        if self._safe_stopped:
+            status = "blocked"
+        elif not connected:
+            status = "degraded"
+        else:
+            status = "ok"
+        return {
+            "status": status,
+            "backend": self.mode,
+            "driver_bound": driver is not None,
+            "driver_connected": connected,
+            "safe_stopped": self._safe_stopped,
+            "safe_stop_reason": self._safe_stop_reason,
+        }
+
     def trajectory_points(self) -> list[dict]:
         return deepcopy(self._trajectory)
 
@@ -204,8 +236,15 @@ class BaseRobotBackend:
         if self._driver is not None:
             try:
                 pose = self._driver.read_object_pose(object_id)
-            except DriverError:
-                pose = deepcopy(item["pose"])
+            except Exception as exc:  # noqa: BLE001
+                event = self._record_safety_event(
+                    "OBJECT_POSE_UNAVAILABLE", "error", None, str(exc)
+                )
+                self._enter_fail_closed("detect_object", [event])
+                return _failed(
+                    "OBJECT_POSE_UNAVAILABLE", 0, safety_events=[event]
+                )
+            item["pose"] = deepcopy(pose)
         return _succeeded(0, object_id=object_id, pose=pose)
 
     def _move_to_object(self, arguments: dict) -> dict:
@@ -215,7 +254,9 @@ class BaseRobotBackend:
             return _failed(f"OBJECT_NOT_FOUND:{object_id}", 0)
 
         approach = self._approach_pose(item)
-        result = self._guarded_move_to(approach, "move_to_object")
+        result = self._guarded_move_to(
+            approach, "move_to_object", ignore_object_ids=(object_id,)
+        )
         if result["status"] != "SUCCESS":
             return result
         self._approached_id = object_id
@@ -244,7 +285,9 @@ class BaseRobotBackend:
 
         # 下降到抓取高度（略低于物体顶部）。
         grasp_pose = self._grasp_pose(item)
-        descend = self._guarded_move_to(grasp_pose, "grasp")
+        descend = self._guarded_move_to(
+            grasp_pose, "grasp", ignore_object_ids=(object_id,)
+        )
         if descend["status"] != "SUCCESS":
             return descend
 
@@ -253,28 +296,71 @@ class BaseRobotBackend:
         close = self._driver.gripper_close(self.safety.motion.max_force_n, timeout)
         self._elapsed_ms += close.get("duration_ms", 0)
         self._extend_trajectory(close.get("trajectory", []))
-        force = close.get("grasp_force_n", 0.0)
         if close.get("timed_out"):
-            return _failed("ACTION_TIMEOUT", close.get("duration_ms", 0))
+            return self._safety_failure(
+                "grasp", "ACTION_TIMEOUT", close.get("duration_ms", 0),
+                "gripper close exceeded the configured action timeout",
+            )
         if close["status"] != "SUCCESS":
             return _failed(close.get("reason") or "GRASP_FAILED",
                            close.get("duration_ms", 0))
-        if force < self.safety.motion.grasp_verify_force_n:
+        force = close.get("grasp_force_n")
+        if force is not None and force < self.safety.motion.grasp_verify_force_n:
             return _failed("GRASP_WEAK", close.get("duration_ms", 0),
                            grasp_force_n=force)
 
         # 抬升到安全高度。
-        lift = self._guarded_move_to({"x": grasp_pose["x"], "y": grasp_pose["y"],
-                                      "z": SAFE_LIFT_Z_M}, "grasp")
+        lift = self._guarded_move_to(
+            {"x": grasp_pose["x"], "y": grasp_pose["y"], "z": SAFE_LIFT_Z_M},
+            "grasp",
+            ignore_object_ids=(object_id,),
+        )
         if lift["status"] != "SUCCESS":
             return lift
+
+        verifier = getattr(self._driver, "verify_grasp", None)
+        if not callable(verifier):
+            return self._safety_failure(
+                "grasp", "GRASP_VERIFICATION_UNAVAILABLE", 0,
+                "driver does not provide post-lift grasp verification",
+            )
+        try:
+            verification = verifier(
+                object_id, initial_pose=item.get("pose"), lift_z=SAFE_LIFT_Z_M
+            )
+        except Exception as exc:  # noqa: BLE001
+            event = self._record_safety_event(
+                "GRASP_VERIFICATION_ERROR", "error", None, str(exc)
+            )
+            self._enter_fail_closed("grasp", [event])
+            return _failed("GRASP_VERIFICATION_ERROR", 0,
+                           safety_events=[event])
+        if not isinstance(verification, dict):
+            return self._safety_failure(
+                "grasp", "GRASP_VERIFICATION_ERROR", 0,
+                "driver returned an invalid grasp verification result",
+            )
+        if not verification.get("verified", False):
+            event = self._record_safety_event(
+                "GRASP_UNVERIFIED", "error", None,
+                verification.get("reason") or "object did not lift",
+            )
+            self._enter_fail_closed("grasp", [event])
+            return _failed("GRASP_UNVERIFIED", 0,
+                           safety_events=[event])
+
+        verified_pose = verification.get("object_pose")
+        if isinstance(verified_pose, dict):
+            self._objects[object_id]["pose"] = deepcopy(verified_pose)
+        if verification.get("grasp_force_n") is not None:
+            force = verification["grasp_force_n"]
 
         self._held_id = object_id
         return _succeeded(
             descend["duration_ms"] + close.get("duration_ms", 0)
             + lift["duration_ms"],
             object_id=object_id,
-            grasp_force_n=force,
+            **({"grasp_force_n": force} if force is not None else {}),
             safety_events=descend.get("safety_events", [])
             + close.get("safety_events", [])
             + lift.get("safety_events", []),
@@ -309,7 +395,9 @@ class BaseRobotBackend:
             return _failed(f"PLACEMENT_MODE_UNSUPPORTED:{placement_mode}", 0)
 
         approach = self._approach_above(placement_pose)
-        result = self._guarded_move_to(approach, "move_to_target")
+        result = self._guarded_move_to(
+            approach, "move_to_target", ignore_object_ids=(destination_id,)
+        )
         if result["status"] != "SUCCESS":
             return result
         self._target_id = destination_id
@@ -337,7 +425,10 @@ class BaseRobotBackend:
         self._elapsed_ms += opened.get("duration_ms", 0)
         self._extend_trajectory(opened.get("trajectory", []))
         if opened.get("timed_out"):
-            return _failed("ACTION_TIMEOUT", opened.get("duration_ms", 0))
+            return self._safety_failure(
+                "release", "ACTION_TIMEOUT", opened.get("duration_ms", 0),
+                "gripper open exceeded the configured action timeout",
+            )
         if opened["status"] != "SUCCESS":
             return _failed(opened.get("reason") or "RELEASE_FAILED",
                            opened.get("duration_ms", 0))
@@ -346,6 +437,7 @@ class BaseRobotBackend:
         retreat = self._guarded_move_to(
             {"x": self._eef_pose["x"], "y": self._eef_pose["y"], "z": SAFE_LIFT_Z_M},
             "release",
+            ignore_object_ids=(self._target_id,),
         )
         if retreat["status"] != "SUCCESS":
             return retreat
@@ -368,7 +460,12 @@ class BaseRobotBackend:
     # ------------------------------------------------------------------
     # 安全守卫与运动封装
     # ------------------------------------------------------------------
-    def _guarded_move_to(self, pose: dict, action: str) -> dict:
+    def _guarded_move_to(
+        self,
+        pose: dict,
+        action: str,
+        ignore_object_ids: tuple[str | None, ...] = (),
+    ) -> dict:
         """执行一次带完整安全守卫的笛卡尔运动。"""
         events: list[dict] = []
 
@@ -390,13 +487,23 @@ class BaseRobotBackend:
                 self._enter_fail_closed(action, events)
                 return _failed("COLLISION_CHECK_UNAVAILABLE", 0, safety_events=events)
             try:
-                if not self._driver.collision_free(pose, COLLISION_RADIUS_M):
+                excluded_paths = tuple(
+                    ["/World/robot"]
+                    + [
+                        f"/World/{object_id}"
+                        for object_id in ignore_object_ids
+                        if object_id
+                    ]
+                )
+                if not self._driver.collision_free(
+                    pose, COLLISION_RADIUS_M, excluded_paths=excluded_paths
+                ):
                     events.append(self._record_safety_event(
                         "COLLISION_DETECTED", "error", None,
                         f"collision risk at {pose!r}"))
                     self._enter_fail_closed(action, events)
                     return _failed("COLLISION_DETECTED", 0, safety_events=events)
-            except DriverError as exc:
+            except Exception as exc:  # noqa: BLE001
                 if self.safety.fail_closed_on_error:
                     events.append(self._record_safety_event(
                         "COLLISION_CHECK_ERROR", "error", None, str(exc)))
@@ -431,6 +538,12 @@ class BaseRobotBackend:
         for collision in move.get("collisions", []):
             events.append(self._record_safety_event(
                 "COLLISION_DETECTED", "error", None, str(collision)))
+        if events:
+            self._enter_fail_closed(action, events)
+            return _failed(
+                "COLLISION_DETECTED", move.get("duration_ms", 0),
+                safety_events=events,
+            )
         return _succeeded(move.get("duration_ms", 0),
                           pose=deepcopy(move.get("pose", pose)),
                           safety_events=events)

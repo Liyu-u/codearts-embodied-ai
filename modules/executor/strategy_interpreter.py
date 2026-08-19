@@ -16,6 +16,13 @@ class _ActionLimitExceeded(RuntimeError):
     pass
 
 
+class _SafetyGateTriggered(RuntimeError):
+    def __init__(self, reason: str, step_id: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.step_id = step_id
+
+
 def _resolve_value(value: Any, results: dict[str, dict]) -> Any:
     if isinstance(value, str) and value.startswith("$"):
         reference = value[1:]
@@ -155,6 +162,15 @@ class StrategyInterpreter:
                     counter,
                     backend_events,
                 )
+            except _SafetyGateTriggered as exc:
+                self._append_skipped(
+                    strategy["steps"][index + 1 :], records
+                )
+                self._enter_safe_stop(
+                    exc.reason, exc.step_id, records, safety_events
+                )
+                overall_status = "SAFE_STOP"
+                break
             except _ActionLimitExceeded:
                 self._append_skipped(
                     strategy["steps"][index + 1 :],
@@ -268,6 +284,11 @@ class StrategyInterpreter:
                     backend_events=backend_events,
                 )
                 records.append(outcome.record)
+                if outcome.result.get("safety_events"):
+                    raise _SafetyGateTriggered(
+                        _safety_gate_reason(outcome.result),
+                        recovery_step["step_id"],
+                    )
                 if outcome.result.get("status") != "SUCCESS":
                     attempt_ok = False
                     break
