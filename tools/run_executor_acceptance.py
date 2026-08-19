@@ -104,8 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     log(rd, "boot", "done", "SimulationApp created")
 
     try:
-        # 确保仓库代码在 sys.path（容器内 /workspace/src）
-        sys.path.insert(0, "/workspace/src")
+        # 仓库根目录（integration/、modules/ 所在层）加入 sys.path，不写死容器路径。
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
         from integration.adapters.executor import ExecutorAdapter
         from integration.config.loader import load_profile
