@@ -1,0 +1,27 @@
+# local 环境：日常开发、Mock 联调与 CI。不启动 Isaac Sim，不连接服务器。
+
+[profile]
+name = "local"
+backend = "mock"
+
+[workspace]
+x_min = -0.5
+x_max = 0.5
+y_min = -0.5
+y_max = 0.5
+z_min = 0.0
+z_max = 0.6
+
+[motion]
+max_linear_velocity_m_s = 0.30
+max_angular_velocity_rad_s = 1.0
+max_force_n = 10.0
+action_timeout_s = 30.0
+default_linear_speed_m_s = 0.05
+grasp_verify_force_n = 0.5
+
+[safety]
+require_human_confirmation = false
+e_stop_enabled = true
+collision_check = true
+fail_closed_on_error = true
