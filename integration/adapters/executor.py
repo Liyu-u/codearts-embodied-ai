@@ -8,6 +8,14 @@ class ExecutorAdapter:
         self._backend = backend
         self._interpreter = StrategyInterpreter(backend)
 
+    @classmethod
+    def from_profile(cls, profile, perception: dict, driver=None) -> "ExecutorAdapter":
+        """按 local/sim/real 配置构造执行后端，再包装为适配器。"""
+        from integration.config.loader import build_backend
+
+        backend = build_backend(profile, perception, driver=driver)
+        return cls(backend)
+
     def run(self, input_json: dict) -> dict:
         assert_contract(input_json, "strategy.v1")
         output = self._interpreter.run(input_json)

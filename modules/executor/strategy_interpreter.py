@@ -41,6 +41,26 @@ def resolve_arguments(arguments: dict, results: dict[str, dict]) -> dict:
     return _resolve_value(arguments, results)
 
 
+_EVIDENCE_KEYS = ("pose", "velocity_m_s", "collisions", "grasp_force_n")
+
+
+def _evidence_fields(result: dict) -> dict:
+    """从后端动作结果中提取执行证据字段，写入 execution.v1 的步骤记录。"""
+    extra: dict = {}
+    for key in _EVIDENCE_KEYS:
+        if key in result:
+            extra[key] = deepcopy(result[key])
+    return extra
+
+
+def _safety_gate_reason(result: dict) -> str:
+    """从后端安全事件中提取安全门触发原因。"""
+    for event in result.get("safety_events") or []:
+        if isinstance(event, dict) and event.get("type"):
+            return event["type"]
+    return "SAFETY_GATE_TRIGGERED"
+
+
 class StrategyInterpreter:
     def __init__(
         self,
@@ -60,11 +80,13 @@ class StrategyInterpreter:
         results: dict[str, dict] = {}
         counter = [0]
         safety_events: list[dict] = []
+        backend_events: list[dict] = []
         overall_status = "SUCCEEDED"
 
         for index, step in enumerate(strategy["steps"]):
             try:
-                outcome = self._execute_step(step, results, "main", counter)
+                outcome = self._execute_step(step, results, "main", counter,
+                                             backend_events)
             except _ActionLimitExceeded:
                 self._append_skipped(
                     strategy["steps"][index:],
@@ -84,6 +106,18 @@ class StrategyInterpreter:
             if outcome.result.get("status") == "SUCCESS":
                 continue
 
+            # 安全门事件（越界、碰撞、超时、限速等）不进入有限恢复，直接安全停止。
+            if outcome.result.get("safety_events"):
+                self._append_skipped(strategy["steps"][index + 1 :], records)
+                self._enter_safe_stop(
+                    _safety_gate_reason(outcome.result),
+                    step["step_id"],
+                    records,
+                    safety_events,
+                )
+                overall_status = "SAFE_STOP"
+                break
+
             recovery = step.get("on_failure")
             if recovery is None:
                 self._append_skipped(strategy["steps"][index + 1 :], records)
@@ -96,6 +130,7 @@ class StrategyInterpreter:
                     results,
                     records,
                     counter,
+                    backend_events,
                 )
             except _ActionLimitExceeded:
                 self._append_skipped(
@@ -130,6 +165,7 @@ class StrategyInterpreter:
             overall_status,
             records,
             safety_events,
+            backend_events,
         )
 
     def _build_output(
@@ -138,6 +174,7 @@ class StrategyInterpreter:
         status: str,
         records: list[dict],
         safety_events: list[dict],
+        backend_events: list[dict],
     ) -> dict:
         return {
             "schema_version": "execution.v1",
@@ -146,7 +183,9 @@ class StrategyInterpreter:
             "steps": records,
             "trajectory_points": self.backend.trajectory_points(),
             "total_duration_ms": sum(item["duration_ms"] for item in records),
-            "safety_events": safety_events,
+            # 后端（Isaac/真机）在动作执行期间产生的碰撞、超时、越界等事件，
+            # 按时间顺序排在前，解释器自身的安全停止事件排在后。
+            "safety_events": backend_events + safety_events,
         }
 
     def _execute_step(
@@ -155,6 +194,7 @@ class StrategyInterpreter:
         results: dict[str, dict],
         phase: str,
         counter: list[int],
+        backend_events: list[dict],
     ) -> StepOutcome:
         try:
             arguments = resolve_arguments(step["arguments"], results)
@@ -170,6 +210,9 @@ class StrategyInterpreter:
         counter[0] += 1
         result = self.backend.execute(step["action"], arguments)
         results[step["step_id"]] = deepcopy(result)
+        for event in result.get("safety_events") or []:
+            if isinstance(event, dict):
+                backend_events.append(deepcopy(event))
         return StepOutcome(
             self._record(
                 step,
@@ -178,6 +221,7 @@ class StrategyInterpreter:
                 result.get("reason") or None,
                 result.get("duration_ms", 0),
                 phase,
+                _evidence_fields(result),
             ),
             result,
         )
@@ -188,6 +232,7 @@ class StrategyInterpreter:
         results: dict[str, dict],
         records: list[dict],
         counter: list[int],
+        backend_events: list[dict],
     ) -> bool:
         for attempt in range(1, recovery["max_attempts"] + 1):
             attempt_ok = True
@@ -197,6 +242,7 @@ class StrategyInterpreter:
                     results,
                     phase=f"recovery_{attempt}",
                     counter=counter,
+                    backend_events=backend_events,
                 )
                 records.append(outcome.record)
                 if outcome.result.get("status") != "SUCCESS":
@@ -285,8 +331,9 @@ class StrategyInterpreter:
         reason: str | None,
         duration_ms: int,
         phase: str = "main",
+        extra: dict | None = None,
     ) -> dict:
-        return {
+        record = {
             "step_id": step["step_id"],
             "phase": phase,
             "action": step["action"],
@@ -295,6 +342,9 @@ class StrategyInterpreter:
             "reason": reason,
             "duration_ms": duration_ms,
         }
+        if extra:
+            record.update(extra)
+        return record
 
     @classmethod
     def _append_skipped(
