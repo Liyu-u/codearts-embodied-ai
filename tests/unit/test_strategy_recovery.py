@@ -25,6 +25,41 @@ def interpreter(failures=None, limits=None):
     return StrategyInterpreter(backend, limits=limits)
 
 
+class SafetyEventBackend:
+    mode = "fake"
+
+    def __init__(self):
+        self.calls = []
+        self.safe_stop_reason = None
+
+    def execute(self, action, arguments):
+        self.calls.append(action)
+        if action == "detect_object":
+            return {"status": "SUCCESS", "reason": "", "duration_ms": 0,
+                    "object_id": "green_cube"}
+        if action == "move_to_object":
+            return {"status": "SUCCESS", "reason": "", "duration_ms": 0}
+        if action == "grasp":
+            return {
+                "status": "FAILED",
+                "reason": "COLLISION_DETECTED",
+                "duration_ms": 0,
+                "safety_events": [{
+                    "type": "COLLISION_DETECTED",
+                    "severity": "error",
+                    "message": "forced recovery collision",
+                }],
+            }
+        return {"status": "SUCCESS", "reason": "", "duration_ms": 0}
+
+    def safe_stop(self, reason):
+        self.safe_stop_reason = reason
+        return {"status": "SAFE_STOP", "reason": reason, "duration_ms": 0}
+
+    def trajectory_points(self):
+        return []
+
+
 class StrategyRecoveryTests(unittest.TestCase):
     def test_one_grasp_failure_is_recovered(self):
         output = interpreter(failures={"grasp": 1}).run(strategy())
@@ -58,6 +93,13 @@ class StrategyRecoveryTests(unittest.TestCase):
         self.assertEqual(
             output["safety_events"][0]["type"], "ACTION_LIMIT_EXCEEDED"
         )
+
+    def test_safety_event_during_recovery_is_not_retried(self):
+        backend = SafetyEventBackend()
+        output = StrategyInterpreter(backend).run(strategy())
+        self.assertEqual(output["status"], "SAFE_STOP")
+        self.assertEqual(backend.calls.count("grasp"), 1)
+        self.assertEqual(backend.safe_stop_reason, "COLLISION_DETECTED")
 
     def test_only_stop_is_allowed_on_exhausted(self):
         value = strategy()
