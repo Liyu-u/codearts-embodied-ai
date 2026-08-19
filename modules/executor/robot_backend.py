@@ -55,6 +55,7 @@ class BaseRobotBackend:
         self._approached_id: str | None = None
         self._held_id: str | None = None
         self._target_id: str | None = None
+        self._placement_pose: dict | None = None
         self._eef_pose = {"x": 0.0, "y": 0.0, "z": SAFE_LIFT_Z_M}
         self._trajectory: list[dict] = []
         self._elapsed_ms = 0
@@ -135,6 +136,7 @@ class BaseRobotBackend:
             "approached_id": self._approached_id,
             "held_id": self._held_id,
             "target_id": self._target_id,
+            "placement_pose": deepcopy(self._placement_pose),
             "eef_pose": deepcopy(self._eef_pose),
             "safe_stopped": self._safe_stopped,
             "safe_stop_reason": self._safe_stop_reason,
@@ -281,30 +283,42 @@ class BaseRobotBackend:
     def _move_to_target(self, arguments: dict) -> dict:
         destination_id = arguments.get("destination_id", arguments.get("target"))
         placement_mode = arguments.get("placement_mode", "direct")
-        # TODO(executor): 实现 stack_on 堆叠放置（对齐 MockBackend._stack_pose）。
-        # 当前仅支持 direct；stack_on 明确失败，绝不静默降级为 direct 放置。
-        if placement_mode != "direct":
-            return _failed(f"PLACEMENT_MODE_UNSUPPORTED:{placement_mode}", 0)
         item = self._objects.get(destination_id)
-        execution = item.get("execution", {}) if item is not None else {}
-        if (
-            item is None
-            or not execution.get("valid_destination", False)
-            or execution.get("stackable_destination", False)
-        ):
+        if item is None:
             return _failed(f"INVALID_DESTINATION:{destination_id}", 0)
-        if self._held_id is None:
-            return _failed("NOT_HOLDING_OBJECT", 0)
+        execution = item.get("execution", {})
 
-        approach = self._place_approach_pose(item)
+        if placement_mode == "stack_on":
+            if not execution.get("stackable_destination", False):
+                return _failed(f"INVALID_STACK_DESTINATION:{destination_id}", 0)
+            if destination_id == self._held_id:
+                return _failed("STACK_TARGET_IS_HELD_OBJECT", 0)
+            if self._held_id is None:
+                return _failed("NOT_HOLDING_OBJECT", 0)
+            placement_pose = self._stack_pose(item, self._objects[self._held_id])
+        elif placement_mode == "direct":
+            if (
+                not execution.get("valid_destination", False)
+                or execution.get("stackable_destination", False)
+            ):
+                return _failed(f"INVALID_DESTINATION:{destination_id}", 0)
+            if self._held_id is None:
+                return _failed("NOT_HOLDING_OBJECT", 0)
+            placement_pose = deepcopy(item["pose"])
+        else:
+            return _failed(f"PLACEMENT_MODE_UNSUPPORTED:{placement_mode}", 0)
+
+        approach = self._approach_above(placement_pose)
         result = self._guarded_move_to(approach, "move_to_target")
         if result["status"] != "SUCCESS":
             return result
         self._target_id = destination_id
+        self._placement_pose = placement_pose
         self._eef_pose = deepcopy(result["pose"])
         return _succeeded(
             result["duration_ms"],
             destination_id=destination_id,
+            placement_mode=placement_mode,
             pose=deepcopy(result["pose"]),
             safety_events=result.get("safety_events", []),
         )
@@ -336,13 +350,14 @@ class BaseRobotBackend:
         if retreat["status"] != "SUCCESS":
             return retreat
 
-        # 把物体真实位姿更新为目标区（与 Mock 语义一致，供 D 对照）。
+        # 把物体真实位姿更新到放置点（direct=目标中心，stack_on=堆叠位置）。
         self._objects[released_id]["pose"] = deepcopy(
-            self._objects[self._target_id]["pose"]
+            self._placement_pose or self._objects[self._target_id]["pose"]
         )
         self._held_id = None
         self._approached_id = None
         self._target_id = None
+        self._placement_pose = None
         return _succeeded(
             opened.get("duration_ms", 0) + retreat["duration_ms"],
             object_id=released_id,
@@ -485,7 +500,24 @@ class BaseRobotBackend:
         return {"x": center["x"], "y": center["y"],
                 "z": max(self._object_top_z(item) - GRASP_Z_OFFSET_M, PLACE_Z_MIN_M)}
 
-    def _place_approach_pose(self, item: dict) -> dict:
-        center = self._object_center(item)
-        return {"x": center["x"], "y": center["y"],
-                "z": max(center["z"] + 0.10, SAFE_LIFT_Z_M)}
+    def _approach_above(self, pose: dict) -> dict:
+        """返回放置点上方 0.10m（且不低于安全抬升高度）的接近位姿。"""
+        return {"x": pose.get("x", 0.0), "y": pose.get("y", 0.0),
+                "z": max(float(pose.get("z", 0.0)) + 0.10, SAFE_LIFT_Z_M)}
+
+    @staticmethod
+    def _stack_pose(destination: dict, held: dict) -> dict:
+        """返回被夹持物体堆叠到底座上方时的中心位姿（对齐 MockBackend._stack_pose）。"""
+        destination_pose = destination.get("pose") or {}
+        held_pose = held.get("pose") or {}
+        destination_dimensions = destination.get("dimensions") or {}
+        held_dimensions = held.get("dimensions") or {}
+        destination_height = float(destination_dimensions.get("z", 0.0) or 0.0)
+        held_height = float(held_dimensions.get("z", 0.0) or 0.0)
+        return {
+            "x": float(destination_pose.get("x", held_pose.get("x", 0.0))),
+            "y": float(destination_pose.get("y", held_pose.get("y", 0.0))),
+            "z": float(destination_pose.get("z", 0.0))
+            + destination_height / 2.0
+            + held_height / 2.0,
+        }

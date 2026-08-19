@@ -69,8 +69,8 @@ mode -> "mock" | "isaac" | "real"
 ## 五、契约变化（队友要留意的点）
 
 1. **`move_to_target` 新增 `placement_mode`**（`direct` / `stack_on`，默认 `direct`）。
-   - Mock 后端两种都支持；**Isaac/真机后端目前只支持 `direct`**，传 `stack_on` 会明确失败
-     （`PLACEMENT_MODE_UNSUPPORTED`），绝不静默降级。`stack_on` 已标 `TODO(executor)` 待补。
+   - Mock 与 Isaac/真机后端均支持两种模式；`stack_on` 对齐 `MockBackend._stack_pose`
+     计算堆叠位姿（被夹持物体中心 = 底座顶部 + 物体半高），并校验 `stackable_destination`。
 2. **`execution.v1` 新增 `provenance`**：`ExecutorAdapter.run()` 会追加
    `{source, backend, agent:"executor", validation}`，便于 D 侧溯源。
 3. **动作校验上移到 `integration/strategy_policy.py`**：`ALLOWED_ACTIONS` /
@@ -111,14 +111,13 @@ caps = adapter.capabilities()          # {"allowed_actions": [...], "max_recover
 
 ## 八、待办（按优先级）
 
-1. `stack_on` 堆叠放置：对齐 `MockBackend._stack_pose`，补 Isaac/真机后端实现。
-2. 服务器 Isaac Sim / 真机完整联调 + 验收（`stu_01@10.16.0.40:5122`，离线容器）。
-3. （可选）真实 `execution.v1` 接入 D（TraceCoder）反馈闭环。
+1. 服务器 Isaac Sim / 真机完整联调 + 验收（`stu_01@10.16.0.40:5122`，离线容器）。
+2. （可选）真实 `execution.v1` 接入 D（TraceCoder）反馈闭环。
 
 ---
 
 ## 九、测试情况
 
-- 本分支 C 模块单元测试 **34 项全绿**（config / safety / isaac_backend / real_backend / enrichment）。
+- 本分支 C 模块单元测试 **37 项全绿**（config / safety / isaac_backend / real_backend / enrichment / stack_on）。
 - 全套单测 78 通过 + 1 个 import 错误（`pydantic_settings`，A 模块依赖，本地环境未装，与 C 无关）。
 - 端到端 mock sanity check 通过：`SUCCEEDED` + `provenance` + 证据字段。

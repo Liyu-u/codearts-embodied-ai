@@ -124,6 +124,62 @@ class IsaacSimBackendTests(unittest.TestCase):
         self.assertEqual(result["reason"], "E_STOP_TRIGGERED")
         self.assertTrue(driver.stopped)
 
+    def test_stack_on_places_held_object_above_base(self):
+        backend, _ = make_backend()
+        for action, args in [
+            ("detect_object", {"object_id": "green_cube"}),
+            ("move_to_object", {"object_id": "green_cube"}),
+            ("grasp", {"object_id": "green_cube"}),
+        ]:
+            self.assertEqual(backend.execute(action, args)["status"], "SUCCESS")
+        result = backend.execute(
+            "move_to_target",
+            {"destination_id": "red_cube", "placement_mode": "stack_on"},
+        )
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(result.get("placement_mode"), "stack_on")
+        self.assertEqual(backend.execute("release", {})["status"], "SUCCESS")
+        state = backend.snapshot()
+        green_pose = state["objects"]["green_cube"]["pose"]
+        red_pose = state["objects"]["red_cube"]["pose"]
+        # 堆叠：绿色方块中心在红色底座正上方（底座半高 0.02 + 方块半高 0.02 → z=0.08）。
+        self.assertEqual(green_pose["x"], red_pose["x"])
+        self.assertEqual(green_pose["y"], red_pose["y"])
+        self.assertAlmostEqual(green_pose["z"], 0.08, places=6)
+        self.assertGreater(green_pose["z"], red_pose["z"])
+
+    def test_stack_on_rejects_non_stackable_destination(self):
+        backend, _ = make_backend()
+        for action, args in [
+            ("detect_object", {"object_id": "green_cube"}),
+            ("move_to_object", {"object_id": "green_cube"}),
+            ("grasp", {"object_id": "green_cube"}),
+        ]:
+            self.assertEqual(backend.execute(action, args)["status"], "SUCCESS")
+        result = backend.execute(
+            "move_to_target",
+            {"destination_id": "zone_unstack_target", "placement_mode": "stack_on"},
+        )
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(
+            result["reason"], "INVALID_STACK_DESTINATION:zone_unstack_target"
+        )
+
+    def test_direct_rejects_stackable_destination(self):
+        # direct 放置到可堆叠底座应被拒绝（与 MockBackend 语义一致）。
+        backend, _ = make_backend()
+        for action, args in [
+            ("detect_object", {"object_id": "green_cube"}),
+            ("move_to_object", {"object_id": "green_cube"}),
+            ("grasp", {"object_id": "green_cube"}),
+        ]:
+            self.assertEqual(backend.execute(action, args)["status"], "SUCCESS")
+        result = backend.execute(
+            "move_to_target", {"destination_id": "red_cube"}
+        )
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["reason"], "INVALID_DESTINATION:red_cube")
+
 
 if __name__ == "__main__":
     unittest.main()
