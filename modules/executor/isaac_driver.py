@@ -257,6 +257,8 @@ class OmniDriver:
 
         geom = GeomPrim(self._prim_path_for(object_id))
         positions, _ = geom.get_world_poses()
+        if hasattr(positions, "numpy"):
+            positions = positions.numpy()
         pos = positions[0]
         return {"x": float(pos[0]), "y": float(pos[1]), "z": float(pos[2])}
 

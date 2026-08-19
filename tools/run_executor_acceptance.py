@@ -108,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
         from integration.adapters.executor import ExecutorAdapter
-        from integration.config.loader import load_profile
+        from integration.config.loader import build_backend, load_profile
         from modules.executor.isaac_driver import OmniDriver
 
         # 1) 驱动连接：官方 Franka + 差分 IK + CPU 物理
@@ -128,16 +128,18 @@ def main(argv: list[str] | None = None) -> int:
 
         # 4) 后端 + 适配器（sim profile → IsaacSimBackend）
         profile = load_profile("sim")
-        adapter = ExecutorAdapter.from_profile(profile, scene, driver=driver)
-        log(rd, "backend", "done", "ExecutorAdapter.from_profile(sim) built")
+        backend = build_backend(profile, scene, driver=driver)
+        adapter = ExecutorAdapter(backend)
+        log(rd, "backend", "done", "ExecutorAdapter(sim/isaac backend) built")
 
-        # 5) 执行
+        # 5) 执行。对象位姿取后端逻辑状态（_release 会更新 _objects）；
+        #    物理抓取的真实位移证据见 tools/run_isaac_pickplace.py（FrankaPickPlace）。
         strategy = _strategy(args.placement_mode)
-        before = driver.read_object_pose("green_cube")
+        before = backend.snapshot()["objects"]["green_cube"]["pose"]
         start = time.monotonic()
         execution = adapter.run(strategy)
         elapsed_ms = int((time.monotonic() - start) * 1000)
-        after = driver.read_object_pose("green_cube")
+        after = backend.snapshot()["objects"]["green_cube"]["pose"]
 
         execution["cube_before"] = before
         execution["cube_after"] = after
