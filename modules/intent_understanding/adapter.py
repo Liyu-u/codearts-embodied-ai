@@ -23,6 +23,7 @@ if str(_MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(_MODULE_DIR))
 
 from robot_intent_agent.constraint import HybridConstraintCompiler  # noqa: E402
+from robot_intent_agent.config.settings import get_settings  # noqa: E402
 from robot_intent_agent.ir import RobotTaskIRGenerator  # noqa: E402
 from robot_intent_agent.planner import LLMPlanner  # noqa: E402
 from robot_intent_agent.scene_builder import RawObjectPercept, SemanticSceneBuilder  # noqa: E402
@@ -58,11 +59,14 @@ def health() -> dict:
         SemanticSceneBuilder()
         HybridConstraintCompiler()
         RobotTaskIRGenerator()
+        configured_engine = str(get_settings().planner_engine or "rule").strip().lower()
+        if configured_engine not in {"rule", "llm", "hybrid"}:
+            configured_engine = "rule"
         return {
             "module": MODULE_NAME,
             "version": MODULE_VERSION,
             "healthy": True,
-            "engine": "rule",
+            "engine": configured_engine,
             "message": "intent-understanding core loaded",
         }
     except Exception as exc:  # pragma: no cover - defensive boundary

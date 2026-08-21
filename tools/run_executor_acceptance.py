@@ -1,17 +1,18 @@
 """服务器端：C 模块 Isaac Sim 执行后端验收（新 executor 接线）。
 
-用 ``ExecutorAdapter.from_profile(sim)`` + ``OmniDriver`` 跑一条真实 pick-and-place 策略，
+用 ``ExecutorAdapter.from_profile(sim)`` + ``FrankaPickPlaceDriver`` 跑一条真实 pick-and-place 策略，
 输出 ``execution.v1``（含方块前后位姿、关节轨迹、安全事件、provenance）。
 
 与旧 ``run_isaac_pickplace.py`` 的区别：本脚本走的是新集成到 main 的 executor 链路
-（IsaacSimBackend → StrategyInterpreter → execution.v1），而不是直接调用 FrankaPickPlace。
+（IsaacSimBackend → StrategyInterpreter → execution.v1），并通过 MotionDriver 适配官方 FrankaPickPlace，
+而不是在验收脚本中绕过 executor 直接调用控制器。
 
 运行（容器内，离线）：
     /isaac-sim/python.sh run_executor_acceptance.py --result-dir /workspace/results -- --/app/headless=true
 
-已知限制（见 docs/服务器联调验收指南.md）：OmniDriver.move_to 是“循环直到收敛”的差分 IK，
-CPU 物理下远距离移动每帧耗时指数增长；本脚本默认用较短步距的小范围移动，
-若整段 pick-and-place 过慢，请改走 FrankaPickPlace（tools/run_isaac_pickplace.py）。
+控制器遵循 Isaac Sim 官方 Franka 示例：每帧发送完整末端目标位姿，
+再回读真实末端状态判断收敛；若远程环境仍无法在超时内完成，
+应先检查物理设备和 Isaac Sim 日志，而不是用逻辑位姿代替物理结果。
 """
 
 from __future__ import annotations
@@ -33,41 +34,59 @@ def log(result_dir: Path, step: str, status: str, detail: str = "") -> None:
         handle.flush()
 
 
-def _spawn_objects() -> None:
+def _spawn_objects(*, include_dynamic: bool = True) -> list[tuple[object, tuple[float, float, float]]]:
     """在 /World 下创建与 perception object_id 一致的方块 prim。
 
     对象 id 必须与 perception 场景一致（red_cube / green_cube / zone_unstack_target），
     因为 OmniDriver.read_object_pose 通过 ``/World/{object_id}`` 回读位姿。
     """
-    from isaacsim.core.utils.prims import create_prim
     from isaacsim.core.utils.stage import get_current_stage
-    from pxr import Gf, PhysxSchema, UsdGeom
+    from isaacsim.core.experimental.objects import Cube
+    from isaacsim.core.experimental.prims import GeomPrim, RigidPrim
+    from pxr import Gf, UsdGeom
 
     stage = get_current_stage()
     specs = [
-        # (id, 类型, 中心位姿, 尺寸, 颜色)
-        ("red_cube", "Cube", (0.25, 0.0, 0.04), (0.04, 0.04, 0.04), (1.0, 0.0, 0.0)),
-        ("green_cube", "Cube", (0.25, 0.0, 0.12), (0.04, 0.04, 0.04), (0.0, 1.0, 0.0)),
-        ("zone_unstack_target", "Cube", (0.40, 0.0, 0.03), (0.10, 0.10, 0.02), (0.7, 0.7, 0.7)),
+        # (id, 中心位姿, 尺寸, 颜色)
+        # 采用官方 FrankaPickPlace 已验证的可达工作区，避免把靠近
+        # 机器人基座边界的夹具坐标误判为 IK/物理失败。
+        ("red_cube", (0.65, -0.20, 0.0258), (0.04, 0.04, 0.04), "red"),
+        # Keep the dynamic cube identical to the official FrankaPickPlace
+        # example (51.5 mm).  The controller's grasp/lift clearance is tuned
+        # against this geometry.
+        ("green_cube", (0.50, 0.0, 0.0258), (0.0515, 0.0515, 0.0515), "green"),
+        ("zone_unstack_target", (0.45, 0.10, 0.02575), (0.10, 0.10, 0.02), "gray"),
     ]
-    for object_id, prim_type, pos, scale, color in specs:
+    dynamic_objects = []
+    for object_id, pos, scale, color in specs:
+        if object_id == "green_cube" and not include_dynamic:
+            continue
         path = f"/World/{object_id}"
-        create_prim(prim_path=path, prim_type=prim_type, position=pos, scale=scale)
+        if object_id == "green_cube":
+            cube = Cube(
+                paths=path,
+                positions=pos,
+                orientations=(1.0, 0.0, 0.0, 0.0),
+                sizes=1.0,
+                scales=scale,
+                colors=color,
+            )
+            GeomPrim(paths=cube.paths, apply_collision_apis=True)
+            dynamic_objects.append((RigidPrim(paths=cube.paths), pos))
+        else:
+            # Use plain USD geometry for static scene markers.  The official
+            # controller has only one experimental dynamic Cube; constructing
+            # additional experimental objects can put PhysX on a very slow
+            # tensor initialization path even when collisions are disabled.
+            prim = stage.DefinePrim(path, "Cube")
+            geom = UsdGeom.Cube(prim)
+            geom.CreateSizeAttr(1.0)
+            geom.AddTranslateOp().Set(Gf.Vec3d(*pos))
+            geom.AddScaleOp().Set(Gf.Vec3f(*scale))
         prim = stage.GetPrimAtPath(path)
         if prim is None:
-            continue
-        # 颜色
-        geom = UsdGeom.Gprim(prim)
-        geom.GetDisplayColorAttr().Set([Gf.Vec3f(*color)])
-        # 刚体 + 碰撞（与 scene_builder.py 一致）
-        try:
-            PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
-            rigid = PhysxSchema.PhysxRigidBodyAPI(prim)
-            rigid.GetRigidBodyEnabledAttr().Set(True)
-            rigid.GetMassAttr().Set(0.15)
-            geom.GetCollisionEnabledAttr().Set(True)
-        except Exception as exc:  # noqa: BLE001
-            print(f"  [WARN] physics setup skipped for {object_id}: {exc}", flush=True)
+            raise RuntimeError(f"failed to create Isaac Sim prim {path}")
+    return dynamic_objects
 
 
 def _strategy(placement_mode: str) -> dict:
@@ -89,10 +108,38 @@ def _strategy(placement_mode: str) -> dict:
     }
 
 
+def _load_strategy(strategy_file: str | None, placement_mode: str) -> dict:
+    """Load a strategy produced by A/B, or use the built-in acceptance plan."""
+
+    if not strategy_file:
+        return _strategy(placement_mode)
+    path = Path(strategy_file)
+    strategy = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(strategy, dict):
+        raise ValueError("strategy file must contain a JSON object")
+    # The live A/B preparation report stores scene/task/strategy together;
+    # accepting that envelope keeps the hand-off auditable without rewriting
+    # the generated strategy on disk.
+    if isinstance(strategy.get("strategy"), dict):
+        strategy = strategy["strategy"]
+    return strategy
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--result-dir", required=True)
     parser.add_argument("--placement-mode", default="direct", choices=["direct", "stack_on"])
+    parser.add_argument(
+        "--strategy-file",
+        default=None,
+        help="optional strategy.v1 JSON generated by the live A/B stages",
+    )
+    parser.add_argument(
+        "--device",
+        default=os.environ.get("ISAAC_SIM_DEVICE", "cpu"),
+        choices=["cpu", "cuda", "cuda:0"],
+        help="Isaac Sim physics device (default: ISAAC_SIM_DEVICE or cpu)",
+    )
     args, _ = parser.parse_known_args(argv)
     rd = Path(args.result_dir)
     rd.mkdir(parents=True, exist_ok=True)
@@ -109,22 +156,39 @@ def main(argv: list[str] | None = None) -> int:
 
         from integration.adapters.executor import ExecutorAdapter
         from integration.config.loader import build_backend, load_profile
-        from modules.executor.isaac_driver import OmniDriver
+        from modules.executor.isaac_driver import FrankaPickPlaceDriver
 
-        # 1) 驱动连接：官方 Franka + 差分 IK + CPU 物理
-        driver = OmniDriver(app, device="cpu")
-        driver.connect()
-        log(rd, "connect", "done", "OmniDriver connected (Franka + CPU physics)")
+        # 1) 驱动连接：复用 NVIDIA 官方 FrankaPickPlace 控制循环。
+        # 该控制器已经在同一服务器、同一 Isaac Sim 镜像上验证过完整
+        # pick-and-place；这里仅适配到集成 executor 的 MotionDriver 接口。
+        driver = FrankaPickPlaceDriver(app, device=args.device)
+        driver.connect(defer_start=True)
+        log(rd, "connect", "done", f"FrankaPickPlaceDriver connected ({args.device} physics; start deferred)")
 
         # 2) 场景物体（prim 路径与 perception object_id 一致）
-        _spawn_objects()
-        app.update()
+        # 官方控制器已经创建 green_cube；这里只补充静态 perception 标记，
+        # 避免第二个实验版动态 Cube 触发额外的 PhysX tensor 初始化。
+        _spawn_objects(include_dynamic=False)
         log(rd, "scene", "done", "objects spawned")
+        driver.start()
+        log(rd, "start", "done", "official FrankaPickPlace reset after timeline start")
 
         # 3) perception 场景（用 mock 场景的 object 元数据；id 与 /World/{id} 对齐）
         from integration.adapters import perception
 
         scene = perception.run({"scene_id": "stacking_cubes", "backend": "mock"})
+        # The stock mock scene is intentionally generic.  For this real Isaac
+        # acceptance profile, align only the destination metadata with the
+        # official controller's fixed physical target; object identity and all
+        # other perception fields remain unchanged.
+        for item in scene.get("objects", []):
+            if item.get("id") == "zone_unstack_target":
+                item["pose"] = {"x": 0.45, "y": 0.10, "z": 0.02575}
+        # Keep the pre-action scene read-free.  NVIDIA's controller resets the
+        # dynamic cube and immediately enters its forward loop; an eager
+        # GeomPrim tensor read here can force an expensive transform sync before
+        # the first physics tick.  The mock scene is aligned with the explicit
+        # USD spawn coordinates; post-action pose checks below remain physical.
 
         # 4) 后端 + 适配器（sim profile → IsaacSimBackend）
         profile = load_profile("sim")
@@ -132,22 +196,36 @@ def main(argv: list[str] | None = None) -> int:
         adapter = ExecutorAdapter(backend)
         log(rd, "backend", "done", "ExecutorAdapter(sim/isaac backend) built")
 
-        # 5) 执行。对象位姿取后端逻辑状态（_release 会更新 _objects）；
-        #    物理抓取的真实位移证据见 tools/run_isaac_pickplace.py（FrankaPickPlace）。
-        strategy = _strategy(args.placement_mode)
-        before = backend.snapshot()["objects"]["green_cube"]["pose"]
+        # 5) 执行。前后位姿都从 Isaac Sim prim 回读；真实驱动的 release
+        #    还会在后端内部执行一次释放后位姿校验，不能用逻辑状态冒充物理证据。
+        strategy = _load_strategy(args.strategy_file, args.placement_mode)
+        # s1 performs a real perception read and updates the backend object;
+        # use the same physical pose for the displacement evidence rather than
+        # the mock scene's illustrative coordinates.
+        before = driver.read_object_pose("green_cube")
         start = time.monotonic()
         execution = adapter.run(strategy)
         elapsed_ms = int((time.monotonic() - start) * 1000)
-        after = backend.snapshot()["objects"]["green_cube"]["pose"]
+        try:
+            after = driver.read_object_pose("green_cube")
+            physical_pose_error = None
+        except Exception as exc:  # noqa: BLE001
+            after = None
+            physical_pose_error = f"{type(exc).__name__}: {exc}"
 
         execution["cube_before"] = before
         execution["cube_after"] = after
-        execution["cube_moved_m"] = (
-            (after["x"] - before["x"]) ** 2
-            + (after["y"] - before["y"]) ** 2
-            + (after["z"] - before["z"]) ** 2
-        ) ** 0.5
+        if after is not None:
+            execution["cube_moved_m"] = (
+                (after["x"] - before["x"]) ** 2
+                + (after["y"] - before["y"]) ** 2
+                + (after["z"] - before["z"]) ** 2
+            ) ** 0.5
+        else:
+            execution["cube_moved_m"] = None
+            execution["physical_pose_error"] = physical_pose_error
+            execution["status"] = "FAILED"
+            execution["reason"] = "PHYSICAL_POSE_UNAVAILABLE"
         execution["wall_ms"] = elapsed_ms
 
         (rd / "execution.json").write_text(

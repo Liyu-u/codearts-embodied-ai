@@ -48,7 +48,17 @@ def resolve_arguments(arguments: dict, results: dict[str, dict]) -> dict:
     return _resolve_value(arguments, results)
 
 
-_EVIDENCE_KEYS = ("pose", "velocity_m_s", "collisions", "grasp_force_n")
+_EVIDENCE_KEYS = (
+    "pose",
+    "velocity_m_s",
+    "collisions",
+    "grasp_force_n",
+    # Real drivers may return post-action observations even when a safety
+    # verifier rejects the action; preserve them in execution.v1 for diagnosis.
+    "verification",
+    "object_pose",
+    "distance_m",
+)
 
 
 def _evidence_fields(result: dict) -> dict:

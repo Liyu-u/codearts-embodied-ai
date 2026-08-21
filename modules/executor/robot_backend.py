@@ -442,10 +442,41 @@ class BaseRobotBackend:
         if retreat["status"] != "SUCCESS":
             return retreat
 
-        # 把物体真实位姿更新到放置点（direct=目标中心，stack_on=堆叠位置）。
-        self._objects[released_id]["pose"] = deepcopy(
+        # 真实驱动必须在释放后重新读取物体位姿，不能用计划位姿冒充物理结果。
+        # Mock/Fake 驱动没有该可选能力时，保留原有确定性语义。
+        placement_pose = deepcopy(
             self._placement_pose or self._objects[self._target_id]["pose"]
         )
+        verifier = getattr(self._driver, "verify_release", None)
+        if callable(verifier):
+            try:
+                verification = verifier(released_id, placement_pose)
+            except Exception as exc:  # noqa: BLE001
+                event = self._record_safety_event(
+                    "RELEASE_VERIFICATION_ERROR", "error", None, str(exc)
+                )
+                self._enter_fail_closed("release", [event])
+                return _failed(
+                    "RELEASE_VERIFICATION_ERROR", 0, safety_events=[event]
+                )
+            if not isinstance(verification, dict) or not verification.get("verified", False):
+                event = self._record_safety_event(
+                    "RELEASE_UNVERIFIED", "error", None,
+                    (verification or {}).get("reason", "object not at target")
+                    if isinstance(verification, dict)
+                    else "driver returned invalid release verification",
+                )
+                self._enter_fail_closed("release", [event])
+                return _failed(
+                    "RELEASE_UNVERIFIED", 0,
+                    verification=verification,
+                    safety_events=[event],
+                )
+            observed_pose = verification.get("object_pose")
+            if isinstance(observed_pose, dict):
+                placement_pose = deepcopy(observed_pose)
+
+        self._objects[released_id]["pose"] = placement_pose
         self._held_id = None
         self._approached_id = None
         self._target_id = None

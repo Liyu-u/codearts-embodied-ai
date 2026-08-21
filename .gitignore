@@ -35,3 +35,19 @@ Thumbs.db
 # Runtime output
 *.log
 results/
+
+# Local CodeArts/remote-session state and generated acceptance artifacts
+.codeartsdoer/
+.codex-remote-attachments/
+.opencode/
+.tmp_*
+reports/live-*/
+reports/live_chain_*.json
+reports/live_chain_*.jsonl
+reports/codearts_*.json
+reports/c1_*.json
+reports/*.docx
+ppt_build/
+closed_loop_demo_*/
+闭环Demo进度汇报*/
+tools/build_c1_*.py

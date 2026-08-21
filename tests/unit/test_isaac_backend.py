@@ -29,6 +29,20 @@ def zero_speed_safety():
     return SafetyPolicy(motion=MotionLimits(max_linear_velocity_m_s=0.0))
 
 
+class ReleaseVerifyingDriver(FakeDriver):
+    def __init__(self, *args, release_verified=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.release_verified = release_verified
+
+    def verify_release(self, object_id, target_pose, tolerance_m=0.06):
+        pose = target_pose if self.release_verified else self.objects[object_id]["pose"]
+        return {
+            "verified": self.release_verified,
+            "object_pose": pose,
+            "reason": "" if self.release_verified else "OBJECT_NOT_AT_TARGET",
+        }
+
+
 class IsaacSimBackendTests(unittest.TestCase):
     def test_complete_pick_and_place_updates_object_position(self):
         backend, _ = make_backend()
@@ -133,6 +147,35 @@ class IsaacSimBackendTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAILED")
         self.assertEqual(result["reason"], "ACTION_TIMEOUT")
         self.assertEqual(result["safety_events"][0]["type"], "ACTION_TIMEOUT")
+        self.assertTrue(backend.snapshot()["safe_stopped"])
+
+    def test_real_driver_release_is_verified_before_success(self):
+        scene, objects = scene_objects()
+        driver = ReleaseVerifyingDriver(objects=objects, release_verified=True)
+        backend = IsaacSimBackend.from_perception(scene, safety=SafetyPolicy(), driver=driver)
+        for action, args in [
+            ("detect_object", {"object_id": "green_cube"}),
+            ("move_to_object", {"object_id": "green_cube"}),
+            ("grasp", {"object_id": "green_cube"}),
+            ("move_to_target", {"destination_id": "zone_unstack_target"}),
+        ]:
+            self.assertEqual(backend.execute(action, args)["status"], "SUCCESS")
+        self.assertEqual(backend.execute("release", {})["status"], "SUCCESS")
+
+    def test_real_driver_release_mismatch_is_fail_closed(self):
+        scene, objects = scene_objects()
+        driver = ReleaseVerifyingDriver(objects=objects, release_verified=False)
+        backend = IsaacSimBackend.from_perception(scene, safety=SafetyPolicy(), driver=driver)
+        for action, args in [
+            ("detect_object", {"object_id": "green_cube"}),
+            ("move_to_object", {"object_id": "green_cube"}),
+            ("grasp", {"object_id": "green_cube"}),
+            ("move_to_target", {"destination_id": "zone_unstack_target"}),
+        ]:
+            self.assertEqual(backend.execute(action, args)["status"], "SUCCESS")
+        result = backend.execute("release", {})
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["reason"], "RELEASE_UNVERIFIED")
         self.assertTrue(backend.snapshot()["safe_stopped"])
 
     def test_safe_stop_prevents_further_actions(self):
