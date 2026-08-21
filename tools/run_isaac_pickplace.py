@@ -29,6 +29,7 @@ def mark(result_dir: Path, name: str, status: str, detail: str = "") -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--result-dir", required=True)
+    parser.add_argument("--device", default="cpu", choices=["cpu", "cuda", "cuda:0"])
     args, _ = parser.parse_known_args(argv)
     rd = Path(args.result_dir)
     rd.mkdir(parents=True, exist_ok=True)
@@ -52,12 +53,12 @@ def main(argv: list[str] | None = None) -> int:
             FrankaPickPlace,
         )
 
-        SimulationManager.set_physics_sim_device("cpu")
+        SimulationManager.set_physics_sim_device(args.device)
         app.update()
 
         pick_place = FrankaPickPlace()
         pick_place.setup_scene()
-        mark(rd, "setup", "done", "FrankaPickPlace scene ready")
+        mark(rd, "setup", "done", f"FrankaPickPlace scene ready ({args.device} physics)")
 
         cube_before = pick_place.cube.get_world_poses()[0].numpy()[0].tolist()
 

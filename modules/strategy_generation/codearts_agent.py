@@ -121,6 +121,9 @@ class CodeArtsStrategyClient:
 
         candidate = extract_strategy(completed.stdout)
         if candidate is None:
+            provider_error = extract_provider_error(completed.stdout)
+            if provider_error:
+                return _failure(f"CODEARTS_PROVIDER_ERROR:{provider_error}", trace)
             return _failure("CODEARTS_OUTPUT_MISSING_STRATEGY", trace)
 
         errors = validate_strategy(candidate, task)
@@ -333,7 +336,11 @@ def _build_prompt(task: dict[str, Any]) -> str:
     # Keep this prompt deliberately compact.  The CLI is non-interactive and
     # long planning instructions make some CodeArts models enter tool/reasoning
     # loops instead of returning the required JSON event.
-    return f"""只返回一个策略 JSON，不要调用工具、读取文件或输出解释。
+    # The Windows CodeArts CLI treats embedded newlines in a positional
+    # message as argument boundaries.  That used to truncate the prompt at
+    # its first line, so the provider saw no task.v1 and returned an empty
+    # strategy.  Keep the exact contract text, but send it as one argument.
+    prompt = f"""只返回一个策略 JSON，不要调用工具、读取文件或输出解释。
 任务：task_id={task_id}; target_id={target_id}; destination_id={destination_id}
 必须放在 {OUTPUT_BEGIN} 和 {OUTPUT_END} 之间，且严格使用此结构：
 {{"schema_version":"strategy.v1","task_id":"{task_id}","steps":[
@@ -344,6 +351,7 @@ def _build_prompt(task: dict[str, Any]) -> str:
 {{"step_id":"release","action":"release","arguments":{{}}}}],"code":null}}
 只允许这五个 action；字段名必须是 step_id/action/arguments；不得输出 target_id、target_ids 或 object_id 顶层字段；不得改变三个 ID。
 """
+    return " ".join(line.strip() for line in prompt.splitlines() if line.strip())
 
 
 def _build_repair_prompt(task: dict[str, Any], candidate: dict[str, Any]) -> str:
@@ -423,6 +431,41 @@ def extract_review(stdout: str) -> dict[str, Any] | None:
         for candidate in _walk_objects(document):
             if "status" in candidate and "issues" in candidate:
                 return candidate
+    return None
+
+
+def extract_provider_error(stdout: str) -> str | None:
+    """Extract a structured CodeArts error even when the process exits 0.
+
+    CodeArts emits provider/network failures as JSON events with a normal
+    process exit code.  Treating those events as an empty model response hides
+    the actionable cause and makes auto-mode diagnostics misleading.
+    """
+    stripped = (stdout or "").strip()
+    if not stripped:
+        return None
+    documents: list[Any] = []
+    try:
+        documents.append(json.loads(stripped))
+    except json.JSONDecodeError:
+        for line in stripped.splitlines():
+            try:
+                documents.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    for document in documents:
+        for candidate in _walk_objects(document):
+            if candidate.get("type") != "error":
+                continue
+            error = candidate.get("error")
+            if isinstance(error, dict):
+                data = error.get("data")
+                if isinstance(data, dict) and data.get("message"):
+                    return " ".join(str(data["message"]).split())[:300]
+                if error.get("message"):
+                    return " ".join(str(error["message"]).split())[:300]
+            if isinstance(error, str) and error.strip():
+                return " ".join(error.split())[:300]
     return None
 
 
