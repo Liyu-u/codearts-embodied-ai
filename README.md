@@ -1,146 +1,239 @@
 # 具身智能系统统一联调仓库
 
-本仓库把 A（意图理解）、B（CodeArts 策略）、C（感知/执行）和 D（TraceCoder 反馈）接入同一条可审计链路：
+本项目面向 2026 年“挑战杯”揭榜挂帅华为赛道，围绕“基于华为云码道（CodeArts）代码智能体解决复杂软件工程问题”构建可复现的具身智能闭环 Demo。系统把自然语言意图、策略生成、仿真执行和结果反馈接成一条带契约、可审计、可安全阻断的链路。
 
-```text
-自然语言 + perception_observation
-        ↓
-A 意图理解 → task.v1
-        ↓
-B CodeArts 策略生成与校验 → strategy.v1
-        ↓
-C Mock / Isaac Sim / 真机执行 → execution.v1
-        ↓
-D TraceCoder 反馈与修复 → feedback.v1
-```
+当前结论：**A、B、D 已完成真实智能调用；C 已完成 Isaac Sim Ground Truth 感知与远程执行闭环。系统已具备比赛演示级完整闭环，但尚未达到真实相机/真机和生产级稳定性标准。**
 
-当前主线基线为 2026-08-21。软件级 A→B→C→D 闭环已经打通；C 已具备 Mock 与 Isaac Sim CUDA 两种可验收后端，真实机器人硬件仍需现场接入。
+## 1. 系统架构
 
-## 1. 仓库修改原则
+~~~text
+自然语言指令 + 场景观察
+          │
+          ▼
+P/C 感知边界 ──► perception.v1
+          │
+          ▼
+A 意图理解（DeepSeek） ──► task.v1
+          │
+          ▼
+B 策略生成（华为云 CodeArts） ──► strategy.v1
+          │
+          ▼
+C 执行器（Mock / Isaac Sim / 预留真机） ──► execution.v1
+          │
+          ▼
+D 反馈与纠错（TraceCoder + DeepSeek） ──► feedback.v1
+          │
+          └── 失败时：安全阻断、有限重试、结构化修复证据
+~~~
 
-1. `contracts/v1/` 是跨模块接口唯一标准，禁止模块私自定义字段。
-2. 模块只能通过 `integration/adapters/` 和公共契约通信，不直接依赖其他模块内部实现。
-3. 跨模块主键使用稳定的 `task_id`、`object_id` 和 `destination_id`；旧字段不得穿透正式接口。
-4. 外部模型输出一律视为不可信输入，必须经过 Schema、动作白名单、参数校验和安全门禁。
-5. 验证顺序为 Mock → 仿真 → 真机；每一步都保留可追踪的执行证据。
-6. 危险、歧义、缺字段或不可执行任务必须阻断，不能静默猜测或自动绕过安全门禁。
-7. API Key、AK/SK、真机地址、个人路径和大体积运行日志不得提交到仓库。
+各模块职责如下：
 
-## 2. 仓库目录结构
+| 模块 | 作用 | 当前实现 |
+| --- | --- | --- |
+| P/C 感知边界 | 将环境观察规范化为统一对象、位姿、关系和能力 | 本地 Mock；Isaac Sim Ground Truth（USD/PhysX 实时位姿）；真实相机接口预留 |
+| A 意图理解 | 解析自然语言、绑定稳定对象 ID、识别歧义和安全风险 | DeepSeek OpenAI 兼容 API；支持 rule / hybrid / llm |
+| B 策略生成 | 通过 CodeArts 智能体生成动作计划并执行契约、安全校验 | CodeArts CLI + DeepSeek 模型；支持 auto / required / off |
+| C 执行器 | 执行动作白名单，记录轨迹、状态、安全事件和恢复结果 | Mock 与 Isaac Sim 6.0 CUDA；真机驱动尚未接入 |
+| D TraceCoder | 分析执行反馈、判定通过/失败、生成有限修复补丁 | DeepSeek optional / required / off；补丁经过 Schema 和动作白名单校验 |
 
-```text
+## 2. 仓库结构
+
+~~~text
 .
 ├─ contracts/v1/             # perception/task/strategy/execution/feedback Schema
 ├─ modules/
-│  ├─ perception/            # C：观察输入与场景规范化
-│  ├─ intent_understanding/  # A：语言理解、实体绑定、安全门禁
+│  ├─ perception/            # 感知规范化和 Isaac Ground Truth 适配
+│  ├─ intent_understanding/  # A：意图理解与安全门禁
 │  ├─ strategy_generation/   # B：CodeArts 策略生成与校验
-│  ├─ executor/              # C：Mock、Isaac Sim 或真机执行
-│  └─ evaluator/tracecoder/  # D：反馈、诊断、修复和经验库
+│  ├─ executor/              # C：Mock、Isaac Sim、真机接入边界
+│  └─ evaluator/tracecoder/  # D：反馈、诊断、修复
 ├─ integration/
-│  ├─ adapters/              # 各模块统一 run()/health() 适配器
-│  ├─ pipeline.py            # 端到端编排
-│  └─ strategy_policy.py     # 策略能力与安全校验
-├─ testdata/                 # 脱敏、可复现的验收和 CodeArts 题集
-├─ tests/                    # contract、integration、e2e 分层测试
-├─ docs/                     # 接口、联调和交付规则
-├─ demo/                     # 本地演示
-├─ .github/workflows/        # CI
-└─ .env.example              # 环境变量模板，不含真实密钥
-```
+│  ├─ adapters/              # A/B/C/D 统一适配器和 Isaac 感知适配器
+│  ├─ pipeline.py            # 闭环编排
+│  └─ strategy_policy.py     # 策略能力、安全和参数校验
+├─ testdata/                 # 脱敏验收题集和基准数据
+├─ tests/                    # unit、contract、integration、e2e 测试
+├─ docs/                     # 配置、接口、服务器和交付说明
+├─ demo/                     # 本地可视化 Demo
+├─ tools/
+│  ├─ setup.ps1              # Windows 一键配置入口
+│  ├─ doctor_config.py       # 配置与 CodeArts 可见性体检
+│  ├─ run_ground_truth_executor_acceptance_v4.py # Isaac 容器入口
+│  └─ run_remote_ground_truth_acceptance_final.ps1 # 远程验收脚本
+├─ .env.example              # A 配置模板（无密钥）
+├─ codearts.env.example      # B 配置模板（无 AK/SK）
+└─ tracecoder_llm.env.example# D 配置模板（无密钥）
+~~~
 
-## 3. 当前模块完成度和状态（2026-08-21）
+## 3. 参赛要求对照（华为云 CodeArts 赛道）
 
-| 模块 | 已完成 | 当前状态和边界 |
+官方榜题要求作品围绕明确的复杂软件工程场景，提交“技术方案 + 可运行产品”，并提供 PPT、视频/可访问演示环境、完整源代码、依赖和部署运行说明；代码中必须包含基于 CodeArts 改造或生成的核心业务部分，并说明第三方模型、组件和开源协议。
+
+| 参赛要求 | 本项目现状 | 判定 |
 | --- | --- | --- |
-| A 意图理解 | DeepSeek LLM 语义编译、实体绑定、稳定 ID、歧义/安全阻断、`task.v1` 输出 | 已完成真实智能调用；正式验收使用 `engine=llm` 或 `RIA_PLANNER_ENGINE=llm`；真实相机仍由 C 提供 `perception.v1` |
-| B CodeArts | CodeArts CLI 适配、DeepSeek 模型、`strategy.v1` 校验、五动作白名单、provenance、`required` 失败阻断 | 已完成真实 CodeArts 调用；AK/SK 仅持久化在本机用户环境，不进仓库 |
-| C 感知/执行 | `perception.v1`、`execution.v1`、Mock/Isaac 后端、能力透传、动作/参数校验、恢复上限、安全停止、`stack_on` | Mock 回归和远程 Isaac Sim 6.0 CUDA 已通过；真实传感器/机械臂仍需现场适配与验收 |
-| D TraceCoder | 规则/LLM Provider、`optional/required/off` 模式、失败归因、patch 校验、有限重试、经验记录 | 已完成 DeepSeek `required` 模式实测；可消费 Mock 或 Isaac 的结构化执行证据 |
+| 明确场景、痛点和技术方案 | 具身智能自然语言任务规划、仿真执行和反馈纠错，架构与接口已文档化 | 已具备 |
+| 可运行产品/演示 | A→B→C→D 软件闭环可运行；C 已在校园服务器 Isaac Sim 6.0 CUDA 真实执行 | 已具备演示级产品 |
+| 使用 CodeArts 核心能力 | B 通过 CodeArts CLI 真实调用智能体，策略带 provider/source/fallback provenance，严格模式失败即阻断 | 已具备 |
+| 源代码、部署和复现说明 | 代码、Schema、测试、setup.ps1、配置模板、远程 Isaac 脚本已入库 | 已具备，仍需最终打包核验 |
+| PPT、演示视频或线上环境 | 本仓库可支撑录制；当前 Isaac 运行在校园服务器，尚未形成华为云公开演示 URL | 待完成 |
+| 原创性与第三方合规说明 | 需在最终方案中补充团队原创声明、DeepSeek/TraceCoder/Isaac 及开源组件来源与许可证 | 待补齐 |
+| 量化测试与效果评估 | 已有契约、单元、集成和仿真验收；还需扩大重复运行、异常和延迟统计 | 基本具备，需增强 |
 
-### 系统当前水平和测试结果
+官方榜题及提交说明以[2026 年榜单 PDF 中第 18 项华为赛道](https://youth.qau.edu.cn/userfiles/files/tw/20260510150244.pdf)和[华为云竞赛提交页面](https://developer.huaweicloud.com/competition/information/1300000228/submission)为准；最终以主办方最新通知为准。
 
-- 完整软件闭环：A → B → C(Mock) → D 已完成，可输出 `task.v1 → strategy.v1 → execution.v1 → feedback.v1` 全链路证据。
-- 严格智能模式实测：A=`llm`、B=`required`、D=`required`，正常任务和失败修复任务均成功，未发生规则回退。
-  - 正常抓取放置：策略生成、五步动作执行和反馈均成功。
-  - 失败修复重试：首次抓取失败，D 生成合法修复补丁，重试后成功，`retry_count=1`。
-- 最近一次本地回归（关闭在线 provider，避免测试受网络影响）：unit `93 passed`、contract `39 passed`、integration `23 passed`、e2e `20 passed, 1 skipped`，合计 `175 passed, 1 skipped`。
-- 远程仿真闭环：同一份 A/B 策略已在校园服务器 Isaac Sim 6.0 CUDA 中真实执行，`execution.v1.status=SUCCEEDED`，五步动作完成，物体位姿发生约 0.1119 m 的真实变化，安全事件为空。
-- 当前不能把仿真结果等同于真实机器人验收；剩余边界是传感器标定、真机驱动、人工确认和现场安全测试。
+## 4. 当前完成度与边界
 
-## 4. 正式接口约定
+### A：意图理解
 
-### 4.1 模块消息
+- DeepSeek 真实调用已验证，支持实体绑定、稳定 ID、歧义识别和安全阻断。
+- 正式智能验收使用 RIA_PLANNER_ENGINE=llm，不依赖规则回退。
+- 输入仍来自统一 perception.v1；真实相机接入属于 C/P 的后续工作。
 
-正式消息和 Schema 位于 [`contracts/v1/`](contracts/v1/)：
+### B：CodeArts 策略生成
 
-```text
-perception_observation → perception.v1 → task.v1
-task.v1 → strategy.v1 → execution.v1 → feedback.v1
-```
+- CodeArts CLI、AK/SK、模型和智能体可见性已配置并通过体检。
+- required 模式已实测：调用失败会阻断，不静默回退到本地规则。
+- 策略必须符合 strategy.v1、动作白名单和目标能力约束。
 
-- 感知输入使用 `perception_observation`，由 C 边界规范化为 `perception.v1`。
-- `task.v1`、`strategy.v1`、`execution.v1`、`feedback.v1` 必须通过对应 JSON Schema 校验。
-- 对象和目标使用稳定的 `object_id`、`destination_id`；`object_name`、`target` 只允许存在于 Mock 直接调用兼容层。
-- 每个模块适配器统一实现：
+### C：感知与执行
 
-```python
-run(input_json: dict) -> output_json: dict
-health() -> dict
-```
+- Mock 执行器、Isaac Sim 6.0 CUDA 执行器和 Ground Truth 感知适配器已完成。
+- 远程测试中抓取、移动、释放五步动作均成功，物体位姿发生真实变化。
+- 当前感知是 Isaac Sim 的 USD/PhysX 状态读取，不是 RGB/RGB-D 相机视觉识别；真机驱动尚未验收。
+- 远程启动、容器清理、长时间稳定性和 Isaac 的 DOF 警告仍需继续加固。
 
-### 4.2 策略和执行约定
+### D：TraceCoder 反馈
 
-- 允许动作：`detect_object`、`move_to_object`、`grasp`、`move_to_target`、`release`。
-- `strategy.code` 必须为 `null` 或空字符串；策略只能通过动作白名单执行。
-- `detect_object`、`move_to_object`、`grasp` 使用 `object_id`；`move_to_target` 使用 `destination_id`。
-- 堆叠必须显式使用 `placement_mode: "stack_on"`，并通过目标能力校验。
-- 执行失败、恢复耗尽或触发安全事件时必须返回结构化 `execution.v1`，不得伪造成功。
+- DeepSeek required/optional/off 模式和结构化 feedback.v1 已接通。
+- 可根据执行证据判定通过、归因失败并生成有限修复补丁；修复必须再次校验。
+- 已完成与 Isaac 执行证据的消费验证。
 
-## 5. 配置、验收和复现
+## 5. 已完成验收证据
 
-### 5.1 本地凭证
+最近一次 Ground Truth Isaac Sim 闭环证据位于 reports/gtv2-20260822-013151/（可作为内部验收附件，不含密钥）：
 
-CodeArts CLI 读取 `CODEARTS_CLI_AK`、`CODEARTS_CLI_SK`。在 Windows 上可写入当前用户环境（不要写进仓库）：
+- perception.json：schema_version=perception.v1，来源 isaac_sim.usd_physx，位姿来自实时 USD/PhysX 驱动。
+- execution.json：status=SUCCEEDED，5 个动作步骤完成，物体位移约 0.1119 m，安全事件数为 0。
+- feedback_summary.json：D 判定 D_ACCEPTED，DeepSeek 调用 3/3 成功、0 次回退，质量评分 97.2。
+- task_id=ce09edf0-08b5-40bc-8c20-4cd2177caf2f 在 A/B/C/D 证据中一致。
+- perception.v1 和 execution.v1 契约校验均返回 0 个错误。
 
-```powershell
+已通过的针对性测试：
+
+~~~text
+Ground Truth 感知单元 + 感知契约 + 感知服务：10 passed
+Mock Isaac pipeline + Isaac backend + execution contract：21 passed
+~~~
+
+完整 pytest tests 仍有一个既有 TraceCoder 契约测试出现长时间不结束，尚未将全量测试声明为全绿；这不影响上述已通过的 Ground Truth/执行器针对性测试，但应在发布前修复或隔离。
+
+## 6. 拉取、配置和部署
+
+### 6.1 拉取代码
+
+~~~powershell
+git clone https://github.com/Liyu-u/codearts-embodied-ai.git
+cd codearts-embodied-ai
+~~~
+
+如果已有本地副本：
+
+~~~powershell
+git fetch origin
+git pull --ff-only origin main
+~~~
+
+### 6.2 Windows 本地一键配置
+
+首次运行：
+
+~~~powershell
+powershell -ExecutionPolicy Bypass -File .\tools\setup.ps1
+~~~
+
+脚本会创建 .venv、安装依赖、生成本地配置并执行体检。真实密钥只写入被 Git 忽略的本地文件/用户环境，不会提交仓库。
+
+严格智能模式：
+
+~~~powershell
+.\tools\setup.ps1 -IntentMode llm -TraceCoderMode required -CodeArtsMode required
+.\.venv\Scripts\python.exe tools\doctor_config.py --live-codearts
+~~~
+
+配置文件对应关系：
+
+| 文件 | 模块 | Git 状态 |
+| --- | --- | --- |
+| .env | A / DeepSeek | 本地私密，不提交 |
+| codearts.env | B / CodeArts CLI AK/SK | 本地私密，不提交 |
+| tracecoder_llm.env | D / TraceCoder | 本地私密，不提交 |
+| .env.example、codearts.env.example、tracecoder_llm.env.example | 配置模板 | 提交 |
+
+CodeArts CLI 也可直接读取当前用户环境变量：
+
+~~~powershell
 [Environment]::SetEnvironmentVariable('CODEARTS_CLI_AK', '<你的AK>', 'User')
 [Environment]::SetEnvironmentVariable('CODEARTS_CLI_SK', '<你的SK>', 'User')
-```
+~~~
 
-重新打开终端或 IDE 后，用 `codearts models` 检查凭证和模型可见性。A、D 的 DeepSeek Key 仍按 `.env.example` 和 `tracecoder_llm.env` 的说明配置；所有密钥都不提交。
+配置后重新打开终端，再执行 codearts models、codearts agent list 和 doctor_config.py --live-codearts。
 
-### 5.2 离线闭环和远程 Isaac 一键验收
+### 6.3 本地闭环与测试
 
-```powershell
-# A/B/C(Mock)/D 数据驱动验收（包含歧义、失败、策略阻断）
-python -m unittest tests.e2e.test_closed_loop_acceptance -v
-
-# C 后端最终矩阵：不同物体、超时、碰撞安全停止
-python -m unittest tests.e2e.test_final_acceptance_matrix -v
-
-# 远程服务器需要校园 VPN、SSH 登录、Docker、GPU 0 和 Isaac Sim 资产目录
-.\tools\run_remote_isaac_acceptance.ps1 -Server 10.16.0.40 -Port 5122 -User stu_01 -KeepRemote
-```
-
-脚本只打包 `contracts/`、`integration/`、`modules/` 和验收入口及策略文件，不读取或上传 `.env`、CSV、AK/SK；结果保存到 `reports/live-<timestamp>/`。
-
-## 6. 提交和联调规则
-
-1. 分支命名使用 `feature/<模块>-<功能>` 或 `codex/<模块>-<功能>`。
-2. 修改接口时必须同时更新 Schema、示例、适配器和契约测试，并说明兼容策略。
-3. Pull Request 必须写明输入/输出协议、影响范围、回滚方式、测试命令和结果。
-4. 合并前至少运行：
-
-```bash
-python -m pytest tests -q
+~~~powershell
+# 运行离线/Mock 闭环
 python -m pytest tests/contract -q
 python -m pytest tests/integration -q
-python -m pytest tests/e2e -q
-```
+python -m pytest tests/e2e/test_closed_loop_acceptance.py -q
 
-5. 联调顺序遵循“基线/契约 → 模块适配 → Mock 回归 → 仿真 → 真机”；任何真实后端接入都必须保持 Mock 回归集可运行。
-6. 每个失败必须能通过 `task_id` 在 `testdata/` 中复现，并保留 provenance、模型调用、回退和安全事件信息。
-7. 真实 CodeArts、DeepSeek、TraceCoder、Isaac Sim 和真机凭证只通过本地环境变量或未跟踪配置提供。
+# Ground Truth 感知单元
+python -m pytest tests/unit/test_isaac_ground_truth_perception.py -q
+~~~
 
-常用数据驱动验收入口：[`tests/e2e/test_closed_loop_acceptance.py`](tests/e2e/test_closed_loop_acceptance.py)；C 安全矩阵：[`tests/e2e/test_final_acceptance_matrix.py`](tests/e2e/test_final_acceptance_matrix.py)；远程脚本：[`tools/run_remote_isaac_acceptance.ps1`](tools/run_remote_isaac_acceptance.ps1)；正式验收数据位于 [`testdata/acceptance/`](testdata/acceptance/)。
+本地 Demo 默认使用 C Mock，适合展示消息流和故障修复；它不能替代 Isaac Sim 真实执行证据。
+
+### 6.4 远程 Isaac Sim 验收
+
+前提：校园 VPN、SSH 账号、远程服务器上的 Docker、NVIDIA GPU、Isaac Sim 6.0 镜像和资产目录均可用。
+
+使用已有 A/B 策略运行 C：
+
+~~~powershell
+.\tools\run_remote_ground_truth_acceptance_final.ps1 -Server 10.16.0.40 -Port 5122 -User stu_01 -StrategyFile reports/gt-20260822-004458/live_chain_ab_ground_truth.json -Device cuda
+~~~
+
+脚本只上传代码包和脱敏策略，不读取 .env、CSV、AK/SK；结果下载到 reports/gt-final-<timestamp>/。远程服务器的 Isaac 资产路径、镜像和端口属于部署环境，不写入仓库凭证。运行结束后应检查容器是否退出并清理临时目录。
+
+当前脚本主要用于 C 的远程验收；A/B/D 已在本地严格智能模式运行。后续应将 A→B→远程 C→D 编排成一个带重试、超时、容器清理和制品校验的一键命令。
+
+## 7. 提交前检查清单
+
+1. 不提交 .env、codearts.env、tracecoder_llm.env、CSV、AK/SK、VPN/SSH 密码、个人路径和大体积临时日志。
+2. 修改 contracts/v1/ 时，同步更新适配器、示例和契约测试。
+3. 运行 git diff --check、目标单元/契约/集成测试和一次真实 CodeArts 体检。
+4. 记录每次验收的 task_id、模型、provider、fallback、执行状态、耗时、安全事件和结果文件。
+5. 提交 PR 时说明输入输出协议、影响范围、回滚方式、测试命令和结果。
+6. 最终参赛包还需要单独准备：技术方案 PPT、演示视频或华为云可访问环境、部署说明、测试报告、第三方组件与许可证说明、原创性声明和审核通过的报名表。
+
+## 8. 后续优化顺序
+
+**P0：** 将 A→B→C→D 统一为一键远程编排；增加 SSH 重试、全链路超时、容器回收、制品校验和失败现场保留。
+
+**P0：** 对正常、歧义、策略非法、执行超时、碰撞安全停止、D 修复等场景重复运行 5–10 次，形成成功率、延迟、回退率和恢复率统计。
+
+**P1：** 排查 Isaac Sim DOF 类型警告，验证 GPU/资产版本一致性和物理结果可重复性。
+
+**P1：** 增加 USD 语义自动发现、坐标系/单位检查和场景版本校验。
+
+**P2：** 用 RGB/RGB-D 相机感知替代或补充 Ground Truth，并用 Ground Truth 作为仿真真值对照。
+
+**P2：** 修复全量测试中的既有 TraceCoder 长时间测试，建立 CI 全绿门禁，再制作最终演示视频和比赛提交压缩包。
+
+## 9. 修改和联调原则
+
+1. contracts/v1/ 是跨模块接口唯一标准；模块不得私自穿透其他模块内部实现。
+2. 外部模型输出必须经过 Schema、动作白名单、参数和安全门禁；危险或歧义任务必须阻断。
+3. 正式链路统一使用 task_id、object_id、destination_id，并保留 provenance。
+4. 验证顺序为 Mock → 仿真 → 真机；任何真实后端都不得破坏 Mock 回归集。
+5. 真实凭证只通过本地环境变量或被忽略的配置文件提供，禁止进入源代码、报告和提交记录。

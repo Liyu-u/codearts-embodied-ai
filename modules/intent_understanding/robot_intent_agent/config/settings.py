@@ -87,6 +87,16 @@ class Settings(BaseSettings):
         description="规则引擎置信度阈值（低于此值启用 LLM）",
     )
 
+    # --- 执行安全配置（供 integration/config 覆盖 local/sim/real profile） ---
+    deployment_domain: str = Field(
+        default="daily",
+        description="执行安全域: daily | industrial",
+    )
+    daily_max_force_n: float = Field(default=10.0, description="日常域最大夹爪力 (N)")
+    daily_max_velocity_ms: float = Field(default=0.30, description="日常域最大线速度 (m/s)")
+    industrial_max_force_n: float = Field(default=8.0, description="工业域最大夹爪力 (N)")
+    industrial_max_velocity_ms: float = Field(default=0.15, description="工业域最大线速度 (m/s)")
+
     model_config = {
         "env_prefix": "RIA_",
         # Resolve from the repository, not the process working directory.

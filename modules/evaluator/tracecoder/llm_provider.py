@@ -199,7 +199,7 @@ class LLMProvider:
             return LLMResult(
                 ok=False,
                 model=cfg.model,
-                error="未配置 TRACECODER_LLM_API_KEY（本地 .env 或环境变量填好后启用）",
+                error="未配置 TRACECODER_LLM_API_KEY（请填写仓库根目录的 tracecoder_llm.env 或环境变量）",
             )
         if not cfg.model:
             return LLMResult(

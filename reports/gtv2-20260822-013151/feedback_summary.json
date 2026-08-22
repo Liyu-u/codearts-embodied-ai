@@ -1,0 +1,26 @@
+{
+  "schema_version": "feedback.v1",
+  "task_id": "ce09edf0-08b5-40bc-8c20-4cd2177caf2f",
+  "status": "D_ACCEPTED",
+  "retryable": false,
+  "patch_present": false,
+  "execution_status": "SUCCEEDED",
+  "execution_passed": true,
+  "final_passed": true,
+  "safety_events": [],
+  "llm": {
+    "mode": "optional",
+    "calls": 3,
+    "ok_calls": 3,
+    "fallback_calls": 0,
+    "failed_calls": 0,
+    "model": "deepseek-v4-flash"
+  },
+  "quality": {
+    "score": 97.2,
+    "safety": 1.0,
+    "smoothness": 0.9075,
+    "efficiency": 1.0
+  },
+  "note": "Summary captured from D after the final v4 Ground Truth Isaac Sim execution."
+}

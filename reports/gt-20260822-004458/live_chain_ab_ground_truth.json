@@ -1,0 +1,411 @@
+{
+  "scene": {
+    "schema_version": "perception.v1",
+    "scene_id": "stacking_cubes",
+    "coordinate_frame": "world",
+    "objects": [
+      {
+        "id": "red_cube",
+        "category": "红色方块",
+        "pose": {
+          "x": 0.65,
+          "y": -0.2,
+          "z": 0.0258
+        },
+        "dimensions": {
+          "x": 0.04,
+          "y": 0.04,
+          "z": 0.04
+        },
+        "attributes": {
+          "display_name": "红色方块",
+          "color": "red"
+        },
+        "execution": {
+          "movable": true,
+          "graspable": true,
+          "stackable_destination": true,
+          "valid_destination": true
+        }
+      },
+      {
+        "id": "green_cube",
+        "category": "绿色方块",
+        "pose": {
+          "x": 0.5,
+          "y": 0.0,
+          "z": 0.025800000876188278
+        },
+        "dimensions": {
+          "x": 0.0515,
+          "y": 0.0515,
+          "z": 0.0515
+        },
+        "attributes": {
+          "display_name": "绿色方块",
+          "color": "green"
+        },
+        "execution": {
+          "movable": true,
+          "graspable": true
+        }
+      },
+      {
+        "id": "zone_unstack_target",
+        "category": "桌子",
+        "pose": {
+          "x": 0.45,
+          "y": 0.1,
+          "z": 0.02575
+        },
+        "dimensions": {
+          "x": 0.1,
+          "y": 0.1,
+          "z": 0.02
+        },
+        "attributes": {
+          "display_name": "桌子",
+          "purpose": "safe_placement",
+          "support_surface": true
+        },
+        "execution": {
+          "movable": false,
+          "graspable": false,
+          "valid_destination": true
+        }
+      }
+    ],
+    "execution_context": {
+      "backend": "isaac_ground_truth",
+      "source": "isaac_sim.usd_physx",
+      "scene_revision": "isaac-ground-truth-1",
+      "pose_source": "live_usd_physx_driver",
+      "semantic_source": "scene_manifest"
+    },
+    "relations": [
+      {
+        "subject": "red_cube",
+        "predicate": "left_of",
+        "object": "green_cube",
+        "confidence": 1.0
+      },
+      {
+        "subject": "green_cube",
+        "predicate": "right_of",
+        "object": "red_cube",
+        "confidence": 1.0
+      },
+      {
+        "subject": "red_cube",
+        "predicate": "in_front_of",
+        "object": "green_cube",
+        "confidence": 1.0
+      },
+      {
+        "subject": "green_cube",
+        "predicate": "behind",
+        "object": "red_cube",
+        "confidence": 1.0
+      },
+      {
+        "subject": "red_cube",
+        "predicate": "near",
+        "object": "green_cube",
+        "confidence": 0.167
+      },
+      {
+        "subject": "red_cube",
+        "predicate": "left_of",
+        "object": "zone_unstack_target",
+        "confidence": 1.0
+      },
+      {
+        "subject": "zone_unstack_target",
+        "predicate": "right_of",
+        "object": "red_cube",
+        "confidence": 1.0
+      },
+      {
+        "subject": "red_cube",
+        "predicate": "in_front_of",
+        "object": "zone_unstack_target",
+        "confidence": 1.0
+      },
+      {
+        "subject": "zone_unstack_target",
+        "predicate": "behind",
+        "object": "red_cube",
+        "confidence": 1.0
+      },
+      {
+        "subject": "green_cube",
+        "predicate": "left_of",
+        "object": "zone_unstack_target",
+        "confidence": 1.0
+      },
+      {
+        "subject": "zone_unstack_target",
+        "predicate": "right_of",
+        "object": "green_cube",
+        "confidence": 1.0
+      },
+      {
+        "subject": "green_cube",
+        "predicate": "in_front_of",
+        "object": "zone_unstack_target",
+        "confidence": 1.0
+      },
+      {
+        "subject": "zone_unstack_target",
+        "predicate": "behind",
+        "object": "green_cube",
+        "confidence": 1.0
+      },
+      {
+        "subject": "green_cube",
+        "predicate": "near",
+        "object": "zone_unstack_target",
+        "confidence": 0.627
+      }
+    ],
+    "spatial_axes": {
+      "left_right": "y",
+      "front_back": "x",
+      "vertical": "z"
+    },
+    "spatial_messages": [
+      {
+        "subject_id": "red_cube",
+        "predicate": "left_of",
+        "object_id": "green_cube",
+        "confidence": 1.0,
+        "message": "红色方块（red_cube）位于绿色方块（green_cube）左侧"
+      },
+      {
+        "subject_id": "green_cube",
+        "predicate": "right_of",
+        "object_id": "red_cube",
+        "confidence": 1.0,
+        "message": "绿色方块（green_cube）位于红色方块（red_cube）右侧"
+      },
+      {
+        "subject_id": "red_cube",
+        "predicate": "in_front_of",
+        "object_id": "green_cube",
+        "confidence": 1.0,
+        "message": "红色方块（red_cube）位于绿色方块（green_cube）前方"
+      },
+      {
+        "subject_id": "green_cube",
+        "predicate": "behind",
+        "object_id": "red_cube",
+        "confidence": 1.0,
+        "message": "绿色方块（green_cube）位于红色方块（red_cube）后方"
+      },
+      {
+        "subject_id": "red_cube",
+        "predicate": "near",
+        "object_id": "green_cube",
+        "confidence": 0.167,
+        "message": "红色方块（red_cube）位于绿色方块（green_cube）附近"
+      },
+      {
+        "subject_id": "red_cube",
+        "predicate": "left_of",
+        "object_id": "zone_unstack_target",
+        "confidence": 1.0,
+        "message": "红色方块（red_cube）位于放置区域（zone_unstack_target）左侧"
+      },
+      {
+        "subject_id": "zone_unstack_target",
+        "predicate": "right_of",
+        "object_id": "red_cube",
+        "confidence": 1.0,
+        "message": "放置区域（zone_unstack_target）位于红色方块（red_cube）右侧"
+      },
+      {
+        "subject_id": "red_cube",
+        "predicate": "in_front_of",
+        "object_id": "zone_unstack_target",
+        "confidence": 1.0,
+        "message": "红色方块（red_cube）位于放置区域（zone_unstack_target）前方"
+      },
+      {
+        "subject_id": "zone_unstack_target",
+        "predicate": "behind",
+        "object_id": "red_cube",
+        "confidence": 1.0,
+        "message": "放置区域（zone_unstack_target）位于红色方块（red_cube）后方"
+      },
+      {
+        "subject_id": "green_cube",
+        "predicate": "left_of",
+        "object_id": "zone_unstack_target",
+        "confidence": 1.0,
+        "message": "绿色方块（green_cube）位于放置区域（zone_unstack_target）左侧"
+      },
+      {
+        "subject_id": "zone_unstack_target",
+        "predicate": "right_of",
+        "object_id": "green_cube",
+        "confidence": 1.0,
+        "message": "放置区域（zone_unstack_target）位于绿色方块（green_cube）右侧"
+      },
+      {
+        "subject_id": "green_cube",
+        "predicate": "in_front_of",
+        "object_id": "zone_unstack_target",
+        "confidence": 1.0,
+        "message": "绿色方块（green_cube）位于放置区域（zone_unstack_target）前方"
+      },
+      {
+        "subject_id": "zone_unstack_target",
+        "predicate": "behind",
+        "object_id": "green_cube",
+        "confidence": 1.0,
+        "message": "放置区域（zone_unstack_target）位于绿色方块（green_cube）后方"
+      },
+      {
+        "subject_id": "green_cube",
+        "predicate": "near",
+        "object_id": "zone_unstack_target",
+        "confidence": 0.627,
+        "message": "绿色方块（green_cube）位于放置区域（zone_unstack_target）附近"
+      }
+    ]
+  },
+  "task": {
+    "schema_version": "task.v1",
+    "task_id": "ce09edf0-08b5-40bc-8c20-4cd2177caf2f",
+    "action": "pick_and_place",
+    "target_ids": [
+      "green_cube"
+    ],
+    "target_object": "绿色方块",
+    "destination_id": "zone_unstack_target",
+    "constraints": [],
+    "status": "READY",
+    "blocking_reasons": [],
+    "execution_allowed": true,
+    "clarification": null,
+    "diagnostics": {
+      "engine": "llm",
+      "requested_engine": "llm",
+      "actual_engine": "HybridSemanticCompiler",
+      "engine_trace": {
+        "requested_engine": "llm",
+        "actual_engine": "HybridSemanticCompiler",
+        "llm_call_attempted": true,
+        "llm_call_succeeded": true,
+        "response_schema_valid": true,
+        "fallback_used": false,
+        "fallback_reason": null,
+        "final_semantics_source": "fused_grounded_graph",
+        "llm_transport_succeeded": true,
+        "llm_json_parsed": true,
+        "llm_candidate_valid": true,
+        "llm_candidate_partially_repaired": true,
+        "llm_cache_hit": false,
+        "llm_network_calls": 1,
+        "semantic_engine": "HybridSemanticCompiler",
+        "semantic_candidate_contract": "semantic-candidate-1.0",
+        "llm_fusion": {
+          "accepted_fields": [
+            "events.event-1"
+          ],
+          "protected_fields": [
+            "conditions",
+            "constraints",
+            "entity_id",
+            "execution_allowed",
+            "grounding_decisions",
+            "plan_status",
+            "prohibitions",
+            "relations"
+          ],
+          "final_authority": "grounded_semantic_graph"
+        },
+        "llm_candidate_accepted": true,
+        "llm_effective": true,
+        "llm_fields_changed": [
+          "events.event-1"
+        ],
+        "llm_no_effect": false
+      },
+      "execution_allowed": true,
+      "task_id_note": "generated_uuid",
+      "execution_capability_errors": [],
+      "confidence": {
+        "parse": 0.9,
+        "grounding": 1.0,
+        "constraint": 0.5
+      },
+      "issues": []
+    }
+  },
+  "strategy": {
+    "schema_version": "strategy.v1",
+    "task_id": "ce09edf0-08b5-40bc-8c20-4cd2177caf2f",
+    "steps": [
+      {
+        "step_id": "detect",
+        "action": "detect_object",
+        "arguments": {
+          "object_id": "green_cube"
+        }
+      },
+      {
+        "step_id": "approach",
+        "action": "move_to_object",
+        "arguments": {
+          "object_id": "$detect.object_id"
+        }
+      },
+      {
+        "step_id": "grasp",
+        "action": "grasp",
+        "arguments": {
+          "object_id": "$detect.object_id"
+        }
+      },
+      {
+        "step_id": "target",
+        "action": "move_to_target",
+        "arguments": {
+          "destination_id": "zone_unstack_target"
+        }
+      },
+      {
+        "step_id": "release",
+        "action": "release",
+        "arguments": {}
+      }
+    ],
+    "code": null,
+    "success": true,
+    "blocked": false,
+    "message": "CodeArts 智能体已生成并通过本地安全校验",
+    "mode": "codearts_agent",
+    "validation": {
+      "passed": true,
+      "errors": []
+    },
+    "provenance": {
+      "provider": "huaweicloud-codearts-agent",
+      "source": "codearts_agent",
+      "transport": "codearts-cli",
+      "agent": null,
+      "model": null,
+      "request_id": "de9c83f9-2f70-4da5-aee9-5b723c1264e3",
+      "run_id": "ce09edf0-08b5-40bc-8c20-4cd2177caf2f",
+      "fallback": false,
+      "validation": {
+        "passed": true,
+        "errors": []
+      },
+      "exit_code": 0,
+      "latency_ms": 35469.0
+    },
+    "strategy_policy": "planner"
+  }
+}

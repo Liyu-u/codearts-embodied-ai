@@ -24,7 +24,10 @@ dist/
 .env
 .env.*
 tracecoder_llm.env
+codearts.env
 !.env.example
+!tracecoder_llm.env.example
+!codearts.env.example
 
 # IDE and operating-system files
 .idea/
@@ -51,3 +54,8 @@ ppt_build/
 closed_loop_demo_*/
 闭环Demo进度汇报*/
 tools/build_c1_*.py
+reports/gt*/progress.jsonl
+reports/gt*/container.log
+reports/closed_loop_benchmark_*.json
+reports/gt-*/
+reports/gtv2-*/progress.jsonl

@@ -13,10 +13,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from integration.config.local_env import load_local_env
 from integration.config.models import ExecutorProfile, PROFILE_NAMES
 from modules.executor.safety import MotionLimits, SafetyPolicy, WorkspaceLimits
 
 _PROFILES_DIR = Path(__file__).resolve().parent / "profiles"
+
+# Pydantic Settings owns .env for A, while this loader reads the same RIA_
+# safety overrides from os.environ. Load the validated RIA-only file here so
+# local/sim/real profiles receive the values shown in .env.example.
+load_local_env(".env")
 
 # 内置默认（与 profiles/*.toml 一致，作为离线兜底）。
 _DEFAULTS = {

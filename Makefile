@@ -1,4 +1,4 @@
-.PHONY: install contract-test integration-test acceptance-test demo-quality demo-acceptance demo-start e2e
+.PHONY: install contract-test integration-test acceptance-test demo-quality demo-acceptance demo-start e2e benchmark benchmark-repeat
 
 install:
 	python -m pip install -r requirements.txt
@@ -23,3 +23,9 @@ demo-start:
 
 e2e:
 	python -m unittest discover -s tests/e2e -t . -v
+
+benchmark:
+	python tools/run_closed_loop_benchmark.py --mode baseline --output reports/closed_loop_benchmark_baseline.json
+
+benchmark-repeat:
+	python tools/run_closed_loop_benchmark.py --mode baseline --repeats 3 --output reports/closed_loop_benchmark_baseline_repeat3.json

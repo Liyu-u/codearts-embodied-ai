@@ -1,0 +1,185 @@
+{
+  "schema_version": "execution.v1",
+  "task_id": "ce09edf0-08b5-40bc-8c20-4cd2177caf2f",
+  "status": "SUCCEEDED",
+  "steps": [
+    {
+      "step_id": "detect",
+      "phase": "main",
+      "action": "detect_object",
+      "arguments": {
+        "object_id": "green_cube"
+      },
+      "status": "SUCCESS",
+      "reason": null,
+      "duration_ms": 0,
+      "pose": {
+        "x": 0.5,
+        "y": 0.0,
+        "z": 0.025800000876188278
+      }
+    },
+    {
+      "step_id": "approach",
+      "phase": "main",
+      "action": "move_to_object",
+      "arguments": {
+        "object_id": "green_cube"
+      },
+      "status": "SUCCESS",
+      "reason": null,
+      "duration_ms": 146901,
+      "pose": {
+        "x": 0.49756717681884766,
+        "y": -0.0006829327903687954,
+        "z": 0.22637206315994263
+      }
+    },
+    {
+      "step_id": "grasp",
+      "phase": "main",
+      "action": "grasp",
+      "arguments": {
+        "object_id": "green_cube"
+      },
+      "status": "SUCCESS",
+      "reason": null,
+      "duration_ms": 3308
+    },
+    {
+      "step_id": "target",
+      "phase": "main",
+      "action": "move_to_target",
+      "arguments": {
+        "destination_id": "zone_unstack_target"
+      },
+      "status": "SUCCESS",
+      "reason": null,
+      "duration_ms": 2780,
+      "pose": {
+        "x": 0.4230913817882538,
+        "y": 0.0013106893748044968,
+        "z": 0.11235561966896057
+      }
+    },
+    {
+      "step_id": "release",
+      "phase": "main",
+      "action": "release",
+      "arguments": {},
+      "status": "SUCCESS",
+      "reason": null,
+      "duration_ms": 1215
+    }
+  ],
+  "trajectory_points": [
+    {
+      "timestamp_ms": 146901,
+      "coordinate_frame": "world",
+      "position": {
+        "x": 0.49756717681884766,
+        "y": -0.0006829327903687954,
+        "z": 0.22637206315994263
+      },
+      "distance_m": 0.0,
+      "velocity_m_s": 0.2,
+      "joint_positions": []
+    },
+    {
+      "timestamp_ms": 1281,
+      "coordinate_frame": "world",
+      "position": {
+        "x": 0.498861700296402,
+        "y": -0.00018968715448863804,
+        "z": 0.12837205827236176
+      },
+      "distance_m": 0.0,
+      "velocity_m_s": 0.2,
+      "joint_positions": []
+    },
+    {
+      "timestamp_ms": 615,
+      "coordinate_frame": "world",
+      "position": {
+        "x": 0.4990682899951935,
+        "y": -0.0003349512699060142,
+        "z": 0.12529662251472473
+      },
+      "distance_m": 0.0,
+      "velocity_m_s": 0.2,
+      "joint_positions": []
+    },
+    {
+      "timestamp_ms": 1412,
+      "coordinate_frame": "world",
+      "position": {
+        "x": 0.4655245840549469,
+        "y": -0.0004598204977810383,
+        "z": 0.6585733890533447
+      },
+      "distance_m": 0.0,
+      "velocity_m_s": 0.2,
+      "joint_positions": []
+    },
+    {
+      "timestamp_ms": 2780,
+      "coordinate_frame": "world",
+      "position": {
+        "x": 0.4230913817882538,
+        "y": 0.0013106893748044968,
+        "z": 0.11235561966896057
+      },
+      "distance_m": 0.0,
+      "velocity_m_s": 0.2,
+      "joint_positions": []
+    },
+    {
+      "timestamp_ms": 559,
+      "coordinate_frame": "world",
+      "position": {
+        "x": 0.4254832863807678,
+        "y": -0.009898481890559196,
+        "z": 0.0986693799495697
+      },
+      "distance_m": 0.0,
+      "velocity_m_s": 0.2,
+      "joint_positions": []
+    },
+    {
+      "timestamp_ms": 656,
+      "coordinate_frame": "world",
+      "position": {
+        "x": 0.4138072431087494,
+        "y": -0.01099009532481432,
+        "z": 0.1995929628610611
+      },
+      "distance_m": 0.0,
+      "velocity_m_s": 0.2,
+      "joint_positions": []
+    }
+  ],
+  "total_duration_ms": 154204,
+  "safety_events": [],
+  "provenance": {
+    "source": "isaac",
+    "backend": "isaac",
+    "agent": "executor",
+    "validation": {
+      "passed": true,
+      "errors": []
+    },
+    "perception_backend": "isaac_ground_truth"
+  },
+  "cube_before": {
+    "x": 0.5,
+    "y": 0.0,
+    "z": 0.025800000876188278
+  },
+  "cube_after": {
+    "x": 0.44997239112854004,
+    "y": 0.10007898509502411,
+    "z": 0.025749871507287025
+  },
+  "cube_moved_m": 0.11188640408914509,
+  "wall_ms": 154396
+}

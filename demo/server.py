@@ -29,6 +29,12 @@ FRONTEND_ROOT = Path(__file__).resolve().parent / "frontend"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from integration.config.local_env import load_codearts_env  # noqa: E402
+
+# An intentional local codearts.env overrides the offline default. With no
+# local file, the demo remains deterministic and offline.
+load_codearts_env()
+
 # A demo should be repeatable and offline.  The UI still exposes the selected
 # intent engine, but strategy generation remains the local safe primitive plan.
 # Keep the demo reproducible by default, while allowing a caller to opt into

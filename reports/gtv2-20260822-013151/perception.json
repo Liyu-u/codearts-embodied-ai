@@ -1,0 +1,275 @@
+{
+  "schema_version": "perception.v1",
+  "scene_id": "stacking_cubes",
+  "coordinate_frame": "world",
+  "objects": [
+    {
+      "id": "red_cube",
+      "category": "红色方块",
+      "pose": {
+        "x": 0.65,
+        "y": -0.2,
+        "z": 0.0258
+      },
+      "dimensions": {
+        "x": 0.04,
+        "y": 0.04,
+        "z": 0.04
+      },
+      "attributes": {
+        "display_name": "红色方块",
+        "color": "red"
+      },
+      "execution": {
+        "movable": true,
+        "graspable": true,
+        "stackable_destination": true,
+        "valid_destination": true
+      }
+    },
+    {
+      "id": "green_cube",
+      "category": "绿色方块",
+      "pose": {
+        "x": 0.5,
+        "y": 0.0,
+        "z": 0.025800000876188278
+      },
+      "dimensions": {
+        "x": 0.0515,
+        "y": 0.0515,
+        "z": 0.0515
+      },
+      "attributes": {
+        "display_name": "绿色方块",
+        "color": "green"
+      },
+      "execution": {
+        "movable": true,
+        "graspable": true
+      }
+    },
+    {
+      "id": "zone_unstack_target",
+      "category": "桌子",
+      "pose": {
+        "x": 0.45,
+        "y": 0.1,
+        "z": 0.02575
+      },
+      "dimensions": {
+        "x": 0.1,
+        "y": 0.1,
+        "z": 0.02
+      },
+      "attributes": {
+        "display_name": "桌子",
+        "purpose": "safe_placement",
+        "support_surface": true
+      },
+      "execution": {
+        "movable": false,
+        "graspable": false,
+        "valid_destination": true
+      }
+    }
+  ],
+  "execution_context": {
+    "backend": "isaac_ground_truth",
+    "source": "isaac_sim.usd_physx",
+    "scene_revision": "isaac-ground-truth-1",
+    "pose_source": "live_usd_physx_driver",
+    "semantic_source": "scene_manifest"
+  },
+  "relations": [
+    {
+      "subject": "red_cube",
+      "predicate": "left_of",
+      "object": "green_cube",
+      "confidence": 1.0
+    },
+    {
+      "subject": "green_cube",
+      "predicate": "right_of",
+      "object": "red_cube",
+      "confidence": 1.0
+    },
+    {
+      "subject": "red_cube",
+      "predicate": "in_front_of",
+      "object": "green_cube",
+      "confidence": 1.0
+    },
+    {
+      "subject": "green_cube",
+      "predicate": "behind",
+      "object": "red_cube",
+      "confidence": 1.0
+    },
+    {
+      "subject": "red_cube",
+      "predicate": "near",
+      "object": "green_cube",
+      "confidence": 0.167
+    },
+    {
+      "subject": "red_cube",
+      "predicate": "left_of",
+      "object": "zone_unstack_target",
+      "confidence": 1.0
+    },
+    {
+      "subject": "zone_unstack_target",
+      "predicate": "right_of",
+      "object": "red_cube",
+      "confidence": 1.0
+    },
+    {
+      "subject": "red_cube",
+      "predicate": "in_front_of",
+      "object": "zone_unstack_target",
+      "confidence": 1.0
+    },
+    {
+      "subject": "zone_unstack_target",
+      "predicate": "behind",
+      "object": "red_cube",
+      "confidence": 1.0
+    },
+    {
+      "subject": "green_cube",
+      "predicate": "left_of",
+      "object": "zone_unstack_target",
+      "confidence": 1.0
+    },
+    {
+      "subject": "zone_unstack_target",
+      "predicate": "right_of",
+      "object": "green_cube",
+      "confidence": 1.0
+    },
+    {
+      "subject": "green_cube",
+      "predicate": "in_front_of",
+      "object": "zone_unstack_target",
+      "confidence": 1.0
+    },
+    {
+      "subject": "zone_unstack_target",
+      "predicate": "behind",
+      "object": "green_cube",
+      "confidence": 1.0
+    },
+    {
+      "subject": "green_cube",
+      "predicate": "near",
+      "object": "zone_unstack_target",
+      "confidence": 0.627
+    }
+  ],
+  "spatial_axes": {
+    "left_right": "y",
+    "front_back": "x",
+    "vertical": "z"
+  },
+  "spatial_messages": [
+    {
+      "subject_id": "red_cube",
+      "predicate": "left_of",
+      "object_id": "green_cube",
+      "confidence": 1.0,
+      "message": "红色方块（red_cube）位于绿色方块（green_cube）左侧"
+    },
+    {
+      "subject_id": "green_cube",
+      "predicate": "right_of",
+      "object_id": "red_cube",
+      "confidence": 1.0,
+      "message": "绿色方块（green_cube）位于红色方块（red_cube）右侧"
+    },
+    {
+      "subject_id": "red_cube",
+      "predicate": "in_front_of",
+      "object_id": "green_cube",
+      "confidence": 1.0,
+      "message": "红色方块（red_cube）位于绿色方块（green_cube）前方"
+    },
+    {
+      "subject_id": "green_cube",
+      "predicate": "behind",
+      "object_id": "red_cube",
+      "confidence": 1.0,
+      "message": "绿色方块（green_cube）位于红色方块（red_cube）后方"
+    },
+    {
+      "subject_id": "red_cube",
+      "predicate": "near",
+      "object_id": "green_cube",
+      "confidence": 0.167,
+      "message": "红色方块（red_cube）位于绿色方块（green_cube）附近"
+    },
+    {
+      "subject_id": "red_cube",
+      "predicate": "left_of",
+      "object_id": "zone_unstack_target",
+      "confidence": 1.0,
+      "message": "红色方块（red_cube）位于桌子（zone_unstack_target）左侧"
+    },
+    {
+      "subject_id": "zone_unstack_target",
+      "predicate": "right_of",
+      "object_id": "red_cube",
+      "confidence": 1.0,
+      "message": "桌子（zone_unstack_target）位于红色方块（red_cube）右侧"
+    },
+    {
+      "subject_id": "red_cube",
+      "predicate": "in_front_of",
+      "object_id": "zone_unstack_target",
+      "confidence": 1.0,
+      "message": "红色方块（red_cube）位于桌子（zone_unstack_target）前方"
+    },
+    {
+      "subject_id": "zone_unstack_target",
+      "predicate": "behind",
+      "object_id": "red_cube",
+      "confidence": 1.0,
+      "message": "桌子（zone_unstack_target）位于红色方块（red_cube）后方"
+    },
+    {
+      "subject_id": "green_cube",
+      "predicate": "left_of",
+      "object_id": "zone_unstack_target",
+      "confidence": 1.0,
+      "message": "绿色方块（green_cube）位于桌子（zone_unstack_target）左侧"
+    },
+    {
+      "subject_id": "zone_unstack_target",
+      "predicate": "right_of",
+      "object_id": "green_cube",
+      "confidence": 1.0,
+      "message": "桌子（zone_unstack_target）位于绿色方块（green_cube）右侧"
+    },
+    {
+      "subject_id": "green_cube",
+      "predicate": "in_front_of",
+      "object_id": "zone_unstack_target",
+      "confidence": 1.0,
+      "message": "绿色方块（green_cube）位于桌子（zone_unstack_target）前方"
+    },
+    {
+      "subject_id": "zone_unstack_target",
+      "predicate": "behind",
+      "object_id": "green_cube",
+      "confidence": 1.0,
+      "message": "桌子（zone_unstack_target）位于绿色方块（green_cube）后方"
+    },
+    {
+      "subject_id": "green_cube",
+      "predicate": "near",
+      "object_id": "zone_unstack_target",
+      "confidence": 0.627,
+      "message": "绿色方块（green_cube）位于桌子（zone_unstack_target）附近"
+    }
+  ]
+}

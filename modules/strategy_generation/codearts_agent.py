@@ -19,6 +19,7 @@ from uuid import uuid4
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from integration.config.local_env import load_codearts_env
 from modules.executor.action_catalog import validate_action_arguments
 
 
@@ -34,6 +35,9 @@ OUTPUT_END = "STRATEGY_JSON_END"
 REVIEW_BEGIN = "STRATEGY_REVIEW_BEGIN"
 REVIEW_END = "STRATEGY_REVIEW_END"
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# Load the ignored local B configuration before the client reads CODEARTS_*.
+# This keeps direct adapter calls consistent with the demo and the CLI.
+load_codearts_env()
 _CLI_LOCK = threading.Lock()
 
 

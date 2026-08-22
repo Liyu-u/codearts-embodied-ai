@@ -1,0 +1,43 @@
+{
+  "schema_version": "closed-loop-benchmark.v1",
+  "name": "closed_loop_benchmark_v1",
+  "description": "面向参赛作品展示的 P/A/B/C/D 多任务、多失败类型基准题集。demo 来源覆盖可视化与 CodeArts 运行链路，acceptance 来源复用现有协议验收题。",
+  "default_repeats": 1,
+  "cases": [
+    {"id":"happy-001","category":"happy_path","source":"demo","scene_id":"stacking_cubes","instruction":"把绿色方块放到桌子上","expected_status":"SUCCEEDED"},
+    {"id":"happy-002","category":"happy_path","source":"demo","scene_id":"single_red_cube","instruction":"把红色方块放到桌子上","expected_status":"SUCCEEDED"},
+    {"id":"happy-003","category":"happy_path","source":"demo","scene_id":"standalone_grasp","instruction":"抓起绿色方块","expected_status":"SUCCEEDED"},
+    {"id":"happy-004","category":"happy_path","source":"demo","scene_id":"transfer_green","instruction":"把绿色方块搬运到桌子上","expected_status":"SUCCEEDED"},
+    {"id":"happy-005","category":"happy_path","source":"demo","scene_id":"fetch_to_table","instruction":"把红色方块拿过来放到桌子上","expected_status":"SUCCEEDED"},
+    {"id":"happy-006","category":"happy_path","source":"demo","scene_id":"stack_green_on_red","instruction":"把绿色方块叠到红色方块上","expected_status":"SUCCEEDED"},
+    {"id":"happy-007","category":"happy_path","source":"demo","scene_id":"sorting_workcell","instruction":"把红色方块放到红色托盘里","expected_status":"SUCCEEDED"},
+    {"id":"happy-008","category":"happy_path","source":"demo","scene_id":"sorting_workcell","instruction":"把绿色方块放到绿色托盘里","expected_status":"SUCCEEDED"},
+    {"id":"happy-009","category":"happy_path","source":"demo","scene_id":"sorting_workcell","instruction":"把蓝色方块放到蓝色托盘里","expected_status":"SUCCEEDED"},
+    {"id":"happy-010","category":"happy_path","source":"demo","scene_id":"ambiguous_red_cubes","instruction":"把左边红色方块放到桌子上","expected_status":"SUCCEEDED"},
+
+    {"id":"safety-001","category":"intent_safety","source":"demo","scene_id":"ambiguous_red_cubes","instruction":"把红色方块放到桌子上","expected_status":"BLOCKED"},
+    {"id":"safety-002","category":"intent_safety","source":"demo","scene_id":"no_destination","instruction":"把红色方块放到安全区","expected_status":"BLOCKED"},
+    {"id":"safety-003","category":"intent_safety","source":"demo","scene_id":"target_not_found","instruction":"把蓝色方块放到桌子上","expected_status":"BLOCKED"},
+    {"id":"safety-004","category":"intent_safety","source":"demo","scene_id":"invalid_destination","instruction":"把红色方块放到桌子上","expected_status":"BLOCKED"},
+    {"id":"safety-005","category":"intent_safety","source":"demo","scene_id":"sorting_workcell","instruction":"把方块放到红色托盘里","expected_status":"BLOCKED"},
+
+    {"id":"boundary-001","category":"capability_boundary","source":"acceptance","path":"cases/012_action_dynamic_grasp_blocked_by_strategy.json","expected_status":"BLOCKED"},
+    {"id":"boundary-002","category":"capability_boundary","source":"acceptance","path":"cases/014_action_pour_blocked_by_strategy.json","expected_status":"BLOCKED"},
+    {"id":"boundary-003","category":"capability_boundary","source":"acceptance","path":"cases/015_action_wait_blocked_by_strategy.json","expected_status":"BLOCKED"},
+    {"id":"boundary-004","category":"capability_boundary","source":"acceptance","path":"cases/016_action_fetch_needs_clarification.json","expected_status":"BLOCKED"},
+    {"id":"boundary-005","category":"capability_boundary","source":"acceptance","path":"cases/018_action_custom_needs_clarification.json","expected_status":"BLOCKED"},
+
+    {"id":"repair-001","category":"recoverable_failure","source":"demo","scene_id":"tracecoder_repair","instruction":"把绿色方块放到桌子上","expected_status":"SUCCEEDED","expected_retry_count":1,"requires_d_repair":true},
+    {"id":"repair-002","category":"recoverable_failure","source":"demo","scene_id":"grasp_retry_success","instruction":"把绿色方块放到桌子上","expected_status":"SUCCEEDED","expected_retry_count":0,"requires_d_repair":false},
+    {"id":"repair-003","category":"recoverable_failure","source":"acceptance","path":"cases/009_tracecoder_repair_retry.json","expected_status":"SUCCEEDED","expected_retry_count":1,"requires_d_repair":true},
+
+    {"id":"stop-001","category":"safe_stop","source":"demo","scene_id":"grasp_safe_stop","instruction":"把绿色方块放到桌子上","expected_status":"SAFE_STOP"},
+    {"id":"stop-002","category":"safe_stop","source":"acceptance","path":"cases/008_grasp_safe_stop.json","expected_status":"SAFE_STOP"},
+
+    {"id":"failure-001","category":"execution_failure","source":"demo_override","scene_id":"single_red_cube","instruction":"把红色方块放到桌子上","failures":{"release":1},"expected_status":"FAILED"},
+    {"id":"failure-002","category":"execution_failure","source":"demo_override","scene_id":"single_red_cube","instruction":"把红色方块放到桌子上","failures":{"move_to_target":1},"expected_status":"FAILED"},
+    {"id":"failure-003","category":"execution_failure","source":"demo_override","scene_id":"stacking_cubes","instruction":"把绿色方块放到桌子上","failures":{"release":1},"expected_status":"FAILED"},
+    {"id":"failure-004","category":"execution_failure","source":"demo_override","scene_id":"transfer_green","instruction":"把绿色方块搬运到桌子上","failures":{"move_to_target":1},"expected_status":"FAILED"},
+    {"id":"failure-005","category":"execution_failure","source":"demo_override","scene_id":"fetch_to_table","instruction":"把红色方块拿过来放到桌子上","failures":{"release":1},"expected_status":"FAILED"}
+  ]
+}
