@@ -39,7 +39,7 @@ from integration.adapters.executor import ExecutorAdapter  # noqa: E402
 from integration.contract_validation import assert_contract  # noqa: E402
 from integration.pipeline import run_pipeline  # noqa: E402
 from modules.executor.mock_backend import MockBackend  # noqa: E402
-from tests.e2e.test_closed_loop_acceptance import _load_json, _run_case  # noqa: E402
+from tests.e2e.test_closed_loop_acceptance import _load_json, _load_scene, _run_case  # noqa: E402
 
 
 DEFAULT_ACTIONS = [
@@ -111,7 +111,7 @@ def _run_demo_case(case: dict[str, Any], request_id: str) -> dict[str, Any]:
         scene,
         case["instruction"],
         adapters,
-        engine="rule",
+        engine=os.getenv("RIA_PLANNER_ENGINE", "rule"),
         request_id=request_id,
     )
     return {
@@ -123,7 +123,26 @@ def _run_demo_case(case: dict[str, Any], request_id: str) -> dict[str, Any]:
 
 def _run_acceptance_case(case: dict[str, Any]) -> dict[str, Any]:
     source = _load_json(ACCEPTANCE_ROOT / case["path"])
-    result, backend = _run_case(source)
+    intelligent = os.getenv("RIA_PLANNER_ENGINE", "rule").strip().lower() == "llm"
+    if intelligent and source.get("mode") != "tracecoder_fixture":
+        scene = _load_scene(source)
+        failures = (source.get("executor") or {}).get("failures")
+        backend = MockBackend.from_perception(scene, failures=failures)
+        adapters = {
+            "intent": intent,
+            "strategy": strategy,
+            "executor": ExecutorAdapter(backend),
+            "tracecoder": tracecoder,
+        }
+        result = run_pipeline(
+            scene,
+            source["instruction"],
+            adapters,
+            engine="llm",
+            request_id=source.get("case_id"),
+        )
+    else:
+        result, backend = _run_case(source)
     return {
         "result": result,
         "source_case": source,
@@ -217,6 +236,13 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
         or result.get("retry_count", 0) == case["expected_retry_count"]
     )
     passed = status_passed and retry_passed
+    task_diagnostics = (result.get("task") or {}).get("diagnostics") or {}
+    engine_trace = task_diagnostics.get("engine_trace") if isinstance(task_diagnostics, dict) else {}
+    if not isinstance(engine_trace, dict):
+        engine_trace = {}
+    feedback_provenance = feedback.get("provenance") if isinstance(feedback, dict) else {}
+    if not isinstance(feedback_provenance, dict):
+        feedback_provenance = {}
     return {
         "case_id": case["id"],
         "category": case["category"],
@@ -232,6 +258,21 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
         "backend": "mock",
         "task": result.get("task"),
         "strategy": strategy_info,
+        "intent": {
+            "requested_engine": task_diagnostics.get("requested_engine"),
+            "actual_engine": engine_trace.get("actual_engine"),
+            "llm_call_attempted": bool(engine_trace.get("llm_call_attempted")),
+            "llm_call_succeeded": bool(engine_trace.get("llm_call_succeeded")),
+            "fallback_used": bool(engine_trace.get("fallback_used")),
+            "model": engine_trace.get("model") or engine_trace.get("model_name"),
+        },
+        "feedback_provenance": {
+            "source": feedback_provenance.get("source"),
+            "mode": feedback_provenance.get("mode"),
+            "model": feedback_provenance.get("model"),
+            "fallback": bool(feedback_provenance.get("fallback")),
+            "llm_stats": feedback_provenance.get("llm_stats") or {},
+        },
         "execution": {
             "status": execution.get("status"),
             "total_duration_ms": execution.get("total_duration_ms"),
@@ -296,6 +337,11 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
     )
     summary = {
         "cases": len(cases),
+        "intent_llm_attempts": sum(1 for item in records if item["intent"]["llm_call_attempted"]),
+        "intent_llm_successes": sum(1 for item in records if item["intent"]["llm_call_succeeded"]),
+        "intent_fallback_count": sum(1 for item in records if item["intent"]["fallback_used"]),
+        "tracecoder_llm_runs": sum(1 for item in records if item["feedback_provenance"]["mode"] in {"optional", "required"}),
+        "tracecoder_fallback_count": sum(1 for item in records if item["feedback_provenance"]["fallback"]),
         "runs": len(records),
         "passed_runs": sum(1 for item in records if item["passed"]),
         "pass_rate": rate(sum(1 for item in records if item["passed"]), len(records)),
@@ -347,17 +393,17 @@ def run_benchmark(
     # variables set below therefore cannot change its already-created config;
     # use the adapter's explicit runtime override to keep this benchmark
     # deterministic and offline for both baseline and CodeArts-B comparisons.
-    tracecoder.configure_llm(mode="off")
+    tracecoder.configure_llm(mode="required" if mode == "intelligent" else "off")
     env = {
-        "CODEARTS_STRATEGY_MODE": "required" if mode == "codearts" else "off",
+        "CODEARTS_STRATEGY_MODE": "required" if mode in {"codearts", "intelligent"} else "off",
         "CODEARTS_STRATEGY_POLICY": policy,
         "CODEARTS_STRATEGY_TIMEOUT_S": str(timeout_s),
         # The benchmark measures B and the closed-loop safety behavior.  D's
         # optional online LLM must be disabled here; otherwise importing the
         # repository-local tracecoder_llm.env can silently turn an offline
         # Mock run into a network benchmark.
-        "TRACECODER_LLM_MODE": "off",
-        "RIA_PLANNER_ENGINE": "rule",
+        "TRACECODER_LLM_MODE": "required" if mode == "intelligent" else "off",
+        "RIA_PLANNER_ENGINE": "llm" if mode == "intelligent" else "rule",
     }
     if model:
         env["CODEARTS_STRATEGY_MODEL"] = model
@@ -365,6 +411,11 @@ def run_benchmark(
         env["CODEARTS_CLI_PURE"] = "1"
     records: list[dict[str, Any]] = []
     with temporary_environment(env):
+        if mode == 'intelligent':
+            # Recreate D's provider after the benchmark environment is applied so
+            # timeout/retry values are honored for this bounded real-model run.
+            from modules.evaluator.tracecoder.llm_provider import LLMConfig, LLMProvider
+            tracecoder.configure_llm(mode='required', provider=LLMProvider(LLMConfig.from_env()))
         for case in cases:
             for repeat in range(1, repeats + 1):
                 records.append(_run_one(case, repeat))
@@ -382,7 +433,7 @@ def run_benchmark(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("baseline", "codearts"), default="baseline")
+    parser.add_argument("--mode", choices=("baseline", "codearts", "intelligent"), default="baseline")
     parser.add_argument("--compare", action="store_true", help="依次运行baseline和codearts并输出对照报告")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--policy", choices=("planner", "quality", "max"), default="quality")
