@@ -13,6 +13,7 @@ from modules.strategy_generation.codearts_agent import (
     extract_review,
     validate_review,
     validate_strategy,
+    _build_prompt,
 )
 
 
@@ -61,6 +62,65 @@ def valid_strategy() -> dict:
         "code": None,
     }
 
+
+
+def task_for_action(action: str) -> dict:
+    return {
+        "schema_version": "task.v1",
+        "task_id": f"task-codearts-{action}",
+        "action": action,
+        "target_ids": ["obj-001"],
+        "destination_id": None if action in {"pick", "grasp"} else "zone-001",
+        "status": "READY",
+    }
+
+
+def strategy_for_action(action: str) -> dict:
+    task = task_for_action(action)
+    task_id = task["task_id"]
+    detect_id = f"{task_id}-detect"
+    object_reference = f"${detect_id}.object_id"
+    steps = [
+        {
+            "step_id": detect_id,
+            "action": "detect_object",
+            "arguments": {"object_id": "obj-001"},
+        },
+        {
+            "step_id": f"{task_id}-approach",
+            "action": "move_to_object",
+            "arguments": {"object_id": object_reference},
+        },
+        {
+            "step_id": f"{task_id}-grasp",
+            "action": "grasp",
+            "arguments": {"object_id": object_reference},
+        },
+    ]
+    if action not in {"pick", "grasp"}:
+        move_arguments = {"destination_id": "zone-001"}
+        if action == "stack":
+            move_arguments["placement_mode"] = "stack_on"
+        steps.extend(
+            [
+                {
+                    "step_id": f"{task_id}-target",
+                    "action": "move_to_target",
+                    "arguments": move_arguments,
+                },
+                {
+                    "step_id": f"{task_id}-release",
+                    "action": "release",
+                    "arguments": {},
+                },
+            ]
+        )
+    return {
+        "schema_version": "strategy.v1",
+        "task_id": task_id,
+        "steps": steps,
+        "code": None,
+    }
 
 class CodeArtsOutputTests(unittest.TestCase):
     def test_extracts_strategy_from_json_event_text(self):
@@ -117,6 +177,25 @@ class CodeArtsOutputTests(unittest.TestCase):
 
 
 class CodeArtsClientTests(unittest.TestCase):
+    def test_open_actions_use_action_specific_prompt_and_contract(self):
+        actions = ["pick", "grasp", "pick_and_place", "place", "transfer", "fetch", "stack"]
+        for action in actions:
+            with self.subTest(action=action):
+                task = task_for_action(action)
+                prompt = _build_prompt(task)
+                self.assertIn(f"任务动作={action}", prompt)
+                expected = [step["action"] for step in strategy_for_action(action)["steps"]]
+                self.assertIn(str(expected), prompt)
+                result = CodeArtsStrategyClient(
+                    executable="codearts",
+                    runner=lambda command, **kwargs: SimpleNamespace(
+                        returncode=0,
+                        stdout=f"{OUTPUT_BEGIN}\n{json.dumps(strategy_for_action(action))}\n{OUTPUT_END}",
+                        stderr="",
+                    ),
+                    which=lambda _: "C:\\Tools\\codearts.exe",
+                ).generate(task)
+                self.assertTrue(result["success"], result)
     def test_binds_only_task_id_mismatch_before_accepting(self):
         calls = []
         mismatched = valid_strategy()

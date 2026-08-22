@@ -151,14 +151,17 @@ class TestStrategyContract(unittest.TestCase):
         }
         for action, expected_actions in cases.items():
             with self.subTest(action=action):
-                output = strategy.run({
-                    "schema_version": "task.v1",
-                    "task_id": f"open-{action}",
-                    "action": action,
-                    "target_ids": ["obj-001"],
-                    "destination_id": None if action in {"pick", "grasp"} else "zone-001",
-                    "status": "READY",
-                })
+                # This contract test validates the deterministic lowering path;
+                # real CodeArts routing is covered by the live B smoke test.
+                with patch.dict(os.environ, {"CODEARTS_STRATEGY_MODE": "off"}):
+                    output = strategy.run({
+                        "schema_version": "task.v1",
+                        "task_id": f"open-{action}",
+                        "action": action,
+                        "target_ids": ["obj-001"],
+                        "destination_id": None if action in {"pick", "grasp"} else "zone-001",
+                        "status": "READY",
+                    })
                 self.assert_strategy_schema(output)
                 self.assertTrue(output["success"])
                 self.assertFalse(output["blocked"])

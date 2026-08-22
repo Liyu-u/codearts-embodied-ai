@@ -49,8 +49,8 @@ class Settings(BaseSettings):
         description="DeepSeek API 地址",
     )
     deepseek_model: str = Field(
-        default="deepseek-chat",
-        description="DeepSeek 模型: deepseek-chat (V3) | deepseek-reasoner (R1)",
+        default="deepseek-v4-flash",
+        description="DeepSeek 模型（正式运行建议使用 deepseek-v4-flash）",
     )
     deepseek_temperature: float = Field(
         default=0.0, ge=0.0, le=2.0,
@@ -68,9 +68,27 @@ class Settings(BaseSettings):
         default=1,
         description="API 调用失败重试次数",
     )
+    deepseek_thinking: str = Field(
+        default="disabled",
+        description="思考模式: enabled | disabled；语义 JSON 快路径默认关闭",
+    )
+    deepseek_reasoning_effort: str = Field(
+        default="low",
+        description="思考强度: low | high | max（仅 thinking=enabled 生效）",
+    )
     llm_cache_enabled: bool = Field(
         default=True,
         description="是否缓存不含物理实体ID的语义候选",
+    )
+    llm_cache_max_entries: int = Field(
+        default=128,
+        ge=0,
+        le=4096,
+        description="进程内语义候选缓存上限",
+    )
+    llm_failure_policy: str = Field(
+        default="fallback",
+        description="LLM 传输/配置失败策略: fallback | block（正式 llm 模式建议 block）",
     )
 
     # --- 混合路由配置 ---

@@ -18,6 +18,9 @@
     TRACECODER_LLM_TEMPERATURE 采样温度（默认 0.2）
     TRACECODER_LLM_MAX_TOKENS  最大输出 token（默认 8192；reasoning 模型思考会占）
     TRACECODER_LLM_JSON_MODE   是否请求结构化 JSON 输出（默认 true）
+    TRACECODER_LLM_THINKING    enabled | disabled（默认 enabled）
+    TRACECODER_LLM_REASONING_EFFORT  low | high | max（默认 low）
+    TRACECODER_MAX_REPAIR_ATTEMPTS   D 闭环最多修复轮数（默认 2）
 
 配置载体：仓库根的 `tracecoder_llm.env`（与仓库根 `.env` 分离！）。
 `.env` 被 robot_intent_agent 的 pydantic Settings 独占（extra=forbid，
@@ -102,6 +105,9 @@ class LLMConfig:
     max_tokens: int = 8192
     json_mode: bool = True
     mode: str = "off"  # off | optional | required
+    # Appended after the legacy fields to preserve positional construction.
+    thinking: str = "enabled"  # enabled | disabled
+    reasoning_effort: str = "low"  # low | high | max
 
     @classmethod
     def from_env(cls) -> "LLMConfig":
@@ -118,6 +124,8 @@ class LLMConfig:
             temperature=_env_float(_ENV_PREFIX + "TEMPERATURE", 0.2),
             max_tokens=_env_int(_ENV_PREFIX + "MAX_TOKENS", 8192),
             json_mode=_env_bool(_ENV_PREFIX + "JSON_MODE", True),
+            thinking=os.getenv(_ENV_PREFIX + "THINKING", "enabled").strip().lower(),
+            reasoning_effort=os.getenv(_ENV_PREFIX + "REASONING_EFFORT", "low").strip().lower(),
         )
 
     @property
@@ -132,6 +140,8 @@ class LLMConfig:
             "key_configured": self.key_configured,
             "timeout_s": self.timeout_s,
             "max_retries": self.max_retries,
+            "thinking": self.thinking,
+            "reasoning_effort": self.reasoning_effort,
         }
 
 
@@ -209,6 +219,12 @@ class LLMProvider:
             )
 
         want_json = cfg.json_mode if json_mode is None else json_mode
+        thinking = cfg.thinking if cfg.thinking in {"enabled", "disabled"} else "enabled"
+        reasoning_effort = (
+            cfg.reasoning_effort
+            if cfg.reasoning_effort in {"low", "high", "max"}
+            else "low"
+        )
         payload = {
             "model": cfg.model,
             "messages": [
@@ -217,7 +233,13 @@ class LLMProvider:
             ],
             "temperature": cfg.temperature,
             "max_tokens": cfg.max_tokens,
+            # DeepSeek's REST API accepts thinking as a top-level request
+            # object.  Keep it explicit so the provider never relies on a
+            # model-side default that can change latency or output length.
+            "thinking": {"type": thinking},
         }
+        if thinking == "enabled":
+            payload["reasoning_effort"] = reasoning_effort
         if want_json:
             payload["response_format"] = {"type": "json_object"}
 

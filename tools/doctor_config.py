@@ -129,7 +129,11 @@ def check_b(live: bool) -> None:
 
     codearts_file = ROOT / "codearts.env"
     if codearts_file.is_file():
-        invalid = [key for key in env_keys(codearts_file) if not key.startswith("CODEARTS_")]
+        invalid = [
+            key
+            for key in env_keys(codearts_file)
+            if not key.startswith("CODEARTS_") and key.lower() != "no_proxy"
+        ]
         if invalid:
             report("ERROR", f"codearts.env 混入了其他模块字段: {', '.join(invalid)}")
         else:

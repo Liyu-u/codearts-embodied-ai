@@ -59,11 +59,15 @@ class SemanticCompilationResult:
 class SemanticCompiler:
     """Compile candidates into one grounded semantic execution contract."""
 
-    def __init__(self, llm_planner: Any = None):
+    def __init__(self, llm_planner: Any = None, strict_llm: bool = False):
         self.rule_parser = RuleSemanticParser()
         self.fusion = SemanticFusion()
         self.grounder = GroundingEngine()
         self.llm_planner = llm_planner
+        # Formal LLM mode can fail closed on provider/configuration errors.
+        # Candidate contract rejection still follows the safety fallback path
+        # below, so malformed model output never becomes executable.
+        self.strict_llm = bool(strict_llm)
 
     def compile(
         self,
@@ -104,6 +108,7 @@ class SemanticCompiler:
             "llm_candidate_partially_repaired": False,
             "llm_cache_hit": False,
             "llm_network_calls": 0,
+            "llm_candidate_selection": [],
         }
         if should_call_llm and self.llm_planner is not None and self.llm_planner.is_available:
             engine_trace["llm_call_attempted"] = True
@@ -118,6 +123,11 @@ class SemanticCompiler:
             except Exception as exc:
                 engine_trace["fallback_used"] = True
                 engine_trace["fallback_reason"] = f"{type(exc).__name__}: {exc}"
+                if self.strict_llm:
+                    raise RuntimeError(
+                        "LLM_REQUIRED_FAILED: semantic provider call failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    ) from exc
             provider_trace = getattr(self.llm_planner, "last_call_metadata", {}) or {}
             engine_trace.update({
                 "llm_transport_succeeded": bool(provider_trace.get("transport_succeeded")),
@@ -129,8 +139,23 @@ class SemanticCompiler:
         elif should_call_llm:
             engine_trace["fallback_used"] = True
             engine_trace["fallback_reason"] = "llm_unavailable"
+            if self.strict_llm:
+                raise RuntimeError(
+                    "LLM_REQUIRED_FAILED: semantic provider unavailable or API key missing"
+                )
 
-        llm_candidate = llm_candidates[0] if llm_candidates else None
+        llm_candidate, llm_candidates, selection_trace = self._select_llm_candidate(
+            llm_candidates, instruction
+        )
+        engine_trace["llm_candidate_selection"] = selection_trace
+        if selection_trace and llm_candidate is None:
+            engine_trace["fallback_used"] = True
+            engine_trace["fallback_reason"] = "all_llm_candidates_rejected"
+            engine_trace["llm_candidate_rejected"] = True
+            engine_trace["llm_candidate_rejection_reasons"] = [
+                "NO_VALID_SEMANTIC_CANDIDATE"
+            ]
+        engine_trace["llm_candidate_valid"] = bool(llm_candidate)
         # Enforce the domain boundary before provider output reaches repair or
         # fusion.  An out-of-contract process verb must become a blocked
         # CUSTOM request; allowing a malformed provider answer to enter the
@@ -476,6 +501,97 @@ class SemanticCompiler:
             behavior_tree=behavior_tree,
             engine_trace=engine_trace,
         )
+
+    @classmethod
+    def _select_llm_candidate(
+        cls,
+        candidates: List[SemanticCandidate],
+        instruction: str,
+    ) -> tuple[Optional[SemanticCandidate], List[SemanticCandidate], List[Dict[str, Any]]]:
+        """Select the strongest provider candidate deterministically.
+
+        Providers may return up to three alternatives.  Taking index zero
+        makes answer quality depend on serialization order.  Contract-invalid
+        candidates are removed before fusion; the remaining candidates are
+        ranked by the provider confidence first, then by evidence coverage,
+        role completeness, ambiguity and repair penalties.  The original
+        order wins every exact tie.
+        """
+        if not candidates:
+            return None, [], []
+
+        ranked = []
+        trace: List[Dict[str, Any]] = []
+        for index, candidate in enumerate(candidates):
+            contract_errors = cls._validate_llm_candidate_contract(candidate)
+            graph = candidate.graph
+            evidence_count = sum(
+                1 for event in graph.events
+                if event.evidence_span and event.evidence_span in instruction
+            ) + sum(
+                1 for entity in graph.entities
+                if entity.mention and (
+                    entity.mention in instruction or
+                    any(span and span in instruction for span in entity.evidence_spans)
+                )
+            )
+            missing_roles = 0
+            for event in graph.events:
+                action = normalize_action(event.action)
+                if action == "CUSTOM":
+                    continue
+                schema = get_action_schema(action)
+                refs = {
+                    "theme": event.theme_ref,
+                    "destination": event.destination_ref,
+                    "source": event.source_ref,
+                    "recipient": event.recipient_ref,
+                }
+                missing_roles += len(schema.missing_roles(
+                    name for name, value in refs.items() if value
+                ))
+            unresolved = sum(
+                1 for item in graph.ambiguities
+                if str(item.status or "").upper() == "UNRESOLVED"
+            )
+            repairs = int((graph.metadata or {}).get("provider_repair_count", 0) or 0)
+            item_trace = {
+                "index": index,
+                "accepted": not bool(contract_errors),
+                "confidence": round(float(candidate.confidence), 4),
+                "evidence_count": evidence_count,
+                "missing_roles": missing_roles,
+                "unresolved_ambiguities": unresolved,
+                "provider_repairs": repairs,
+            }
+            if contract_errors:
+                item_trace["rejection_reasons"] = contract_errors[:4]
+                trace.append(item_trace)
+                continue
+            # Keep confidence as the dominant signal.  Secondary signals are
+            # deterministic tie-breakers that prefer grounded, complete
+            # candidates without overriding a materially more confident one.
+            score = (
+                round(float(candidate.confidence), 6),
+                evidence_count,
+                -missing_roles,
+                -unresolved,
+                -repairs,
+                -index,
+            )
+            trace.append(item_trace)
+            ranked.append((score, index, candidate, item_trace))
+
+        if not ranked:
+            return None, [], trace
+
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        selected = ranked[0][2]
+        selected_index = ranked[0][1]
+        for item in trace:
+            item["selected"] = item["index"] == selected_index
+        ordered = [item[2] for item in ranked]
+        return selected, ordered, trace
 
     @staticmethod
     def _validate_llm_candidate_contract(candidate: SemanticCandidate) -> List[str]:

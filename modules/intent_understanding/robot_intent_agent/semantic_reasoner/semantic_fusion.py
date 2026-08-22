@@ -14,6 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from robot_intent_agent.domain.action_schemas import ACTION_SCHEMAS, get_action_schema, normalize_action
 from robot_intent_agent.schemas.semantic_task_graph import SemanticCandidate, SemanticTaskGraph
+from robot_intent_agent.semantic_parser.action_parser import parse_action_candidates
 
 
 @dataclass
@@ -187,6 +188,17 @@ class SemanticFusion:
         existing = normalize_action(current.action)
         if proposed == existing or proposed == "CUSTOM" or not evidence:
             return proposed == existing
+        if existing == "CUSTOM":
+            # A generic rule candidate is intentionally non-committal.  Do
+            # not let a provider turn words such as “处理一下/操作一下” into
+            # a physical manipulation merely because an object is present.
+            # An upgrade from CUSTOM is valid only when the exact evidence
+            # span contains a supported action trigger recognized by the
+            # deterministic action lexicon.
+            explicit_actions = parse_action_candidates(evidence)
+            if not any(normalize_action(item.value) == proposed
+                       for item in explicit_actions):
+                return False
         # Action correction is allowed at the semantic layer.  The old
         # implementation treated every deterministic action as immutable,
         # which made the LLM unable to correct the exact errors it was meant

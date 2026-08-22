@@ -333,28 +333,76 @@ def _compact_error(value: str) -> str:
 
 
 def _build_prompt(task: dict[str, Any]) -> str:
+    """Build an action-specific, bounded prompt for the CodeArts agent.
+
+    A already normalizes user intent to the open task actions.  The prompt
+    must preserve that action instead of silently asking every task for a
+    five-step pick-and-place plan; the local validator remains authoritative.
+    """
     task_id = task.get("task_id")
     target_ids = task.get("target_ids") or []
     destination_id = task.get("destination_id")
     target_id = target_ids[0] if target_ids else None
-    # Keep this prompt deliberately compact.  The CLI is non-interactive and
-    # long planning instructions make some CodeArts models enter tool/reasoning
-    # loops instead of returning the required JSON event.
-    # The Windows CodeArts CLI treats embedded newlines in a positional
-    # message as argument boundaries.  That used to truncate the prompt at
-    # its first line, so the provider saw no task.v1 and returned an empty
-    # strategy.  Keep the exact contract text, but send it as one argument.
+    action = str(task.get("action") or "pick_and_place")
+    detect_id = f"{task_id}-detect"
+    object_reference = f"${detect_id}.object_id"
+    steps = [
+        {
+            "step_id": detect_id,
+            "action": "detect_object",
+            "arguments": {"object_id": target_id},
+        },
+        {
+            "step_id": f"{task_id}-approach",
+            "action": "move_to_object",
+            "arguments": {"object_id": object_reference},
+        },
+        {
+            "step_id": f"{task_id}-grasp",
+            "action": "grasp",
+            "arguments": {"object_id": object_reference},
+        },
+    ]
+    if action not in {"pick", "grasp"}:
+        move_arguments: dict[str, Any] = {"destination_id": destination_id}
+        if action == "stack":
+            move_arguments["placement_mode"] = "stack_on"
+        steps.extend(
+            [
+                {
+                    "step_id": f"{task_id}-target",
+                    "action": "move_to_target",
+                    "arguments": move_arguments,
+                },
+                {
+                    "step_id": f"{task_id}-release",
+                    "action": "release",
+                    "arguments": {},
+                },
+            ]
+        )
+
+    contract = {
+        "schema_version": "strategy.v1",
+        "task_id": task_id,
+        "steps": steps,
+        "code": None,
+    }
+    expected_actions = [step["action"] for step in steps]
+    stack_rule = (
+        "stack 必须在 move_to_target.arguments 中保留 placement_mode=stack_on。"
+        if action == "stack"
+        else ""
+    )
     prompt = f"""只返回一个策略 JSON，不要调用工具、读取文件或输出解释。
-任务：task_id={task_id}; target_id={target_id}; destination_id={destination_id}
+任务动作={action}; task_id={task_id}; target_id={target_id}; destination_id={destination_id}
 必须放在 {OUTPUT_BEGIN} 和 {OUTPUT_END} 之间，且严格使用此结构：
-{{"schema_version":"strategy.v1","task_id":"{task_id}","steps":[
-{{"step_id":"detect","action":"detect_object","arguments":{{"object_id":"{target_id}"}}}},
-{{"step_id":"approach","action":"move_to_object","arguments":{{"object_id":"$detect.object_id"}}}},
-{{"step_id":"grasp","action":"grasp","arguments":{{"object_id":"$detect.object_id"}}}},
-{{"step_id":"target","action":"move_to_target","arguments":{{"destination_id":"{destination_id}"}}}},
-{{"step_id":"release","action":"release","arguments":{{}}}}],"code":null}}
-只允许这五个 action；字段名必须是 step_id/action/arguments；不得输出 target_id、target_ids 或 object_id 顶层字段；不得改变三个 ID。
+{json.dumps(contract, ensure_ascii=False, separators=(",", ":"))}
+本任务只允许动作序列：{expected_actions}。{stack_rule}
+字段名必须是 step_id/action/arguments；不得输出 target_id、target_ids 或 object_id 顶层字段；不得改变任务中的稳定 ID；pick/grasp 不得添加搬运、放置或释放步骤。
 """
+    # The Windows CLI treats embedded newlines in a positional message as
+    # argument boundaries, so send the exact contract as one argument.
     return " ".join(line.strip() for line in prompt.splitlines() if line.strip())
 
 
@@ -563,7 +611,7 @@ def validate_review(review: Any) -> list[str]:
 
 
 def validate_strategy(strategy: Any, task: dict[str, Any]) -> list[str]:
-    """Validate the untrusted agent result before it reaches the executor."""
+    """Validate untrusted agent output against the requested task action."""
     errors: list[str] = []
     if not isinstance(strategy, dict):
         return ["strategy must be an object"]
@@ -614,6 +662,7 @@ def validate_strategy(strategy: Any, task: dict[str, Any]) -> list[str]:
             if "." not in reference or source_id not in prior_step_ids:
                 errors.append(f"unresolved or forward reference: {reference}")
 
+    task_action = str(task.get("action") or "pick_and_place")
     target_ids = task.get("target_ids") or []
     destination_id = task.get("destination_id")
     target_id = target_ids[0] if target_ids else None
@@ -632,21 +681,42 @@ def validate_strategy(strategy: Any, task: dict[str, Any]) -> list[str]:
     if destination_id and not reaches_destination:
         errors.append("strategy lost the stable destination_id")
 
-    required_actions = [
+    actual_actions = [step.get("action") for step in steps]
+    if task_action in {"pick", "grasp"} and any(
+        action in {"move_to_target", "release"} for action in actual_actions
+    ):
+        errors.append(f"{task_action} strategy must not include destination actions")
+    if task_action == "stack":
+        stack_moves = [
+            step for step in steps if step.get("action") == "move_to_target"
+        ]
+        if not any(
+            (step.get("arguments") or {}).get("placement_mode") == "stack_on"
+            for step in stack_moves
+        ):
+            errors.append("stack move_to_target must use placement_mode=stack_on")
+
+    required_actions = _required_actions_for_task(task_action)
+    cursor = 0
+    for step in steps:
+        if cursor < len(required_actions) and step.get("action") == required_actions[cursor]:
+            cursor += 1
+    if cursor != len(required_actions):
+        errors.append(f"{task_action} actions are missing or out of safe order")
+    return errors
+
+
+def _required_actions_for_task(task_action: str) -> list[str]:
+    """Return the safe C primitive sequence for an A task action."""
+    if task_action in {"pick", "grasp"}:
+        return ["detect_object", "move_to_object", "grasp"]
+    return [
         "detect_object",
         "move_to_object",
         "grasp",
         "move_to_target",
         "release",
     ]
-    cursor = 0
-    for step in steps:
-        if cursor < len(required_actions) and step.get("action") == required_actions[cursor]:
-            cursor += 1
-    if cursor != len(required_actions):
-        errors.append("pick_and_place actions are missing or out of safe order")
-    return errors
-
 
 def _validate_recovery(recovery: Any, all_steps: list[dict[str, Any]]) -> list[str]:
     if not isinstance(recovery, dict):

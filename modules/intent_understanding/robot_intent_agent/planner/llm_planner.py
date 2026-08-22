@@ -1282,7 +1282,14 @@ class LLMPlanner(TaskPlannerInterface):
         self._max_tokens = settings.deepseek_max_tokens
         self._timeout = settings.deepseek_timeout_s
         self._max_retries = settings.deepseek_max_retries
+        self._thinking = str(settings.deepseek_thinking or "disabled").strip().lower()
+        if self._thinking not in {"enabled", "disabled"}:
+            self._thinking = "disabled"
+        self._reasoning_effort = str(settings.deepseek_reasoning_effort or "low").strip().lower()
+        if self._reasoning_effort not in {"low", "high", "max"}:
+            self._reasoning_effort = "low"
         self._cache_enabled = settings.llm_cache_enabled
+        self._cache_max_entries = int(settings.llm_cache_max_entries or 0)
         self._candidate_cache: Dict[str, List[SemanticCandidate]] = {}
         self._last_call_metadata: Dict[str, Any] = {}
         self._client = None
@@ -1391,13 +1398,17 @@ class LLMPlanner(TaskPlannerInterface):
         memory_json = _memory_to_prompt_json(memory_context)
         cache_key = self._candidate_cache_key(instruction, scene_json, memory_json)
         if self._cache_enabled and cache_key in self._candidate_cache:
+            cached = self._candidate_cache.pop(cache_key)
+            # LRU refresh: repeated instructions remain hot without allowing
+            # the process-local cache to grow without bound.
+            self._candidate_cache[cache_key] = cached
             self._last_call_metadata.update({
                 "cache_hit": True,
                 "transport_succeeded": True,
                 "json_parsed": True,
                 "candidate_valid": True,
             })
-            return deepcopy(self._candidate_cache[cache_key])
+            return deepcopy(cached)
         raw = self._call_api(self._build_user_message(
             instruction, scene_json, memory_json,
         ))
@@ -1406,10 +1417,12 @@ class LLMPlanner(TaskPlannerInterface):
         if not candidates:
             raise LLMPlannerError("DeepSeek 未返回合法 semantic-candidate-1.0")
         self._last_call_metadata["candidate_valid"] = True
-        if self._cache_enabled:
+        if self._cache_enabled and self._cache_max_entries > 0:
             # Cache only provider semantics.  Grounding and scene IDs are
             # intentionally added later by SemanticCompiler.
             self._candidate_cache[cache_key] = deepcopy(candidates)
+            while len(self._candidate_cache) > self._cache_max_entries:
+                self._candidate_cache.pop(next(iter(self._candidate_cache)))
         return deepcopy(candidates)
 
     # ============================================================
@@ -1533,6 +1546,8 @@ class LLMPlanner(TaskPlannerInterface):
             "Return exactly one candidate. Every event role reference must point to an entity declared in this same candidate. Declare the entity with its language description before referencing it; never invent an undeclared e1/e2 reference.",
             "Use scene-object-N only as entity.candidate_key and never as an event role reference. Never output physical object IDs or execution state.",
             "If a role is not described clearly in the instruction, omit that role so deterministic grounding can request clarification. Do not fill it with a guessed object.",
+            "Generic verbs such as 处理一下、弄一下、操作一下、搞定或安排一下 are not supported action evidence. If the instruction has only a generic verb and an object, keep the event action CUSTOM and add an unresolved ambiguity/clarification; never invent GRASP, PLACE, PUSH or another physical action.",
+            "Upgrade a CUSTOM rule baseline only when the exact event evidence span contains an explicit supported action trigger such as 抓取、拿起、放入、搬运、递给、等待 or their clear English equivalents. The object mention alone is never an action trigger.",
             "Return JSON only.",
         ])
         return "\n".join(parts)
@@ -1579,7 +1594,12 @@ class LLMPlanner(TaskPlannerInterface):
     def _call_api(self, user_message: str) -> Dict[str, Any]:
         """调用 DeepSeek API，带重试和超时处理"""
         self._ensure_client()
-        self._last_call_metadata["network_call"] = True
+        self._last_call_metadata.update({
+            "network_call": True,
+            "model": self._model,
+            "thinking": self._thinking,
+            "reasoning_effort": self._reasoning_effort if self._thinking == "enabled" else None,
+        })
 
         for attempt in range(self._max_retries + 1):
             try:
@@ -1587,17 +1607,24 @@ class LLMPlanner(TaskPlannerInterface):
                     f"DeepSeek API call (attempt {attempt+1}/{self._max_retries+1}) "
                     f"model={self._model}"
                 )
-                response = self._client.chat.completions.create(
-                    model=self._model,
-                    messages=[
+                request_kwargs = {
+                    "model": self._model,
+                    "messages": [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": user_message},
                     ],
-                    temperature=self._temperature,
-                    max_tokens=self._max_tokens,
-                    response_format={"type": "json_object"},
-                    timeout=self._timeout,
-                )
+                    "temperature": self._temperature,
+                    "max_tokens": self._max_tokens,
+                    "response_format": {"type": "json_object"},
+                    "timeout": self._timeout,
+                    # DeepSeek exposes thinking mode as an OpenAI-compatible
+                    # extra_body field.  Explicitly disabling it keeps the
+                    # semantic JSON path low-latency and deterministic.
+                    "extra_body": {"thinking": {"type": self._thinking}},
+                }
+                if self._thinking == "enabled":
+                    request_kwargs["reasoning_effort"] = self._reasoning_effort
+                response = self._client.chat.completions.create(**request_kwargs)
 
                 raw_text = response.choices[0].message.content.strip()
                 logger.info(f"DeepSeek response: {len(raw_text)} chars")

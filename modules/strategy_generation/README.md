@@ -153,7 +153,7 @@ python -m unittest tests.unit.test_codearts_agent tests.contract.test_strategy_s
 ## 当前边界
 
 1. 公开适配器只接受 `READY` 且已完成稳定实体绑定的任务。
-2. 当前共同开放的用户级动作是 `pick/grasp`、`pick_and_place/place`、`transfer`、`fetch`（必须有明确目标区）和 `stack`。
+2. 当前共同开放的用户级动作是 `pick/grasp`、`pick_and_place/place`、`transfer`、`fetch`（必须有明确目标区）和 `stack`；CodeArts 对这些动作使用动作级提示词和对应的三步/五步策略校验。
 3. 抓取类动作必须且只能有一个稳定 `target_ids`；搬运/放置/堆叠还必须有稳定 `destination_id`，`stack` 不能把目标物自身作为底座。
 4. 正式 B→C 接口只使用 `object_id` 与 `destination_id`；旧字段仅在 MockBackend 直接调用兼容层保留。
 5. `stack` 通过 C 的 `move_to_target` 传递 `placement_mode=stack_on`，不执行任意代码或新增隐式动作。

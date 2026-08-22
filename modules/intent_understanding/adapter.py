@@ -37,6 +37,10 @@ from robot_intent_agent.schemas.scene import (  # noqa: E402
 MODULE_NAME = "intent_understanding"
 MODULE_VERSION = "1.0.0"
 
+# Reuse one provider instance per process so exact repeated instructions can
+# hit LLMPlanner's bounded semantic cache across adapter calls.
+_LLM_PLANNER_CACHE: Dict[Tuple[str, str, str], LLMPlanner] = {}
+
 _ACTION_MAP = {
     "GRASP": "pick",
     "FETCH": "fetch",
@@ -106,11 +110,19 @@ def run(input_json: dict) -> dict:
     try:
         scene = _build_scene(perception)
         engine = _select_engine(input_json)
+        settings = get_settings()
         # The core compiler already implements rule/LLM/hybrid fusion.  The
         # integration adapter must provide the optional provider explicitly;
         # otherwise a requested hybrid run silently becomes rule-only.
         llm_planner = _build_llm_planner(engine)
-        compiled = SemanticCompiler(llm_planner=llm_planner).compile(
+        strict_llm = (
+            engine == "llm"
+            and str(settings.llm_failure_policy or "fallback").strip().lower() == "block"
+        )
+        compiled = SemanticCompiler(
+            llm_planner=llm_planner,
+            strict_llm=strict_llm,
+        ).compile(
             instruction,
             scene=scene,
             mode=engine,
@@ -184,7 +196,17 @@ def _build_llm_planner(engine: str) -> Optional[LLMPlanner]:
     if engine not in {"llm", "hybrid"}:
         return None
     try:
-        return LLMPlanner()
+        settings = get_settings()
+        key = (
+            engine,
+            str(settings.deepseek_base_url),
+            str(settings.deepseek_model),
+        )
+        planner = _LLM_PLANNER_CACHE.get(key)
+        if planner is None:
+            planner = LLMPlanner()
+            _LLM_PLANNER_CACHE[key] = planner
+        return planner
     except Exception:
         # Configuration errors must not make the safe rule fallback
         # unavailable.  The compiler will record the provider as absent.

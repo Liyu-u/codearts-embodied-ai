@@ -5,9 +5,9 @@ param(
     [switch]$SkipCodeArts,
     [switch]$NonInteractive,
     [ValidateSet("rule", "llm", "hybrid")]
-    [string]$IntentMode = "hybrid",
+    [string]$IntentMode = "llm",
     [ValidateSet("off", "optional", "required")]
-    [string]$TraceCoderMode = "optional",
+    [string]$TraceCoderMode = "required",
     [ValidateSet("off", "auto", "required")]
     [string]$CodeArtsMode = "auto"
 )
@@ -189,7 +189,7 @@ $oldTraceKey = Get-LocalEnvValue $tracePath "TRACECODER_LLM_API_KEY"
 $sharedKey = if ($oldRiaKey) { $oldRiaKey } else { $oldTraceKey }
 $deepseekKey = Read-ConfigSecret "DeepSeek API Key" $sharedKey
 
-$riaModel = Read-ConfigValue "A 模型名" (Get-LocalEnvValue $riaPath "RIA_DEEPSEEK_MODEL") "deepseek-chat"
+$riaModel = Read-ConfigValue "A 模型名" (Get-LocalEnvValue $riaPath "RIA_DEEPSEEK_MODEL") "deepseek-v4-flash"
 $riaBase = Read-ConfigValue "A Base URL" (Get-LocalEnvValue $riaPath "RIA_DEEPSEEK_BASE_URL") "https://api.deepseek.com"
 $riaEngine = if ($PSBoundParameters.ContainsKey("IntentMode")) { $IntentMode } else { Read-ConfigValue "A 运行模式（rule/llm/hybrid）" (Get-LocalEnvValue $riaPath "RIA_PLANNER_ENGINE") $IntentMode }
 
@@ -206,7 +206,11 @@ $riaValues = @{
     RIA_DEEPSEEK_MAX_TOKENS = (Get-LocalEnvValue $riaPath "RIA_DEEPSEEK_MAX_TOKENS")
     RIA_DEEPSEEK_TIMEOUT_S = (Get-LocalEnvValue $riaPath "RIA_DEEPSEEK_TIMEOUT_S")
     RIA_DEEPSEEK_MAX_RETRIES = (Get-LocalEnvValue $riaPath "RIA_DEEPSEEK_MAX_RETRIES")
+    RIA_DEEPSEEK_THINKING = (Get-LocalEnvValue $riaPath "RIA_DEEPSEEK_THINKING")
+    RIA_DEEPSEEK_REASONING_EFFORT = (Get-LocalEnvValue $riaPath "RIA_DEEPSEEK_REASONING_EFFORT")
     RIA_LLM_CACHE_ENABLED = (Get-LocalEnvValue $riaPath "RIA_LLM_CACHE_ENABLED")
+    RIA_LLM_CACHE_MAX_ENTRIES = (Get-LocalEnvValue $riaPath "RIA_LLM_CACHE_MAX_ENTRIES")
+    RIA_LLM_FAILURE_POLICY = (Get-LocalEnvValue $riaPath "RIA_LLM_FAILURE_POLICY")
     RIA_PLANNER_ENGINE = $riaEngine
     RIA_LLM_FALLBACK_ON_LOW_CONFIDENCE = (Get-LocalEnvValue $riaPath "RIA_LLM_FALLBACK_ON_LOW_CONFIDENCE")
     RIA_RULE_CONFIDENCE_THRESHOLD = (Get-LocalEnvValue $riaPath "RIA_RULE_CONFIDENCE_THRESHOLD")
@@ -218,10 +222,14 @@ $riaValues = @{
 }
 if (-not $riaValues.RIA_DEEPSEEK_TEMPERATURE) { $riaValues.RIA_DEEPSEEK_TEMPERATURE = "0.0" }
 if (-not $riaValues.RIA_DEEPSEEK_MAX_TOKENS) { $riaValues.RIA_DEEPSEEK_MAX_TOKENS = "2400" }
-if (-not $riaValues.RIA_DEEPSEEK_TIMEOUT_S) { $riaValues.RIA_DEEPSEEK_TIMEOUT_S = "20" }
+if (-not $riaValues.RIA_DEEPSEEK_TIMEOUT_S) { $riaValues.RIA_DEEPSEEK_TIMEOUT_S = "15" }
 if (-not $riaValues.RIA_DEEPSEEK_MAX_RETRIES) { $riaValues.RIA_DEEPSEEK_MAX_RETRIES = "1" }
+if (-not $riaValues.RIA_DEEPSEEK_THINKING) { $riaValues.RIA_DEEPSEEK_THINKING = "disabled" }
+if (-not $riaValues.RIA_DEEPSEEK_REASONING_EFFORT) { $riaValues.RIA_DEEPSEEK_REASONING_EFFORT = "low" }
 if (-not $riaValues.RIA_LLM_CACHE_ENABLED) { $riaValues.RIA_LLM_CACHE_ENABLED = "true" }
-if (-not $riaValues.RIA_LLM_FALLBACK_ON_LOW_CONFIDENCE) { $riaValues.RIA_LLM_FALLBACK_ON_LOW_CONFIDENCE = "true" }
+if (-not $riaValues.RIA_LLM_CACHE_MAX_ENTRIES) { $riaValues.RIA_LLM_CACHE_MAX_ENTRIES = "128" }
+if (-not $riaValues.RIA_LLM_FAILURE_POLICY) { $riaValues.RIA_LLM_FAILURE_POLICY = if ($riaEngine -eq "llm") { "block" } else { "fallback" } }
+if (-not $riaValues.RIA_LLM_FALLBACK_ON_LOW_CONFIDENCE) { $riaValues.RIA_LLM_FALLBACK_ON_LOW_CONFIDENCE = if ($riaEngine -eq "llm") { "false" } else { "true" } }
 if (-not $riaValues.RIA_RULE_CONFIDENCE_THRESHOLD) { $riaValues.RIA_RULE_CONFIDENCE_THRESHOLD = "0.6" }
 if (-not $riaValues.RIA_DEPLOYMENT_DOMAIN) { $riaValues.RIA_DEPLOYMENT_DOMAIN = "daily" }
 if (-not $riaValues.RIA_DAILY_MAX_FORCE_N) { $riaValues.RIA_DAILY_MAX_FORCE_N = "10" }
@@ -239,18 +247,25 @@ $traceValues = @{
     TRACECODER_LLM_TEMPERATURE = (Get-LocalEnvValue $tracePath "TRACECODER_LLM_TEMPERATURE")
     TRACECODER_LLM_MAX_TOKENS = (Get-LocalEnvValue $tracePath "TRACECODER_LLM_MAX_TOKENS")
     TRACECODER_LLM_JSON_MODE = (Get-LocalEnvValue $tracePath "TRACECODER_LLM_JSON_MODE")
+    TRACECODER_LLM_THINKING = (Get-LocalEnvValue $tracePath "TRACECODER_LLM_THINKING")
+    TRACECODER_LLM_REASONING_EFFORT = (Get-LocalEnvValue $tracePath "TRACECODER_LLM_REASONING_EFFORT")
+    TRACECODER_MAX_REPAIR_ATTEMPTS = (Get-LocalEnvValue $tracePath "TRACECODER_MAX_REPAIR_ATTEMPTS")
 }
-if (-not $traceValues.TRACECODER_LLM_TIMEOUT_S) { $traceValues.TRACECODER_LLM_TIMEOUT_S = "45" }
-if (-not $traceValues.TRACECODER_LLM_MAX_RETRIES) { $traceValues.TRACECODER_LLM_MAX_RETRIES = "2" }
-if (-not $traceValues.TRACECODER_LLM_TEMPERATURE) { $traceValues.TRACECODER_LLM_TEMPERATURE = "0.2" }
-if (-not $traceValues.TRACECODER_LLM_MAX_TOKENS) { $traceValues.TRACECODER_LLM_MAX_TOKENS = "8192" }
+if (-not $traceValues.TRACECODER_LLM_TIMEOUT_S) { $traceValues.TRACECODER_LLM_TIMEOUT_S = "20" }
+if (-not $traceValues.TRACECODER_LLM_MAX_RETRIES) { $traceValues.TRACECODER_LLM_MAX_RETRIES = "1" }
+if (-not $traceValues.TRACECODER_LLM_TEMPERATURE) { $traceValues.TRACECODER_LLM_TEMPERATURE = "0.0" }
+if (-not $traceValues.TRACECODER_LLM_MAX_TOKENS) { $traceValues.TRACECODER_LLM_MAX_TOKENS = "4096" }
 if (-not $traceValues.TRACECODER_LLM_JSON_MODE) { $traceValues.TRACECODER_LLM_JSON_MODE = "true" }
+if (-not $traceValues.TRACECODER_LLM_THINKING) { $traceValues.TRACECODER_LLM_THINKING = "enabled" }
+if (-not $traceValues.TRACECODER_LLM_REASONING_EFFORT) { $traceValues.TRACECODER_LLM_REASONING_EFFORT = "low" }
+if (-not $traceValues.TRACECODER_MAX_REPAIR_ATTEMPTS) { $traceValues.TRACECODER_MAX_REPAIR_ATTEMPTS = "2" }
 
 Write-Host "[3/6] 生成 A/D 本地配置（密钥不会显示）..." -ForegroundColor Cyan
 Write-EnvFile $riaPath $riaValues @(
     "RIA_DEEPSEEK_API_KEY", "RIA_DEEPSEEK_BASE_URL", "RIA_DEEPSEEK_MODEL",
     "RIA_DEEPSEEK_TEMPERATURE", "RIA_DEEPSEEK_MAX_TOKENS", "RIA_DEEPSEEK_TIMEOUT_S",
-    "RIA_DEEPSEEK_MAX_RETRIES", "RIA_LLM_CACHE_ENABLED", "RIA_PLANNER_ENGINE",
+    "RIA_DEEPSEEK_MAX_RETRIES", "RIA_DEEPSEEK_THINKING", "RIA_DEEPSEEK_REASONING_EFFORT",
+    "RIA_LLM_CACHE_ENABLED", "RIA_LLM_CACHE_MAX_ENTRIES", "RIA_LLM_FAILURE_POLICY", "RIA_PLANNER_ENGINE",
     "RIA_LLM_FALLBACK_ON_LOW_CONFIDENCE", "RIA_RULE_CONFIDENCE_THRESHOLD",
     "RIA_DEPLOYMENT_DOMAIN", "RIA_DAILY_MAX_FORCE_N", "RIA_DAILY_MAX_VELOCITY_MS",
     "RIA_INDUSTRIAL_MAX_FORCE_N", "RIA_INDUSTRIAL_MAX_VELOCITY_MS"
@@ -258,7 +273,8 @@ Write-EnvFile $riaPath $riaValues @(
 Write-EnvFile $tracePath $traceValues @(
     "TRACECODER_LLM_MODE", "TRACECODER_LLM_MODEL", "TRACECODER_LLM_BASE_URL",
     "TRACECODER_LLM_API_KEY", "TRACECODER_LLM_TIMEOUT_S", "TRACECODER_LLM_MAX_RETRIES",
-    "TRACECODER_LLM_TEMPERATURE", "TRACECODER_LLM_MAX_TOKENS", "TRACECODER_LLM_JSON_MODE"
+    "TRACECODER_LLM_TEMPERATURE", "TRACECODER_LLM_MAX_TOKENS", "TRACECODER_LLM_JSON_MODE",
+    "TRACECODER_LLM_THINKING", "TRACECODER_LLM_REASONING_EFFORT", "TRACECODER_MAX_REPAIR_ATTEMPTS"
 ) "# Generated by tools/setup.ps1; local only."
 
 $oldCodeartsKey = Get-LocalEnvValue $codeartsPath "CODEARTS_CLI_AK"
@@ -286,6 +302,7 @@ $codeartsValues = @{
     CODEARTS_STRATEGY_TIMEOUT_S = (Get-LocalEnvValue $codeartsPath "CODEARTS_STRATEGY_TIMEOUT_S")
     CODEARTS_STRATEGY_POLICY = (Get-LocalEnvValue $codeartsPath "CODEARTS_STRATEGY_POLICY")
     CODEARTS_CLI_PURE = (Get-LocalEnvValue $codeartsPath "CODEARTS_CLI_PURE")
+    NO_PROXY = (Get-LocalEnvValue $codeartsPath "NO_PROXY")
     CODEARTS_CLI_AK = $codeartsKey
     CODEARTS_CLI_SK = $codeartsSecret
 }
@@ -293,10 +310,13 @@ if (-not $codeartsValues.CODEARTS_CLI) { $codeartsValues.CODEARTS_CLI = "codeart
 if (-not $codeartsValues.CODEARTS_STRATEGY_TIMEOUT_S) { $codeartsValues.CODEARTS_STRATEGY_TIMEOUT_S = "120" }
 if (-not $codeartsValues.CODEARTS_STRATEGY_POLICY) { $codeartsValues.CODEARTS_STRATEGY_POLICY = "planner" }
 if (-not $codeartsValues.CODEARTS_CLI_PURE) { $codeartsValues.CODEARTS_CLI_PURE = "1" }
+$defaultCodeartsNoProxy = "snap-access.cn-north-4.myhuaweicloud.com,.myhuaweicloud.com,localhost,127.0.0.1"
+if (-not $codeartsValues.NO_PROXY) { $codeartsValues.NO_PROXY = $defaultCodeartsNoProxy }
+if (-not $codeartsValues.no_proxy) { $codeartsValues.no_proxy = $codeartsValues.NO_PROXY }
 Write-EnvFile $codeartsPath $codeartsValues @(
     "CODEARTS_CLI", "CODEARTS_STRATEGY_MODE", "CODEARTS_STRATEGY_AGENT",
     "CODEARTS_STRATEGY_MODEL", "CODEARTS_STRATEGY_TIMEOUT_S", "CODEARTS_STRATEGY_POLICY",
-    "CODEARTS_CLI_PURE", "CODEARTS_CLI_AK", "CODEARTS_CLI_SK"
+    "CODEARTS_CLI_PURE", "NO_PROXY", "no_proxy", "CODEARTS_CLI_AK", "CODEARTS_CLI_SK"
 ) "# Generated by tools/setup.ps1; local only."
 
 if (-not $SkipCodeArts) {
@@ -309,6 +329,8 @@ if (-not $SkipCodeArts) {
     Set-UserAndProcessEnvironment "CODEARTS_STRATEGY_TIMEOUT_S" $codeartsValues.CODEARTS_STRATEGY_TIMEOUT_S
     Set-UserAndProcessEnvironment "CODEARTS_STRATEGY_POLICY" $codeartsValues.CODEARTS_STRATEGY_POLICY
     Set-UserAndProcessEnvironment "CODEARTS_CLI_PURE" $codeartsValues.CODEARTS_CLI_PURE
+    Set-UserAndProcessEnvironment "NO_PROXY" $codeartsValues.NO_PROXY
+    Set-UserAndProcessEnvironment "no_proxy" $codeartsValues.no_proxy
 }
 
 Write-Host "[5/6] 检查本地配置和模块依赖..." -ForegroundColor Cyan

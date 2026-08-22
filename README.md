@@ -2,7 +2,7 @@
 
 本项目面向 2026 年“挑战杯”揭榜挂帅华为赛道，围绕“基于华为云码道（CodeArts）代码智能体解决复杂软件工程问题”构建可复现的具身智能闭环 Demo。系统把自然语言意图、策略生成、仿真执行和结果反馈接成一条带契约、可审计、可安全阻断的链路。
 
-当前结论：**A、B、D 已完成真实智能调用；C 已完成 Isaac Sim Ground Truth 感知与远程执行闭环。系统已具备比赛演示级完整闭环，但尚未达到真实相机/真机和生产级稳定性标准。**
+当前结论：**A、B、D 已完成真实智能调用；B 的 7 类开放动作已通过真实 CodeArts CLI 验证；C 已完成 Isaac Sim Ground Truth 感知与远程执行闭环。系统达到比赛演示级完整闭环，但尚未达到真实相机、真机和生产级稳定性标准。**
 
 ## 1. 系统架构
 
@@ -29,14 +29,15 @@ D 反馈与纠错（TraceCoder + DeepSeek） ──► feedback.v1
 
 各模块职责如下：
 
-| 模块 | 作用 | 当前实现 |
-| --- | --- | --- |
-| P/C 感知边界 | 将环境观察规范化为统一对象、位姿、关系和能力 | 本地 Mock；Isaac Sim Ground Truth（USD/PhysX 实时位姿）；真实相机接口预留 |
-| A 意图理解 | 解析自然语言、绑定稳定对象 ID、识别歧义和安全风险 | DeepSeek OpenAI 兼容 API；支持 rule / hybrid / llm |
-| B 策略生成 | 通过 CodeArts 智能体生成动作计划并执行契约、安全校验 | CodeArts CLI + DeepSeek 模型；支持 auto / required / off |
-| C 执行器 | 执行动作白名单，记录轨迹、状态、安全事件和恢复结果 | Mock 与 Isaac Sim 6.0 CUDA；真机驱动尚未接入 |
-| D TraceCoder | 分析执行反馈、判定通过/失败、生成有限修复补丁 | DeepSeek optional / required / off；补丁经过 Schema 和动作白名单校验 |
+| 模块 | 当前完成度 | 已验证能力 | 当前边界 |
+| --- | --- | --- | --- |
+| P/C 感知边界 | 仿真真值链路已完成；真实视觉未完成 | Mock 场景、Isaac Sim USD/PhysX Ground Truth、稳定对象 ID、位姿和关系标准化 | 当前不是 RGB/RGB-D 摄像头识别，真实相机和真机传感器尚未接入 |
+| A 意图理解 | 比赛演示级可用 | DeepSeek 智能模式、自然语言解析、目标绑定、歧义识别、安全阻断、task.v1 输出 | 复杂开放世界指令仍需扩大数据集和重复统计；依赖 perception.v1 的稳定事实 |
+| B 策略生成 | 真实 CodeArts 智能调用已完成 | CodeArts CLI、AK/SK、代理绕过、动作级提示词和安全校验；`pick`、`grasp`、`pick_and_place`、`place`、`transfer`、`fetch`、`stack` 真实调用 7/7 成功 | 云端排队可能带来 13–19 秒延迟和偶发输出超时；`push`、`pour`、`handover` 等未纳入开放动作集 |
+| C 执行器 | Mock 与 Isaac Sim Ground Truth 执行闭环已完成 | 五步抓取搬运、三步抓取、堆叠、轨迹记录、超时/碰撞/安全停止；远程 Isaac Sim 真实位姿发生变化 | 真实相机感知、真机驱动和长期稳定运行尚未验收；Isaac DOF/资产环境警告仍需加固 |
+| D TraceCoder | 反馈与有限修复闭环已完成，稳定性持续加固 | DeepSeek required/optional/off、feedback.v1、失败归因、有限补丁、重试和安全校验；可消费 Isaac 执行证据 | 长时间重复测试仍需进一步稳定；修复策略不能绕过 B/C 的 Schema 和动作白名单 |
 
+模块关系：A 只负责把语言变成有约束的 `task.v1`；B 只负责生成并校验 `strategy.v1`；C 只执行白名单原子动作并返回 `execution.v1`；D 只根据执行证据输出 `feedback.v1` 和受限补丁。任何模块失败都会在对应边界阻断，不会静默越权。
 ## 2. 仓库结构
 
 ~~~text

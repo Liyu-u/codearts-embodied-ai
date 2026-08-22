@@ -41,6 +41,7 @@ perception.v1 与真实执行日志提供，见 resolve_task_data() 的注释。
 from __future__ import annotations
 
 import json
+import os
 from copy import deepcopy
 from typing import Any
 
@@ -74,6 +75,15 @@ def configure_llm(mode=None, provider=None) -> None:
     """
     _LLM_OVERRIDE["mode"] = mode
     _LLM_OVERRIDE["provider"] = provider
+
+
+def _configured_repair_attempts() -> int:
+    """Read the bounded D repair budget without allowing runaway retries."""
+    try:
+        value = int(os.getenv("TRACECODER_MAX_REPAIR_ATTEMPTS", "2"))
+    except (TypeError, ValueError):
+        value = 2
+    return max(1, min(value, 5))
 
 
 def _active_llm() -> tuple:
@@ -711,7 +721,7 @@ def run(
     result = process_policy(
         task_data,
         initial_strategy=native_strategy,
-        max_repair_attempts=5,
+        max_repair_attempts=_configured_repair_attempts(),
         optimize_quality=True,
         # HLLM 经验库：进程内记忆，跨 run() 调用复用成功修复组合。
         experience_store=experience_store,

@@ -41,7 +41,9 @@ SUPPORTED_PRIMITIVE_TASK_ACTIONS = {
     "stack",
 }
 
-CODEARTS_TASK_ACTIONS = {"pick_and_place"}
+# CodeArts receives the same open action set as the local primitive planner.
+# Each action is still constrained by the action-specific prompt and validator.
+CODEARTS_TASK_ACTIONS = frozenset(SUPPORTED_PRIMITIVE_TASK_ACTIONS)
 
 
 def run(input_json: dict) -> dict:
