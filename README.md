@@ -126,7 +126,7 @@ Ground Truth 感知单元 + 感知契约 + 感知服务：10 passed
 Mock Isaac pipeline + Isaac backend + execution contract：21 passed
 ~~~
 
-完整 pytest tests 仍有一个既有 TraceCoder 契约测试出现长时间不结束，尚未将全量测试声明为全绿；这不影响上述已通过的 Ground Truth/执行器针对性测试，但应在发布前修复或隔离。
+完整测试集仍有一个既有 TraceCoder 契约测试出现长时间不结束，尚未将全量测试声明为全绿；这不影响上述已通过的 Ground Truth/执行器针对性测试，但应在发布前修复或隔离。
 
 ## 6. 拉取、配置和部署
 
@@ -183,12 +183,12 @@ CodeArts CLI 也可直接读取当前用户环境变量：
 
 ~~~powershell
 # 运行离线/Mock 闭环
-python -m pytest tests/contract -q
-python -m pytest tests/integration -q
-python -m pytest tests/e2e/test_closed_loop_acceptance.py -q
+python -m unittest discover -s tests/contract -t . -q
+python -m unittest discover -s tests/integration -t . -q
+python -m unittest tests.e2e.test_closed_loop_acceptance -v
 
 # Ground Truth 感知单元
-python -m pytest tests/unit/test_isaac_ground_truth_perception.py -q
+python -m unittest tests.unit.test_isaac_ground_truth_perception -v
 ~~~
 
 本地 Demo 默认使用 C Mock，适合展示消息流和故障修复；它不能替代 Isaac Sim 真实执行证据。
