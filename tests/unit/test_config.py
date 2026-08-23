@@ -47,6 +47,16 @@ class ConfigLoaderTests(unittest.TestCase):
             profile = load_profile("sim")
         self.assertEqual(profile.safety.motion.max_linear_velocity_m_s, 0.11)
 
+    def test_real_profile_cannot_be_widened_by_daily_velocity(self):
+        with patch.dict(os.environ, {"RIA_DAILY_MAX_VELOCITY_MS": "0.30"}):
+            profile = load_profile("real")
+        self.assertEqual(profile.safety.motion.max_linear_velocity_m_s, 0.05)
+
+    def test_profile_loader_does_not_load_dotenv_implicitly(self):
+        with patch.dict(os.environ, {}, clear=True):
+            profile = load_profile("real")
+        self.assertEqual(profile.safety.motion.max_linear_velocity_m_s, 0.05)
+
     def test_env_backend_override_is_applied(self):
         with patch.dict(os.environ, {"EXECUTOR_BACKEND": "mock"}):
             profile = load_profile("sim")

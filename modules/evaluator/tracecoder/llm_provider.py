@@ -14,13 +14,13 @@
     TRACECODER_LLM_BASE_URL    OpenAI 兼容端点（默认 https://api.deepseek.com）
     TRACECODER_LLM_API_KEY     API Key（默认空）
     TRACECODER_LLM_TIMEOUT_S   请求超时秒（默认 45）
-    TRACECODER_LLM_MAX_RETRIES 失败重试次数（默认 2）
+    TRACECODER_LLM_MAX_RETRIES 失败重试次数（默认 1；仅传输错误重试）
     TRACECODER_LLM_TEMPERATURE 采样温度（默认 0.2）
-    TRACECODER_LLM_MAX_TOKENS  最大输出 token（默认 8192；reasoning 模型思考会占）
+    TRACECODER_LLM_MAX_TOKENS  最大输出 token（默认 3072；reasoning 模型思考会占）
     TRACECODER_LLM_JSON_MODE   是否请求结构化 JSON 输出（默认 true）
-    TRACECODER_LLM_THINKING    enabled | disabled（默认 enabled）
+    TRACECODER_LLM_THINKING    enabled | disabled（默认 disabled）
     TRACECODER_LLM_REASONING_EFFORT  low | high | max（默认 low）
-    TRACECODER_MAX_REPAIR_ATTEMPTS   D 闭环最多修复轮数（默认 2）
+    TRACECODER_MAX_REPAIR_ATTEMPTS   D 闭环最多修复轮数（默认 1）
 
 配置载体：仓库根的 `tracecoder_llm.env`（与仓库根 `.env` 分离！）。
 `.env` 被 robot_intent_agent 的 pydantic Settings 独占（extra=forbid，
@@ -100,13 +100,13 @@ class LLMConfig:
     base_url: str = _DEFAULT_BASE_URL
     api_key: str = ""
     timeout_s: float = 45.0
-    max_retries: int = 2
+    max_retries: int = 1
     temperature: float = 0.2
-    max_tokens: int = 8192
+    max_tokens: int = 3072
     json_mode: bool = True
     mode: str = "off"  # off | optional | required
     # Appended after the legacy fields to preserve positional construction.
-    thinking: str = "enabled"  # enabled | disabled
+    thinking: str = "disabled"  # enabled | disabled
     reasoning_effort: str = "low"  # low | high | max
 
     @classmethod
@@ -120,11 +120,11 @@ class LLMConfig:
             base_url=os.getenv(_ENV_PREFIX + "BASE_URL", _DEFAULT_BASE_URL).strip(),
             api_key=os.getenv(_ENV_PREFIX + "API_KEY", "").strip(),
             timeout_s=_env_float(_ENV_PREFIX + "TIMEOUT_S", 45.0),
-            max_retries=_env_int(_ENV_PREFIX + "MAX_RETRIES", 2),
+            max_retries=max(0, _env_int(_ENV_PREFIX + "MAX_RETRIES", 1)),
             temperature=_env_float(_ENV_PREFIX + "TEMPERATURE", 0.2),
-            max_tokens=_env_int(_ENV_PREFIX + "MAX_TOKENS", 8192),
+            max_tokens=max(512, _env_int(_ENV_PREFIX + "MAX_TOKENS", 3072)),
             json_mode=_env_bool(_ENV_PREFIX + "JSON_MODE", True),
-            thinking=os.getenv(_ENV_PREFIX + "THINKING", "enabled").strip().lower(),
+            thinking=os.getenv(_ENV_PREFIX + "THINKING", "disabled").strip().lower(),
             reasoning_effort=os.getenv(_ENV_PREFIX + "REASONING_EFFORT", "low").strip().lower(),
         )
 
@@ -140,6 +140,7 @@ class LLMConfig:
             "key_configured": self.key_configured,
             "timeout_s": self.timeout_s,
             "max_retries": self.max_retries,
+            "max_tokens": self.max_tokens,
             "thinking": self.thinking,
             "reasoning_effort": self.reasoning_effort,
         }
@@ -338,5 +339,5 @@ def try_load_dotenv() -> None:
         pass
 
 
-# 模块加载即尝试读一次 tracecoder_llm.env，保证 from_env() 能拿到本地配置。
-try_load_dotenv()
+# Do not load tracecoder_llm.env during module import. Online entrypoints
+# call try_load_dotenv() explicitly; offline tests remain network/config clean.

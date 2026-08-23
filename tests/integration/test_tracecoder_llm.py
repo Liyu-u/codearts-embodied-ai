@@ -80,28 +80,16 @@ class TestTraceCoderLLM(unittest.TestCase):
         self.assertEqual(diag["llm"]["stats"]["calls"], 0)
         self.assertEqual(diag["llm"]["calls"], [])
 
-    def test_required_normal_task_llm_participates(self):
-        """纯 LLM 组-正常任务：初始即通过也走 LLM 质量确认轮，证据在案。"""
+    def test_required_normal_task_skips_tracecoder(self):
+        """High-confidence success is a zero-call path even in required mode."""
         fake = FakeLLMProvider(handler=smart_handler())
         result = self._run_case("normal", mode="required", provider=fake)
         diag = self._diag(result)
-        self.assertEqual(diag["status"], "PASSED", diag.get("stopped_reason"))
+        self.assertEqual(diag["status"], "TRACE_CODER_SKIPPED")
         self.assertTrue(diag["final_passed"])
-        self.assertFalse(diag["llm"]["required_failed"])
-        stats = diag["llm"]["stats"]
-        self.assertEqual(stats["mode"], "required")
-        self.assertGreaterEqual(stats["calls"], 3)
-        self.assertEqual(stats["ok_calls"], stats["calls"])
-        self.assertEqual(stats["fallback_calls"], 0)
-        self.assertEqual(stats["failed_calls"], 0)
-        # 证据：三角色都有真实调用记录，模型名/请求号/耗时齐全
-        roles = {c["role"] for c in diag["llm"]["calls"]}
-        self.assertEqual(roles, {"observation", "analysis", "repair"})
-        for record in diag["llm"]["calls"]:
-            self.assertEqual(record["model"], "fake-deepseek")
-            self.assertTrue(record["request_id"])
-            self.assertGreaterEqual(record["latency_ms"], 0)
-
+        self.assertFalse(diag["tracecoder_invoked"])
+        self.assertEqual(diag["llm"]["stats"]["calls"], 0)
+        self.assertEqual(fake.calls, [])
     def test_optional_provider_failure_falls_back_recorded(self):
         """规则+LLM 组：模型调用失败 → 规则兜底，证据明确记录 fallback。"""
         # 第一次 repair 调用（seq=3）模拟网络/超时失败
@@ -134,7 +122,7 @@ class TestTraceCoderLLM(unittest.TestCase):
         self.assertEqual(diag["status"], "PASSED", diag.get("stopped_reason"))
         self.assertFalse(diag["llm"]["required_failed"])
         stats = diag["llm"]["stats"]
-        self.assertGreaterEqual(stats["calls"], 6)  # 修复轮 + 质量优化轮
+        self.assertGreaterEqual(stats["calls"], 3)  # 修复轮 + 质量优化轮
         self.assertEqual(stats["fallback_calls"], 0)
         self.assertEqual(stats["failed_calls"], 0)
         # 修复轮来源是 LLM，诊断带 LLM 专属标记（证明模型真的参与并产出归因）
@@ -233,7 +221,7 @@ class TestTraceCoderLLM(unittest.TestCase):
         self.assertFalse(diag["final_passed"])
         self.assertFalse(diag["llm"]["required_failed"])
         # LLM 确实参与了多轮修复
-        self.assertGreaterEqual(diag["llm"]["stats"]["calls"], 6)
+        self.assertGreaterEqual(diag["llm"]["stats"]["calls"], 3)
         # 修复过程中出现过机器人安全停止（on_exhausted=stop 触发 safe_stop）
         first = diag["repair_log"][0]
         trace = first["result_detail"]["scenario_results"][0]["execution"]["trace"]
@@ -242,10 +230,10 @@ class TestTraceCoderLLM(unittest.TestCase):
             "持续失败后应触发 safe_stop，而不是带病继续",
         )
         # 循环收敛：没有无限重试（修复轮数 < 最大轮数 5）
-        self.assertEqual(diag["repair_rounds"], 2)
+        self.assertEqual(diag["repair_rounds"], 1)
         # 最终状态不允许部署真机
         self.assertFalse(diag["final_passed"])
-        self.assertIn("相同修改", diag["stopped_reason"])
+        self.assertIn(diag["stopped_reason"], {"达到最大修改次数。", "连续生成相同修改，提前停止。"})
 
 
 if __name__ == "__main__":

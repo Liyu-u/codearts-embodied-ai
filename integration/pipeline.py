@@ -122,6 +122,8 @@ def run_pipeline(
                     "perception": perception,
                     "capabilities": capabilities,
                     "run_id": run_id,
+                    "retry_count": retry_count,
+                    "tracecoder_context": {"retry_count": retry_count},
                 }
             )
 

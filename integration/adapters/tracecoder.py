@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from copy import deepcopy
 from typing import Any
 
@@ -65,6 +66,195 @@ _EXPERIENCE_STORE: ExperienceStore | None = None
 _LLM_CONFIG = LLMConfig.from_env()
 _LLM_PROVIDER = LLMProvider(_LLM_CONFIG)
 _LLM_OVERRIDE: dict = {"mode": None, "provider": None}
+@dataclass(frozen=True)
+class TraceCoderBudget:
+    """Per-invocation budget selected from execution risk, not globally fixed."""
+
+    tier: str
+    max_tokens: int
+    thinking: str
+    reasoning_effort: str
+    max_retries: int
+    max_repair_attempts: int
+    optimize_quality: bool
+    call_style: str
+
+
+def _env_int(name: str, default: int, lower: int, upper: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(lower, min(value, upper))
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _tracecoder_budget(tier: str) -> TraceCoderBudget:
+    """Build a bounded normal/hard/expert profile from environment overrides."""
+    if tier == "expert":
+        return TraceCoderBudget(
+            tier="expert",
+            max_tokens=_env_int("TRACECODER_LLM_EXPERT_MAX_TOKENS", 8192, 1024, 16384),
+            thinking="enabled",
+            reasoning_effort=os.getenv("TRACECODER_LLM_REASONING_EFFORT", "low").strip().lower(),
+            max_retries=_env_int("TRACECODER_LLM_EXPERT_MAX_RETRIES", 1, 0, 1),
+            max_repair_attempts=_env_int("TRACECODER_EXPERT_MAX_REPAIR_ATTEMPTS", 2, 1, 5),
+            optimize_quality=_env_flag("TRACECODER_EXPERT_OPTIMIZE_QUALITY", True),
+            call_style="roles",
+        )
+    if tier == "hard":
+        return TraceCoderBudget(
+            tier="hard",
+            max_tokens=_env_int("TRACECODER_LLM_HARD_MAX_TOKENS", 6144, 1024, 16384),
+            thinking=os.getenv("TRACECODER_LLM_HARD_THINKING", "enabled").strip().lower(),
+            reasoning_effort=os.getenv("TRACECODER_LLM_HARD_REASONING_EFFORT", "low").strip().lower(),
+            max_retries=_env_int("TRACECODER_LLM_HARD_MAX_RETRIES", 1, 0, 1),
+            max_repair_attempts=_env_int("TRACECODER_HARD_MAX_REPAIR_ATTEMPTS", 1, 1, 2),
+            optimize_quality=False,
+            call_style="roles",
+        )
+    return TraceCoderBudget(
+        tier="normal",
+        max_tokens=_env_int("TRACECODER_LLM_MAX_TOKENS", 3072, 1024, 16384),
+        thinking=os.getenv("TRACECODER_LLM_THINKING", "disabled").strip().lower(),
+        reasoning_effort=os.getenv("TRACECODER_LLM_REASONING_EFFORT", "low").strip().lower(),
+        max_retries=_env_int("TRACECODER_LLM_MAX_RETRIES", 1, 0, 1),
+        max_repair_attempts=1,
+        optimize_quality=False,
+        call_style="compact",
+    )
+
+
+def _low_confidence(data: dict) -> bool:
+    if not isinstance(data, dict):
+        return False
+    keys = {
+        "confidence", "overall_confidence", "parse_confidence",
+        "grounding_confidence", "constraint_confidence",
+        "plan_feasibility_confidence", "strategy_confidence",
+        "planning_confidence",
+    }
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value < 0.75:
+            return True
+    return False
+
+
+def _perception_incomplete(perception: dict | None, task: dict) -> bool:
+    """Only explicit/structural perception gaps force a feedback call."""
+    if perception is None:
+        # perception.v1 is optional at this adapter boundary; execution evidence
+        # can still be authoritative when the caller deliberately omits it.
+        return False
+    if not isinstance(perception, dict):
+        return True
+    if perception.get("complete") is False or perception.get("status") in {
+        "INCOMPLETE", "NEEDS_CLARIFICATION", "BLOCKED", "STALE",
+    }:
+        return True
+    quality = perception.get("quality") or perception.get("assessment") or {}
+    if isinstance(quality, dict) and quality.get("status") not in {None, "READY", "ok", "OK"}:
+        return True
+    objects = perception.get("objects")
+    if not isinstance(objects, list):
+        return True
+    target_ids = set(task.get("target_ids") or [])
+    if task.get("destination_id"):
+        target_ids.add(task["destination_id"])
+    object_ids = {
+        item.get("id") or item.get("object_id") or item.get("track_id")
+        for item in objects if isinstance(item, dict)
+    }
+    if target_ids and (not objects or not target_ids.issubset(object_ids)):
+        return True
+    for item in objects:
+        if not isinstance(item, dict):
+            return True
+        value = item.get("confidence")
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value < 0.60:
+            return True
+    return False
+
+
+def _failed_step_count(execution: dict) -> int:
+    return sum(
+        1 for step in execution.get("steps") or []
+        if str(step.get("status", "")).upper() in {"FAILED", "FAIL", "ERROR", "SAFE_STOP"}
+    )
+
+
+def _select_tracecoder_budget(input_json: dict, llm_mode: str) -> tuple[TraceCoderBudget | None, list[str]]:
+    """Return (None, reasons) for the cheap successful path."""
+    task = input_json.get("task") or {}
+    strategy = input_json.get("strategy") or {}
+    execution = input_json.get("execution") or {}
+    perception = input_json.get("perception")
+    status = str(execution.get("status") or "").upper()
+    reasons: list[str] = []
+    safety_reasons = _safety_event_reasons(execution)
+    if status != "SUCCEEDED":
+        reasons.append("execution_" + status.lower())
+    if safety_reasons:
+        reasons.append("safety_event")
+    if _failed_step_count(execution):
+        reasons.append("abnormal_step_state")
+    if _perception_incomplete(perception, task):
+        reasons.append("perception_incomplete")
+    if _low_confidence(task) or _low_confidence(strategy):
+        reasons.append("low_confidence")
+    if input_json.get("repair_required") or task.get("repair_required"):
+        reasons.append("repair_required")
+
+    requested = str(
+        input_json.get("tracecoder_profile")
+        or input_json.get("tracecoder_tier")
+        or task.get("tracecoder_profile")
+        or ""
+    ).strip().lower()
+    if requested in {"expert", "max", "full"}:
+        reasons.append("explicit_expert_profile")
+    elif requested in {"hard", "complex", "escalated"}:
+        reasons.append("explicit_hard_profile")
+
+    if not reasons:
+        return None, []
+
+    context = input_json.get("tracecoder_context") or {}
+    retry_count = int(context.get("retry_count", input_json.get("retry_count", 0)) or 0)
+    complexity = str(
+        input_json.get("complexity")
+        or context.get("complexity")
+        or task.get("complexity")
+        or ""
+    ).strip().lower()
+    expert = requested in {"expert", "max", "full"} or complexity in {"expert", "max"}
+    hard = requested in {"hard", "complex", "escalated"} or complexity in {
+        "hard", "complex", "escalated",
+    }
+    hard = hard or retry_count > 0 or _failed_step_count(execution) >= 2
+    hard = hard or (bool(safety_reasons) and status not in {"SAFE_STOP", ""})
+    budget = _tracecoder_budget("expert" if expert else "hard" if hard else "normal")
+
+    return budget, reasons
+
+
+def _provider_for_budget(provider, budget: TraceCoderBudget):
+    """Clone the real provider so per-task budgets are concurrency-safe."""
+    if not isinstance(provider, LLMProvider):
+        return provider
+    config = deepcopy(provider.config)
+    config.max_tokens = budget.max_tokens
+    config.max_retries = budget.max_retries
+    config.thinking = budget.thinking if budget.thinking in {"enabled", "disabled"} else "disabled"
+    config.reasoning_effort = budget.reasoning_effort
+    return LLMProvider(config)
 
 
 def configure_llm(mode=None, provider=None) -> None:
@@ -80,9 +270,9 @@ def configure_llm(mode=None, provider=None) -> None:
 def _configured_repair_attempts() -> int:
     """Read the bounded D repair budget without allowing runaway retries."""
     try:
-        value = int(os.getenv("TRACECODER_MAX_REPAIR_ATTEMPTS", "2"))
+        value = int(os.getenv("TRACECODER_MAX_REPAIR_ATTEMPTS", "1"))
     except (TypeError, ValueError):
-        value = 2
+        value = 1
     return max(1, min(value, 5))
 
 
@@ -527,6 +717,75 @@ def _strategy_execution_shape(strategy: dict) -> dict:
     }
 
 
+def _empty_llm_stats(mode: str) -> dict:
+    return {
+        "mode": mode,
+        "calls": 0,
+        "ok_calls": 0,
+        "fallback_calls": 0,
+        "failed_calls": 0,
+        "total_latency_ms": 0.0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 0,
+    }
+
+def _build_skipped_feedback(
+    task: dict,
+    execution: dict,
+    *,
+    reasons: list[str],
+    llm_mode: str,
+    run_id: str | None,
+) -> dict:
+    """Return a contract-valid zero-call feedback record for healthy runs."""
+    status = str(execution.get("status") or "").upper()
+    final_passed = _execution_passed(execution)
+    structured = {
+        "status": "TRACE_CODER_SKIPPED",
+        "skip_reason": reasons,
+        "tracecoder_invoked": False,
+        "execution_status": status,
+        "execution_passed": final_passed,
+        "final_passed": final_passed,
+        "simulation_final_passed": final_passed,
+        "repair_rounds": 0,
+        "repair_log": [],
+        "llm": {
+            "stats": _empty_llm_stats(llm_mode),
+            "required_failed": False,
+            "calls": [],
+        },
+    }
+    return {
+        "schema_version": "feedback.v1",
+        "task_id": task.get("task_id"),
+        "execution_status": status,
+        "final_passed": final_passed,
+        "safety_stop": status == "SAFE_STOP",
+        "stop_reason": execution.get("stop_reason"),
+        "diagnosis": json.dumps(structured, ensure_ascii=False),
+        "retryable": False,
+        "patch": None,
+        "provenance": {
+            "source": "tracecoder_skipped",
+            "agent": "TraceCoder",
+            "mode": llm_mode,
+            "profile": "bypass",
+            "request_id": run_id,
+            "run_id": run_id,
+            "latency_ms": 0.0,
+            "request_ids": [],
+            "fallback": False,
+            "llm_stats": _empty_llm_stats(llm_mode),
+            "calls": [],
+            "skip_reason": reasons,
+            "validation": {"passed": True, "errors": []},
+            "patch_validation": {"passed": True, "errors": []},
+        },
+    }
+
 def _build_feedback(
     result: dict,
     execution: dict,
@@ -535,6 +794,8 @@ def _build_feedback(
     task: dict,
     capabilities: dict,
     llm_mode: str,
+    budget: TraceCoderBudget | None = None,
+    trigger_reasons: list[str] | None = None,
     run_id: str | None = None,
 ) -> dict:
     """把引擎结果映射为 feedback.v1。"""
@@ -550,10 +811,33 @@ def _build_feedback(
     patch_errors = patch_validation["errors"]
     patch_valid = patch_validation["passed"]
     patch_changed = _strategy_execution_shape(patch) != _strategy_execution_shape(current_strategy)
-    if execution.get("status") != "FAILED":
+    execution_status = str(execution.get("status") or "").upper()
+    failed_steps = [
+        step for step in (execution.get("steps") or [])
+        if isinstance(step, dict) and str(step.get("status") or "").upper() == "FAILED"
+    ]
+    failed_action = str((failed_steps[-1] if failed_steps else {}).get("action") or "")
+    completed_actions = {
+        str(step.get("action") or "")
+        for step in (execution.get("steps") or [])
+        if isinstance(step, dict)
+        and str(step.get("status") or "").upper() == "SUCCESS"
+    }
+    # Replaying a whole plan after a successful grasp is unsafe: C may still
+    # hold the object, so a release/move failure must remain FAILED until a
+    # state-aware patch is available.  D may retry a failed grasp itself.
+    non_idempotent_prefix = (
+        failed_action in {"move_to_target", "release"}
+        and "grasp" in completed_actions
+    )
+    if execution_status == "SAFE_STOP":
+        retry_reason = "SAFE_STOP_NO_RETRY"
+    elif execution_status != "FAILED":
         retry_reason = "EXECUTION_NOT_FAILED"
     elif safety_violation:
         retry_reason = "SAFETY_EVENT:" + ",".join(safety_reasons)
+    elif non_idempotent_prefix:
+        retry_reason = "NON_IDEMPOTENT_PREFIX"
     elif not patch_valid:
         retry_reason = "PATCH_INVALID"
     elif not patch_changed:
@@ -562,8 +846,9 @@ def _build_feedback(
         retry_reason = "PATCH_READY"
     # 只有存在合法且发生变化的 patch，FAILED 才允许进入总线重试。
     retryable = (
-        execution.get("status") == "FAILED"
+        execution_status == "FAILED"
         and not safety_violation
+        and not non_idempotent_prefix
         and patch_valid
         and patch_changed
     )
@@ -582,6 +867,8 @@ def _build_feedback(
         "source": "tracecoder_llm" if llm_mode != "off" else "tracecoder_rules",
         "agent": "TraceCoder",
         "mode": llm_mode,
+        "profile": budget.tier if budget else "unknown",
+        "trigger_reasons": trigger_reasons or [],
         "model": call_models[0] if call_models else (_LLM_CONFIG.model or None),
         "request_id": run_id,
         "run_id": run_id,
@@ -597,6 +884,13 @@ def _build_feedback(
     return {
         "schema_version": "feedback.v1",
         "task_id": result.get("task_id"),
+        # Expose canonical C/D status facts at the protocol boundary.  This
+        # avoids treating an intermediate failed step or a safe stop as a
+        # retryable failure.
+        "execution_status": execution_status,
+        "final_passed": final_passed,
+        "safety_stop": execution_status == "SAFE_STOP",
+        "stop_reason": execution.get("stop_reason"),
         "diagnosis": _build_diagnosis(
             result,
             execution,
@@ -707,6 +1001,20 @@ def run(
             "strategy 安全校验失败：" + "; ".join(strategy_validation["errors"])
         )
 
+    llm_mode, llm_provider = _active_llm()
+    budget, trigger_reasons = _select_tracecoder_budget(input_json, llm_mode)
+    if budget is None:
+        return _build_skipped_feedback(
+            task,
+            execution,
+            reasons=["healthy_success"],
+            llm_mode=llm_mode,
+            run_id=run_id,
+        )
+
+    if budget.call_style == "compact" and not isinstance(llm_provider, LLMProvider):
+        budget = TraceCoderBudget(**{**budget.__dict__, "call_style": "roles"})
+
     native_strategy = normalize_strategy(_strategy_v1_to_native(strategy_v1))
     task_data = resolve_task_data(
         task,
@@ -715,18 +1023,19 @@ def run(
         perception=perception,
     )
 
-    # LLM 三模式（TRACECODER_LLM_MODE）接入修复闭环：每次 run() 独立证据。
-    llm_mode, llm_provider = _active_llm()
+    # 每次调用按风险选择独立 Provider 配置，避免普通任务继承 8192/reasoning。
     call_log: list = []
     result = process_policy(
         task_data,
         initial_strategy=native_strategy,
-        max_repair_attempts=_configured_repair_attempts(),
-        optimize_quality=True,
+        max_repair_attempts=budget.max_repair_attempts,
+        optimize_quality=budget.optimize_quality,
+        call_style=budget.call_style,
+        max_no_improvement=1,
         # HLLM 经验库：进程内记忆，跨 run() 调用复用成功修复组合。
         experience_store=experience_store,
         llm_mode=llm_mode,
-        llm_provider=llm_provider,
+        llm_provider=_provider_for_budget(llm_provider, budget),
         call_log=call_log,
     )
     return _build_feedback(
@@ -736,9 +1045,10 @@ def run(
         task=task,
         capabilities=capabilities,
         llm_mode=llm_mode,
+        budget=budget,
+        trigger_reasons=trigger_reasons,
         run_id=run_id,
     )
-
 
 def reset_experience_store() -> None:
     """清空进程级经验库，供测试和可重复演示使用。"""

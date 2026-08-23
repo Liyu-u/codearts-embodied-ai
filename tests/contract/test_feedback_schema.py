@@ -85,6 +85,18 @@ class TestFeedbackContract(unittest.TestCase):
         self.assertIsNone(output["patch"])
         self.assertIn("COLLISION_DETECTED", output["provenance"]["safety_events"])
 
+    def test_non_idempotent_prefix_is_not_retried(self):
+        execution = mock_executor_run(DEMO_STRATEGY_V1, DEMO_TASK_V1)
+        execution["status"] = "FAILED"
+        execution["steps"] = [
+            {"step_id": "grasp_cup", "action": "grasp", "status": "SUCCESS"},
+            {"step_id": "release_cup", "action": "release", "status": "FAILED"},
+        ]
+        output = run(self._input(execution))
+        self.assertFalse(output["retryable"])
+        self.assertIsNone(output["patch"])
+        self.assertIn("NON_IDEMPOTENT_PREFIX", output["diagnosis"])
+
     def test_execution_task_id_must_match_task(self):
         execution = mock_executor_run(DEMO_STRATEGY_V1, DEMO_TASK_V1)
         execution["task_id"] = "another_task"

@@ -19,7 +19,6 @@ from uuid import uuid4
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from integration.config.local_env import load_codearts_env
 from modules.executor.action_catalog import validate_action_arguments
 
 
@@ -35,9 +34,8 @@ OUTPUT_END = "STRATEGY_JSON_END"
 REVIEW_BEGIN = "STRATEGY_REVIEW_BEGIN"
 REVIEW_END = "STRATEGY_REVIEW_END"
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Load the ignored local B configuration before the client reads CODEARTS_*.
-# This keeps direct adapter calls consistent with the demo and the CLI.
-load_codearts_env()
+# Local CODEARTS_* values are loaded explicitly by application entrypoints.
+# Importing this client must remain side-effect free for offline tests.
 _CLI_LOCK = threading.Lock()
 
 
@@ -57,7 +55,13 @@ class CodeArtsStrategyClient:
         self.executable = executable or os.environ.get("CODEARTS_CLI", "codearts")
         self.agent = agent if agent is not None else os.environ.get("CODEARTS_STRATEGY_AGENT", "")
         self.model = model if model is not None else os.environ.get("CODEARTS_STRATEGY_MODEL", "")
-        self.timeout_s = timeout_s or _positive_int_env("CODEARTS_STRATEGY_TIMEOUT_S", 120)
+        self.timeout_s = timeout_s or _positive_int_env("CODEARTS_STRATEGY_TIMEOUT_S", 60)
+        self.max_retries = _bounded_int_env(
+            "CODEARTS_STRATEGY_MAX_RETRIES", default=1, maximum=2
+        )
+        self.retry_backoff_s = _nonnegative_float_env(
+            "CODEARTS_STRATEGY_RETRY_BACKOFF_S", default=0.2
+        )
         self._runner = runner
         self._which = which
 
@@ -108,15 +112,14 @@ class CodeArtsStrategyClient:
         )
         command.append(_build_prompt(task))
 
-        try:
-            # Demo HTTP uses a threaded server; serialize provider calls so
-            # two requests cannot contend for one local CodeArts session.
-            with _CLI_LOCK:
-                completed = self._run_cli(command)
-        except subprocess.TimeoutExpired:
-            return _failure("CODEARTS_CLI_TIMEOUT", trace)
-        except OSError as exc:
-            return _failure(f"CODEARTS_CLI_START_FAILED:{exc}", trace)
+        # Demo HTTP uses a threaded server; serialize provider calls so two
+        # requests cannot contend for one local CodeArts session. Transport
+        # failures get at most one bounded retry; validation failures never
+        # trigger a second remote plan.
+        with _CLI_LOCK:
+            completed, transport_error = self._run_cli_with_retries(command, trace)
+        if transport_error:
+            return _failure(transport_error, trace)
 
         trace["exit_code"] = completed.returncode
         if completed.returncode != 0:
@@ -132,26 +135,57 @@ class CodeArtsStrategyClient:
 
         errors = validate_strategy(candidate, task)
         if errors == ["task_id does not match input task"] and _has_explicit_task_id(candidate):
-            # ``task_id`` is transport metadata, not a planning decision.  A
-            # general-purpose agent can still copy it from a Skill example;
-            # spending a second remote request to repair that single field
-            # makes the real path unnecessarily slow and prone to timeouts.
-            # Bind the already validated candidate to the original task in an
-            # explicit local compilation step.  No other field is normalized:
-            # target/destination IDs, action order, references and recovery
-            # policy are validated again after the binding.
             candidate = dict(candidate)
             candidate["task_id"] = task["task_id"]
             trace["task_id_bound_locally"] = True
             trace["binding_reason"] = "provider_task_id_mismatch_only"
             errors = validate_strategy(candidate, task)
+
+        # A zero-step envelope is a transient provider formatting failure in
+        # practice.  Spend only the bounded B retry budget on that shape;
+        # semantic/action validation errors are never retried.
+        if errors and _is_retryable_strategy_validation(errors) and self.max_retries:
+            trace["validation_retry_count"] = 1
+            time.sleep(min(2.0, self.retry_backoff_s))
+            with _CLI_LOCK:
+                retry_completed, retry_error = self._run_cli_with_retries(command, trace)
+            if retry_error:
+                return _failure(retry_error, trace)
+            trace["exit_code"] = retry_completed.returncode
+            if retry_completed.returncode != 0:
+                detail = _compact_error(retry_completed.stderr or retry_completed.stdout)
+                return _failure(f"CODEARTS_CLI_FAILED:{detail}", trace)
+            candidate = extract_strategy(retry_completed.stdout)
+            if candidate is None:
+                return _failure("CODEARTS_OUTPUT_MISSING_STRATEGY", trace)
+            errors = validate_strategy(candidate, task)
+            if errors == ["task_id does not match input task"] and _has_explicit_task_id(candidate):
+                candidate = dict(candidate)
+                candidate["task_id"] = task["task_id"]
+                trace["task_id_bound_locally"] = True
+                trace["binding_reason"] = "provider_task_id_mismatch_only"
+                errors = validate_strategy(candidate, task)
+
         if errors:
             trace["validation"] = {"passed": False, "errors": list(errors)}
             return _failure("CODEARTS_STRATEGY_REJECTED:" + errors[0], trace)
 
-        strategy = dict(candidate)
+        strategy = _ensure_bounded_grasp_recovery(candidate)
         strategy["code"] = None
+        # Revalidate the locally normalized recovery branch.  This is the
+        # shared C/D contract: one grasp retry is allowed, exhaustion enters
+        # C SAFE_STOP and D must not propose another automatic retry.
+        normalized_errors = validate_strategy(strategy, task)
+        if normalized_errors:
+            trace["validation"] = {
+                "passed": False,
+                "errors": list(normalized_errors),
+            }
+            return _failure(
+                "CODEARTS_STRATEGY_REJECTED:" + normalized_errors[0], trace
+            )
         trace["validation"] = {"passed": True, "errors": []}
+        trace["recovery_normalized"] = strategy != candidate
         _finalize_trace(trace)
         strategy.update(
             {
@@ -211,13 +245,10 @@ class CodeArtsStrategyClient:
                 _build_review_prompt(task, strategy, round_no),
             ]
         )
-        try:
-            with _CLI_LOCK:
-                completed = self._run_cli(command)
-        except subprocess.TimeoutExpired:
-            return _review_failure("CODEARTS_CLI_TIMEOUT", trace)
-        except OSError as exc:
-            return _review_failure(f"CODEARTS_CLI_START_FAILED:{exc}", trace)
+        with _CLI_LOCK:
+            completed, transport_error = self._run_cli_with_retries(command, trace)
+        if transport_error:
+            return _review_failure(transport_error, trace)
 
         trace["exit_code"] = completed.returncode
         if completed.returncode != 0:
@@ -238,6 +269,41 @@ class CodeArtsStrategyClient:
         trace["status"] = "PASS"
         _finalize_trace(trace)
         return {"success": True, "review": review, "error": None, "trace": trace}
+
+    def _run_cli_with_retries(
+        self, command: list[str], trace: dict[str, Any]
+    ) -> tuple[Any | None, str | None]:
+        """Run one bounded transport retry loop for generate/review.
+
+        Only launch, timeout and transient non-zero exit failures are retried.
+        A malformed or semantically unsafe response is returned to the caller
+        immediately so the provider cannot amplify a bad answer.
+        """
+        attempts = self.max_retries + 1
+        last_error = "CODEARTS_CLI_FAILED:unknown error"
+        for attempt in range(1, attempts + 1):
+            trace["attempt_count"] = attempt
+            try:
+                completed = self._run_cli(command)
+            except subprocess.TimeoutExpired:
+                last_error = "CODEARTS_CLI_TIMEOUT"
+                retryable = True
+            except OSError as exc:
+                last_error = f"CODEARTS_CLI_START_FAILED:{exc}"
+                retryable = True
+            else:
+                trace["exit_code"] = completed.returncode
+                if completed.returncode == 0:
+                    return completed, None
+                detail = _compact_error(completed.stderr or completed.stdout)
+                last_error = f"CODEARTS_CLI_FAILED:{detail}"
+                retryable = _is_transient_cli_error(detail)
+
+            if not retryable or attempt >= attempts:
+                break
+            trace["retry_count"] = attempt
+            time.sleep(min(2.0, self.retry_backoff_s * attempt))
+        return None, last_error
 
     def _run_cli(self, command: list[str]) -> Any:
         """Run the CLI without pipe back-pressure on Windows.
@@ -285,13 +351,71 @@ class CodeArtsStrategyClient:
 def _positive_int_env(name: str, default: int) -> int:
     try:
         value = int(os.environ.get(name, str(default)))
-    except ValueError:
+    except (TypeError, ValueError):
         return default
     return value if value > 0 else default
 
 
+def _bounded_int_env(name: str, *, default: int, maximum: int) -> int:
+    return min(maximum, _positive_int_env(name, default))
+
+
+def _nonnegative_float_env(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value >= 0 else default
+
+
+def _is_transient_cli_error(detail: str) -> bool:
+    text = str(detail or "").lower()
+    return any(token in text for token in (
+        "timeout", "timed out", "temporarily unavailable", "connection",
+        "econn", "429", "500", "502", "503", "504", "rate limit", "busy",
+    ))
+
+
+def _is_retryable_strategy_validation(errors: list[str]) -> bool:
+    allowed = {"steps must be a non-empty array", "task_id does not match input task"}
+    return bool(errors) and set(errors).issubset(allowed) and "steps must be a non-empty array" in errors
+
+
 def _truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _ensure_bounded_grasp_recovery(candidate: dict[str, Any]) -> dict[str, Any]:
+    """Add the canonical one-retry grasp branch when CodeArts omits it.
+
+    CodeArts is authoritative for the plan shape, but recovery semantics are
+    owned by the local B/C/D contract.  The normalization is deliberately
+    narrow: it touches only a missing grasp recovery branch and never adds
+    actions or changes IDs.
+    """
+    strategy = json.loads(json.dumps(candidate, ensure_ascii=False))
+    changed = False
+    for step in strategy.get("steps") or []:
+        if not isinstance(step, dict) or step.get("action") != "grasp":
+            continue
+        if step.get("on_failure") is not None:
+            continue
+        arguments = dict(step.get("arguments") or {})
+        if not arguments.get("object_id"):
+            continue
+        step_id = str(step.get("step_id") or "grasp")
+        step["on_failure"] = {
+            "max_attempts": 1,
+            "steps": [{
+                "step_id": f"{step_id}-retry",
+                "action": "grasp",
+                "arguments": arguments,
+            }],
+            "on_exhausted": "stop",
+        }
+        changed = True
+        break
+    return strategy
 
 
 def _failure(error: str, trace: dict[str, Any]) -> dict[str, Any]:

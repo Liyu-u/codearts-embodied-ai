@@ -124,6 +124,10 @@ def run_benchmark() -> dict:
                 "fallback": stats.get("fallback_calls", 0),
                 "failed": stats.get("failed_calls", 0),
                 "latency_ms": stats.get("total_latency_ms", 0.0),
+                "prompt_tokens": stats.get("prompt_tokens", 0),
+                "completion_tokens": stats.get("completion_tokens", 0),
+                "reasoning_tokens": stats.get("reasoning_tokens", 0),
+                "total_tokens": stats.get("total_tokens", 0),
                 "stopped_reason": diag.get("stopped_reason"),
             })
     return {"rows": rows}

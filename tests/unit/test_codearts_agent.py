@@ -1,7 +1,9 @@
 import json
+import os
 import subprocess
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from modules.strategy_generation.codearts_agent import (
     CodeArtsStrategyClient,
@@ -307,6 +309,50 @@ class CodeArtsClientTests(unittest.TestCase):
                 self.assertTrue(trace["request_id"])
                 self.assertIn("latency_ms", trace)
                 self.assertFalse(trace["validation"]["passed"])
+
+    def test_retries_transient_cli_failure_and_normalizes_grasp_recovery(self):
+        calls = []
+        content = (
+            f"{OUTPUT_BEGIN}\n"
+            + json.dumps(valid_strategy(), ensure_ascii=False)
+            + f"\n{OUTPUT_END}"
+        )
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    returncode=1,
+                    stdout="",
+                    stderr="temporarily unavailable",
+                )
+            return SimpleNamespace(returncode=0, stdout=content, stderr="")
+
+        with patch.dict(
+            os.environ,
+            {
+                "CODEARTS_STRATEGY_MAX_RETRIES": "1",
+                "CODEARTS_STRATEGY_RETRY_BACKOFF_S": "0",
+            },
+        ):
+            client = CodeArtsStrategyClient(
+                executable="codearts",
+                runner=runner,
+                which=lambda _: r"C:\Tools\codearts.exe",
+            )
+            result = client.generate(TASK)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result["trace"]["attempt_count"], 2)
+        self.assertEqual(result["trace"]["retry_count"], 1)
+        grasp = next(
+            step for step in result["strategy"]["steps"]
+            if step["action"] == "grasp"
+        )
+        self.assertEqual(grasp["on_failure"]["max_attempts"], 1)
+        self.assertEqual(grasp["on_failure"]["on_exhausted"], "stop")
+        self.assertTrue(result["trace"]["recovery_normalized"])
 
     def test_review_uses_separate_critic_prompt_and_requires_pass(self):
         calls = []

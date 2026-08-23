@@ -28,6 +28,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from integration.config.local_env import load_codearts_env  # noqa: E402
+
+load_codearts_env()
 from integration.adapters import strategy as strategy_adapter  # noqa: E402
 from modules.strategy_generation.codearts_agent import validate_strategy  # noqa: E402
 

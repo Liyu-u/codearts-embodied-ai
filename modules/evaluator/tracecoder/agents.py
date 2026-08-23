@@ -73,6 +73,74 @@ _ROLE_OUTPUT_SCHEMA = {
 }
 
 
+def _compact_evaluation(evaluation: dict) -> dict:
+    """Keep only failure evidence needed by a one-shot ordinary repair call."""
+    compact = {
+        "stage": evaluation.get("stage"),
+        "passed": bool(evaluation.get("passed")),
+        "issues": evaluation.get("issues") or [],
+        "scenario_results": [],
+    }
+    for scenario in evaluation.get("scenario_results", []):
+        item = {
+            "name": scenario.get("name"),
+            "required": scenario.get("required", True),
+            "goals": [
+                {
+                    "goal": goal.get("goal"),
+                    "passed": goal.get("passed"),
+                    "message": goal.get("message"),
+                }
+                for goal in scenario.get("goals", [])
+                if not goal.get("passed")
+            ],
+            "execution": {"trace": []},
+        }
+        for event in scenario.get("execution", {}).get("trace", []):
+            result = event.get("result") or {}
+            if result.get("status") != "SUCCESS":
+                item["execution"]["trace"].append({
+                    "phase": event.get("phase", "main"),
+                    "step_id": event.get("step_id"),
+                    "action": event.get("action"),
+                    "result": {
+                        "status": result.get("status"),
+                        "reason": result.get("reason"),
+                    },
+                })
+        final_state = scenario.get("execution", {}).get("final_state") or {}
+        if final_state:
+            item["execution"]["final_state"] = {"robot": final_state.get("robot") or {}}
+        compact["scenario_results"].append(item)
+    return compact
+
+
+def _compact_history(history: list[dict]) -> list[dict]:
+    """Retain only recent repair conclusions; never send full old trajectories."""
+    return [
+        {
+            "attempt": item.get("attempt"),
+            "source": item.get("source"),
+            "result": (item.get("result") or {}).get("result"),
+            "lesson": item.get("lesson"),
+            "diagnosis": {
+                "failure_type": (item.get("diagnosis") or {}).get("failure_type"),
+                "failure_step": (item.get("diagnosis") or {}).get("failure_step"),
+                "root_cause": (item.get("diagnosis") or {}).get("root_cause"),
+            },
+            "changes": (item.get("patch") or {}).get("changes") or [],
+        }
+        for item in history[-2:]
+    ]
+
+
+def _compact_strategy(strategy: dict) -> dict:
+    """Copy execution-relevant strategy fields and drop adapter metadata."""
+    return {
+        "strategy_id": strategy.get("strategy_id"),
+        "steps": deepcopy(strategy.get("steps") or []),
+    }
+
 def _normalize_output(role: str, output: dict) -> dict:
     """把模型常见的键名别名归一化到契约键（如 focused_steps → focus_steps）。"""
     aliases = _ROLE_OUTPUT_SCHEMA.get(role, {}).get("aliases", {})
@@ -420,6 +488,7 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
         mode: str = "optional",
         call_log: list = None,
         model: str = "",
+        call_style: str = "roles",
     ):
         super().__init__()
         if provider is None:
@@ -433,6 +502,8 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
         self.call_log = call_log if call_log is not None else []
         self._seq = 0
         self._last_record = None
+        self.call_style = call_style if call_style in {"roles", "compact"} else "roles"
+        self._compact_output = None
 
     def _next_seq(self) -> int:
         self._seq += 1
@@ -444,45 +515,139 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
 
     def observation_advice(self, strategy, evaluation, history):
         fallback = self.observation.advise(strategy, evaluation, history)
-        return self._call(
-            "observation",
+        if self.call_style != "compact":
+            return self._call(
+                "observation",
+                {
+                    "task": "选择下一轮需要重点观察的步骤和状态字段",
+                    "strategy": _compact_strategy(strategy),
+                    "evaluation": _compact_evaluation(evaluation),
+                    "history": _compact_history(history),
+                    "required_output": {
+                        "focus_steps": ["step id"],
+                        "observe": ["state path"],
+                        "reason": "text",
+                    },
+                },
+                fallback,
+            )
+
+        fallback_diagnosis = self.analysis.diagnose(strategy, evaluation, fallback, history)
+        fallback_patch = self.repair.propose(strategy, fallback_diagnosis, evaluation, history)
+        self._compact_output = None
+        output = self._call(
+            "compact",
             {
-                "task": "选择下一轮需要重点观察的步骤和状态字段",
-                "strategy": strategy,
-                "evaluation": evaluation,
-                "history": history[-2:],
+                "task": "一次性观察、诊断并给出最小安全策略修改",
+                "strategy": _compact_strategy(strategy),
+                "evaluation": _compact_evaluation(evaluation),
+                "history": _compact_history(history),
+                "fallback_diagnosis": fallback_diagnosis,
+                "fallback_action": fallback_patch,
                 "required_output": {
-                    "focus_steps": ["step id"],
-                    "observe": ["state path"],
-                    "reason": "text",
+                    "observation": {"focus_steps": ["step id"], "observe": ["state path"], "reason": "text"},
+                    "diagnosis": {"failure_step": "step id or null", "failure_type": "text", "evidence": ["text"], "root_cause": "text", "repair_plan": ["text"]},
+                    "action": {"summary": "text", "changes": ["allowed patch change"]},
+                    "confidence": 0.0,
+                    "need_escalation": False,
                 },
             },
-            fallback,
+            {},
         )
+        if not output:
+            return fallback
+        if "summary" in output and "changes" in output:
+            output = {
+                "observation": fallback,
+                "diagnosis": fallback_diagnosis,
+                "action": output,
+                "confidence": 1.0,
+                "need_escalation": False,
+            }
+        required = ("observation", "diagnosis", "action", "confidence", "need_escalation")
+        invalid = [key for key in required if key not in output]
+        if (
+            not isinstance(output.get("observation"), dict)
+            or not isinstance(output.get("diagnosis"), dict)
+            or not isinstance(output.get("action"), dict)
+            or not isinstance(output.get("confidence"), (int, float))
+            or not isinstance(output.get("need_escalation"), bool)
+        ):
+            invalid.append("nested compact fields")
+        if invalid:
+            message = "compact 输出不符合结构契约：" + ", ".join(map(str, invalid))
+            if self._last_record is not None:
+                self._last_record["status"] = "failed" if self.mode == "required" else "fallback"
+                self._last_record["error"] = message
+                self._last_record["used_fallback"] = self.mode != "required"
+            if self.mode == "required":
+                raise LLMRequiredError("compact", message)
+            return fallback
+        self._compact_output = output
+        return output["observation"]
 
     def diagnosis(self, strategy, evaluation, advice, history):
         fallback = self.analysis.diagnose(strategy, evaluation, advice, history)
+        if self.call_style == "compact":
+            return (self._compact_output or {}).get("diagnosis") or fallback
         return self._call(
             "analysis",
             {
                 "task": "只根据执行证据定位第一个关键失败并提出修复计划",
-                "strategy": strategy,
-                "evaluation": evaluation,
+                "strategy": _compact_strategy(strategy),
+                "evaluation": _compact_evaluation(evaluation),
                 "observation_advice": advice,
-                "history": history[-2:],
+                "history": _compact_history(history),
             },
             fallback,
         )
 
+    def _validated_patch(self, llm_patch, fallback, evaluation, role):
+        validation = validate_patch(llm_patch)
+        if self.mode == "required":
+            if not validation["passed"] and not bool(evaluation.get("passed")):
+                if self._last_record is not None:
+                    self._last_record["status"] = "failed"
+                    self._last_record["error"] = "; ".join(validation["issues"])
+                raise LLMRequiredError(role, "; ".join(validation["issues"]))
+            return llm_patch
+        if not validation["passed"] and not bool(evaluation.get("passed")):
+            if self._last_record is not None:
+                self._last_record["status"] = "fallback"
+                self._last_record["used_fallback"] = True
+            return fallback
+        return llm_patch
+
     def patch(self, strategy, diagnosis, evaluation, history):
         fallback = self.repair.propose(strategy, diagnosis, evaluation, history)
+        if self.call_style == "compact":
+            output = self._compact_output
+            if not output:
+                return fallback
+            llm_patch = output.get("action") or {}
+            if output.get("need_escalation") is True:
+                llm_patch = self._call(
+                    "repair",
+                    {
+                        "task": "根据已完成的观察和诊断生成最小范围策略修改",
+                        "strategy": _compact_strategy(strategy),
+                        "diagnosis": diagnosis,
+                        "evaluation": _compact_evaluation(evaluation),
+                        "history": _compact_history(history),
+                        "allowed_operations": sorted(ALLOWED_OPERATIONS),
+                    },
+                    fallback,
+                )
+                return self._validated_patch(llm_patch, fallback, evaluation, "repair")
+            return self._validated_patch(llm_patch, fallback, evaluation, "compact")
+
         llm_patch = self._call(
             "repair",
             {
                 "task": "生成最小范围的策略修改，只允许使用既定 patch 操作",
-                "strategy": strategy,
+                "strategy": _compact_strategy(strategy),
                 "diagnosis": diagnosis,
-                "evaluation": evaluation,
+                "evaluation": _compact_evaluation(evaluation),
                 "allowed_operations": sorted(ALLOWED_OPERATIONS),
                 "operation_contract": {
                     "update_argument": ["operation", "target_step", "argument", "value"],
@@ -496,24 +661,7 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
             },
             fallback,
         )
-        # required：LLM 输出必须可用——策略未通过时 patch 过不了白名单即中止
-        if self.mode == "required":
-            validation = validate_patch(llm_patch)
-            if not validation["passed"] and not bool(evaluation.get("passed")):
-                if self._last_record is not None:
-                    self._last_record["status"] = "failed"
-                    self._last_record["error"] = "; ".join(validation["issues"])
-                raise LLMRequiredError("repair", "; ".join(validation["issues"]))
-            return llm_patch
-        # optional：LLM patch 必须过本地白名单；策略未通过时无效则回退规则
-        validation = validate_patch(llm_patch)
-        if not validation["passed"] and not bool(evaluation.get("passed")):
-            if self._last_record is not None:
-                self._last_record["status"] = "fallback"
-                self._last_record["used_fallback"] = True
-            return fallback
-        return llm_patch
-
+        return self._validated_patch(llm_patch, fallback, evaluation, "repair")
     # ------------------------------------------------------------------
     # 统一调用与证据记录
     # ------------------------------------------------------------------

@@ -19,10 +19,9 @@ from modules.executor.safety import MotionLimits, SafetyPolicy, WorkspaceLimits
 
 _PROFILES_DIR = Path(__file__).resolve().parent / "profiles"
 
-# Pydantic Settings owns .env for A, while this loader reads the same RIA_
-# safety overrides from os.environ. Load the validated RIA-only file here so
-# local/sim/real profiles receive the values shown in .env.example.
-load_local_env(".env")
+# This module deliberately does not load .env at import time. Tests and
+# library callers must be deterministic; application entrypoints may opt in by
+# calling load_profile(..., load_env=True) after selecting their environment.
 
 # 内置默认（与 profiles/*.toml 一致，作为离线兜底）。
 _DEFAULTS = {
@@ -79,7 +78,11 @@ def _load_toml(name: str) -> dict:
 
 
 def _apply_env_overrides(profile_data: dict) -> None:
-    """叠加环境变量覆盖。优先读取项目已有的 RIA_* 安全变量。"""
+    """Apply environment overrides as safety-tightening bounds only.
+
+    A deployment-wide limit may make a profile more conservative, but it
+    must never widen the profile's own safety ceiling (especially real).
+    """
     motion = profile_data.setdefault("motion", {})
 
     domain = os.environ.get("RIA_DEPLOYMENT_DOMAIN", "daily").lower()
@@ -91,14 +94,20 @@ def _apply_env_overrides(profile_data: dict) -> None:
     velocity = os.environ.get(velocity_key)
     if velocity is not None:
         try:
-            motion["max_linear_velocity_m_s"] = float(velocity)
-        except ValueError:
+            requested = float(velocity)
+            configured = _coerce_float(
+                motion, "max_linear_velocity_m_s", 0.30
+            )
+            motion["max_linear_velocity_m_s"] = min(configured, requested)
+        except (TypeError, ValueError):
             pass
     force = os.environ.get(force_key)
     if force is not None:
         try:
-            motion["max_force_n"] = float(force)
-        except ValueError:
+            requested = float(force)
+            configured = _coerce_float(motion, "max_force_n", 10.0)
+            motion["max_force_n"] = min(configured, requested)
+        except (TypeError, ValueError):
             pass
 
     backend = os.environ.get("EXECUTOR_BACKEND")
@@ -149,11 +158,18 @@ def _build_safety(data: dict) -> SafetyPolicy:
     )
 
 
-def load_profile(name: str) -> ExecutorProfile:
+def load_profile(name: str, *, load_env: bool = False) -> ExecutorProfile:
+    """Load one profile without implicit process-wide dotenv mutation.
+
+    load_env=True is reserved for an application entrypoint that explicitly
+    wants the repository-local A safety file loaded first.
+    """
     if name not in PROFILE_NAMES:
         raise ValueError(
             f"unknown profile {name!r}; expected one of {list(PROFILE_NAMES)}"
         )
+    if load_env:
+        load_local_env(".env")
     data = dict(_DEFAULTS.get(name, {}))
     for key, value in _load_toml(name).items():
         if isinstance(value, dict) and isinstance(data.get(key), dict):

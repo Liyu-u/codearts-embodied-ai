@@ -225,6 +225,21 @@ class StrategyInterpreter:
         safety_events: list[dict],
         backend_events: list[dict],
     ) -> dict:
+        all_safety_events = backend_events + safety_events
+        stop_reason = None
+        if status == "SAFE_STOP":
+            stop_reason = next(
+                (
+                    str(event.get("type"))
+                    for event in reversed(all_safety_events)
+                    if isinstance(event, dict) and event.get("type")
+                ),
+                "SAFE_STOP",
+            )
+        recovery_attempts = sum(
+            1 for item in records
+            if str(item.get("phase", "")).startswith("recovery_")
+        )
         return {
             "schema_version": "execution.v1",
             "task_id": task_id,
@@ -232,9 +247,14 @@ class StrategyInterpreter:
             "steps": records,
             "trajectory_points": self.backend.trajectory_points(),
             "total_duration_ms": sum(item["duration_ms"] for item in records),
+            # Canonical C/D state facts.  D must use status/stop_reason rather
+            # than infer recoverability from an intermediate failed step.
+            "stop_reason": stop_reason,
+            "recovery_attempts": recovery_attempts,
+            "recovery_exhausted": stop_reason == "RECOVERY_EXHAUSTED",
             # 后端（Isaac/真机）在动作执行期间产生的碰撞、超时、越界等事件，
             # 按时间顺序排在前，解释器自身的安全停止事件排在后。
-            "safety_events": backend_events + safety_events,
+            "safety_events": all_safety_events,
         }
 
     def _execute_step(

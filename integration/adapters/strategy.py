@@ -15,7 +15,6 @@
 import os
 from typing import Any, List
 
-from integration.config.local_env import load_codearts_env
 from modules.strategy_generation.codearts_agent import CodeArtsStrategyClient
 from integration.strategy_policy import (
     normalize_capabilities,
@@ -23,8 +22,8 @@ from integration.strategy_policy import (
 )
 
 
-# Load B's ignored local configuration before mode/policy are read below.
-load_codearts_env()
+# Configuration is supplied by the application entrypoint or process environment.
+# Do not mutate os.environ while importing the adapter; this keeps CI deterministic.
 
 
 # These are the task-level actions for which A's grounded constraints can be

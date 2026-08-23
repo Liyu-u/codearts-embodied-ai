@@ -29,6 +29,9 @@ ACCEPTANCE_ROOT = ROOT / "testdata" / "acceptance"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from modules.evaluator.tracecoder.llm_provider import try_load_dotenv  # noqa: E402
+
+try_load_dotenv()
 from demo.scenarios import get_scenario  # noqa: E402
 from demo.server import (  # noqa: E402
     _DemoStrategyAdapter,
@@ -153,6 +156,8 @@ def _run_acceptance_case(case: dict[str, Any]) -> dict[str, Any]:
 def _extract_feedback_status(feedback: Any) -> str | None:
     if not isinstance(feedback, dict):
         return None
+    if feedback.get("safety_stop") is True or feedback.get("execution_status") == "SAFE_STOP":
+        return "C_SAFE_STOP"
     if isinstance(feedback.get("status"), str):
         return feedback["status"]
     try:
@@ -281,6 +286,9 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
         },
         "feedback": {
             "status": _extract_feedback_status(feedback),
+            "execution_status": feedback.get("execution_status"),
+            "safety_stop": bool(feedback.get("safety_stop")),
+            "stop_reason": feedback.get("stop_reason"),
             "retryable": feedback.get("retryable"),
             "final_passed": feedback.get("final_passed"),
         },
@@ -302,6 +310,22 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
 def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> dict[str, Any]:
     def rate(numerator: int, denominator: int) -> float | None:
         return round(numerator / denominator, 4) if denominator else None
+
+    def percentile(values: list[float], fraction: float) -> float | None:
+        if not values:
+            return None
+        ordered = sorted(values)
+        index = min(len(ordered) - 1, max(0, int(round((len(ordered) - 1) * fraction))))
+        return round(ordered[index], 1)
+
+    def latency_stats(values: list[Any]) -> dict[str, Any]:
+        numbers = [float(value) for value in values if isinstance(value, (int, float))]
+        return {
+            "count": len(numbers),
+            "p50_ms": percentile(numbers, 0.50),
+            "p95_ms": percentile(numbers, 0.95),
+            "max_ms": round(max(numbers), 1) if numbers else None,
+        }
 
     groups: dict[str, list[dict[str, Any]]] = {}
     for record in records:
@@ -335,6 +359,12 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
         if item["strategy"]["provider"] == "huaweicloud-codearts-agent"
         or item["strategy"]["fallback"]
     )
+    provider_latencies = [
+        item["strategy"].get("latency_ms")
+        for item in records
+        if item["strategy"].get("provider") == "huaweicloud-codearts-agent"
+    ]
+    end_to_end_latencies = [item.get("elapsed_ms") for item in records]
     summary = {
         "cases": len(cases),
         "intent_llm_attempts": sum(1 for item in records if item["intent"]["llm_call_attempted"]),
@@ -354,6 +384,8 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
         "code_null_rate": rate(sum(1 for item in strategy_records if item["strategy"]["code_null"]), len(strategy_records)),
         "provider_calls": provider_calls,
         "provider_attempts": provider_attempts,
+        "provider_latency_ms": latency_stats(provider_latencies),
+        "end_to_end_latency_ms": latency_stats(end_to_end_latencies),
         "fallback_count": sum(1 for item in records if item["strategy"]["fallback"]),
         "execution_attempts": len(execution_records),
         "execution_success_rate": rate(sum(1 for item in execution_records if item["execution"]["status"] == "SUCCEEDED"), len(execution_records)),
@@ -386,9 +418,24 @@ def run_benchmark(
     model: str | None,
     timeout_s: int,
     pure: bool,
+    limit: int | None = None,
+    representative: bool = False,
 ) -> dict[str, Any]:
     manifest = load_manifest()
-    cases = manifest["cases"]
+    all_cases = manifest["cases"]
+    if representative:
+        cases = []
+        seen_categories: set[str] = set()
+        for case in all_cases:
+            category = str(case.get("category", ""))
+            if category in seen_categories:
+                continue
+            seen_categories.add(category)
+            cases.append(case)
+    elif limit is not None:
+        cases = all_cases[:limit]
+    else:
+        cases = all_cases
     # ``tracecoder.py`` loads tracecoder_llm.env at import time.  Environment
     # variables set below therefore cannot change its already-created config;
     # use the adapter's explicit runtime override to keep this benchmark
@@ -439,11 +486,17 @@ def main() -> int:
     parser.add_argument("--policy", choices=("planner", "quality", "max"), default="quality")
     parser.add_argument("--model", default=None)
     parser.add_argument("--timeout-s", type=int, default=180)
+    parser.add_argument("--limit", type=int, default=None, help="run only first N cases")
+    parser.add_argument("--representative", action="store_true", help="run first case from each category")
     parser.add_argument("--pure", action="store_true")
     parser.add_argument("--output", type=Path, default=ROOT / "reports" / "closed_loop_benchmark.json")
     args = parser.parse_args()
     if args.repeats < 1:
-        parser.error("--repeats 必须大于0")
+        parser.error("repeats must be positive")
+    if args.limit is not None and args.limit < 1:
+        parser.error("limit must be positive")
+    if args.limit is not None and args.representative:
+        parser.error("limit and representative are mutually exclusive")
     modes = ["baseline", "codearts"] if args.compare else [args.mode]
     if args.compare and os.environ.get("CODEARTS_BENCHMARK_ALLOW_LIVE") != "1":
         parser.error("--compare 会调用真实 CodeArts；请先设置 CODEARTS_BENCHMARK_ALLOW_LIVE=1")
@@ -455,6 +508,8 @@ def main() -> int:
             model=args.model,
             timeout_s=args.timeout_s,
             pure=args.pure,
+            limit=args.limit,
+            representative=args.representative,
         )
         for mode in modes
     ]

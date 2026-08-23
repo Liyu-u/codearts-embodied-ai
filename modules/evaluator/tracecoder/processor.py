@@ -36,6 +36,7 @@ def process_policy(
     llm_provider=None,  # 注入的 LLM Provider（测试用）；None 时按 env/参数构造
     call_log: list = None,  # 传入则追加 LLM 调用证据，None 则内部新建
     optimize_quality: bool = True,
+    call_style: str = "roles",
     agent_suite: PolicyAgentSuite | None = None,
     evaluator: Callable[[dict, dict, dict | None], dict] = evaluate_policy,
     experience_store: ExperienceStore | None = None,
@@ -57,6 +58,9 @@ def process_policy(
     任务收敛后把成功修复的生成器组合回写经验库。默认 None 保持原行为。
     optimize_quality=True 时，策略通过全部检查后不立即停止，而是继续尝试
     提升 安全/平滑/效率 质量分，直到连续无改善收敛。
+
+    call_style="compact" 时，普通故障把 observation/diagnosis/patch 合并为一次
+    结构化请求；模型要求升级时才追加一次详细 repair 请求。
     """
     strategy = normalize_strategy(
         initial_strategy or task_data.get("initial_strategy", {})
@@ -68,6 +72,7 @@ def process_policy(
     suite = agent_suite or (
         LLMPolicyAgentSuite(
             provider=llm_provider, mode=mode, call_log=call_log, model=model,
+            call_style=call_style,
         )
         if mode != "off" else PolicyAgentSuite()
     )
@@ -370,12 +375,17 @@ def _deployment_advice(result: dict) -> dict:
 
 
 def _llm_stats(call_log: list, mode: str) -> dict:
-    """从调用证据汇总 LLM 参与情况（模型是否真参与、有无回退、总耗时）。"""
+    """Summarize calls, latency, and token usage for cost/quality comparison."""
     calls = len(call_log)
+    prompt_tokens = sum(int(record.get("prompt_tokens", 0) or 0) for record in call_log)
+    completion_tokens = sum(int(record.get("completion_tokens", 0) or 0) for record in call_log)
+    reasoning_tokens = sum(int(record.get("reasoning_tokens", 0) or 0) for record in call_log)
     if calls == 0:
         return {
             "mode": mode, "calls": 0, "ok_calls": 0,
             "fallback_calls": 0, "failed_calls": 0, "total_latency_ms": 0.0,
+            "prompt_tokens": 0, "completion_tokens": 0,
+            "reasoning_tokens": 0, "total_tokens": 0,
         }
     statuses = [record.get("status") for record in call_log]
     return {
@@ -387,4 +397,8 @@ def _llm_stats(call_log: list, mode: str) -> dict:
         "total_latency_ms": round(
             sum(record.get("latency_ms", 0.0) for record in call_log), 1,
         ),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "reasoning_tokens": reasoning_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
     }
