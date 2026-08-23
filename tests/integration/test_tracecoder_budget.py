@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import integration.adapters.tracecoder as adapter_mod
@@ -84,6 +86,33 @@ class TestTraceCoderBudget(unittest.TestCase):
         self.assertEqual(expert.tier, "expert")
         self.assertEqual(expert.max_tokens, 8192)
         self.assertTrue(expert.optimize_quality)
+
+    def test_legacy_routing_is_explicit_rollback_for_healthy_success(self):
+        healthy = {
+            "task": {"task_id": "t"},
+            "strategy": {"confidence": 0.95},
+            "execution": {
+                "status": "SUCCEEDED",
+                "steps": [{"status": "SUCCEEDED"}],
+            },
+        }
+        with patch.dict(os.environ, {
+            "TRACECODER_ADAPTIVE_ROUTING": "legacy",
+            "TRACECODER_LEGACY_MAX_TOKENS": "8192",
+            "TRACECODER_LEGACY_THINKING": "enabled",
+            "TRACECODER_LEGACY_MAX_RETRIES": "2",
+            "TRACECODER_LEGACY_MAX_REPAIR_ATTEMPTS": "2",
+        }, clear=False):
+            budget, reasons = adapter_mod._select_tracecoder_budget(healthy, "optional")
+        self.assertIsNotNone(budget)
+        self.assertEqual(budget.tier, "legacy")
+        self.assertEqual(budget.max_tokens, 8192)
+        self.assertEqual(budget.thinking, "enabled")
+        self.assertEqual(budget.max_retries, 2)
+        self.assertEqual(budget.max_repair_attempts, 2)
+        self.assertTrue(budget.optimize_quality)
+        self.assertEqual(budget.call_style, "roles")
+        self.assertIn("legacy_compatibility", reasons)
 
     def test_compact_repair_uses_one_model_request(self):
         fake = FakeLLMProvider(handler=smart_handler())

@@ -385,6 +385,14 @@ def _truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _canonical_grasp_retry_id(step_id: str) -> str:
+    """Use the shared ``<task>-retry-grasp`` recovery ID convention."""
+
+    if step_id.endswith("-grasp"):
+        return f"{step_id[:-6]}-retry-grasp"
+    return f"{step_id}-retry"
+
+
 def _ensure_bounded_grasp_recovery(candidate: dict[str, Any]) -> dict[str, Any]:
     """Add the canonical one-retry grasp branch when CodeArts omits it.
 
@@ -407,7 +415,7 @@ def _ensure_bounded_grasp_recovery(candidate: dict[str, Any]) -> dict[str, Any]:
         step["on_failure"] = {
             "max_attempts": 1,
             "steps": [{
-                "step_id": f"{step_id}-retry",
+                "step_id": _canonical_grasp_retry_id(step_id),
                 "action": "grasp",
                 "arguments": arguments,
             }],

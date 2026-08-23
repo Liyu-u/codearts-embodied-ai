@@ -94,6 +94,14 @@ def _env_flag(name: str, default: bool) -> bool:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
+def _adaptive_routing_mode() -> str:
+    """Return the active routing mode, with an explicit legacy rollback path."""
+
+    value = os.getenv("TRACECODER_ADAPTIVE_ROUTING", "adaptive").strip().lower()
+    if value in {"legacy", "off", "disabled", "false", "0"}:
+        return "legacy"
+    return "adaptive"
+
 
 def _tracecoder_budget(tier: str) -> TraceCoderBudget:
     """Build a bounded normal/hard/expert profile from environment overrides."""
@@ -128,6 +136,27 @@ def _tracecoder_budget(tier: str) -> TraceCoderBudget:
         max_repair_attempts=1,
         optimize_quality=False,
         call_style="compact",
+    )
+
+
+def _legacy_tracecoder_budget() -> TraceCoderBudget:
+    """Reproduce the former fixed-budget, full-quality TraceCoder profile."""
+
+    thinking = os.getenv("TRACECODER_LEGACY_THINKING", "enabled").strip().lower()
+    if thinking not in {"enabled", "disabled"}:
+        thinking = "enabled"
+    reasoning_effort = os.getenv("TRACECODER_LEGACY_REASONING_EFFORT", "low").strip().lower()
+    if reasoning_effort not in {"low", "high", "max"}:
+        reasoning_effort = "low"
+    return TraceCoderBudget(
+        tier="legacy",
+        max_tokens=_env_int("TRACECODER_LEGACY_MAX_TOKENS", 8192, 1024, 16384),
+        thinking=thinking,
+        reasoning_effort=reasoning_effort,
+        max_retries=_env_int("TRACECODER_LEGACY_MAX_RETRIES", 2, 0, 5),
+        max_repair_attempts=_env_int("TRACECODER_LEGACY_MAX_REPAIR_ATTEMPTS", 2, 1, 5),
+        optimize_quality=_env_flag("TRACECODER_LEGACY_OPTIMIZE_QUALITY", True),
+        call_style="roles",
     )
 
 
@@ -223,8 +252,12 @@ def _select_tracecoder_budget(input_json: dict, llm_mode: str) -> tuple[TraceCod
     elif requested in {"hard", "complex", "escalated"}:
         reasons.append("explicit_hard_profile")
 
-    if not reasons:
+    routing_mode = _adaptive_routing_mode()
+    if not reasons and routing_mode == "adaptive":
         return None, []
+
+    if routing_mode == "legacy":
+        return _legacy_tracecoder_budget(), reasons or ["legacy_compatibility"]
 
     context = input_json.get("tracecoder_context") or {}
     retry_count = int(context.get("retry_count", input_json.get("retry_count", 0)) or 0)
@@ -744,6 +777,7 @@ def _build_skipped_feedback(
     final_passed = _execution_passed(execution)
     structured = {
         "status": "TRACE_CODER_SKIPPED",
+        "routing_mode": _adaptive_routing_mode(),
         "skip_reason": reasons,
         "tracecoder_invoked": False,
         "execution_status": status,
@@ -773,6 +807,7 @@ def _build_skipped_feedback(
             "agent": "TraceCoder",
             "mode": llm_mode,
             "profile": "bypass",
+            "routing_mode": _adaptive_routing_mode(),
             "request_id": run_id,
             "run_id": run_id,
             "latency_ms": 0.0,
@@ -868,6 +903,7 @@ def _build_feedback(
         "agent": "TraceCoder",
         "mode": llm_mode,
         "profile": budget.tier if budget else "unknown",
+        "routing_mode": _adaptive_routing_mode(),
         "trigger_reasons": trigger_reasons or [],
         "model": call_models[0] if call_models else (_LLM_CONFIG.model or None),
         "request_id": run_id,
@@ -929,6 +965,16 @@ def health() -> dict:
         "experience_entries": len(_EXPERIENCE_STORE.entries),
         # LLM 真实接入状态：当前模式 + 是否已配置 Key/模型。
         "llm": dict(_LLM_CONFIG.health_info(), **{"active_mode": mode}),
+        "routing": {
+            "mode": _adaptive_routing_mode(),
+            "rollback_available": True,
+            "legacy_profile": {
+                "max_tokens": _env_int("TRACECODER_LEGACY_MAX_TOKENS", 8192, 1024, 16384),
+                "thinking": os.getenv("TRACECODER_LEGACY_THINKING", "enabled"),
+                "max_retries": _env_int("TRACECODER_LEGACY_MAX_RETRIES", 2, 0, 5),
+                "max_repair_attempts": _env_int("TRACECODER_LEGACY_MAX_REPAIR_ATTEMPTS", 2, 1, 5),
+            },
+        },
     }
 
 

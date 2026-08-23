@@ -156,6 +156,90 @@ def _normalize_output(role: str, output: dict) -> dict:
     return normalized
 
 
+def _as_json_object(value: Any) -> dict | None:
+    if isinstance(value, dict):
+        return deepcopy(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return deepcopy(parsed) if isinstance(parsed, dict) else None
+
+
+def _normalize_compact_output(
+    output: dict,
+    fallback_observation: dict,
+    fallback_diagnosis: dict,
+) -> dict:
+    """Normalize common envelope drift without inventing a repair patch.
+
+    The model may wrap the object in result/data or return an action-only
+    object. Observation/diagnosis are explanatory metadata and can safely use
+    local evidence when absent; the action remains required and is never
+    synthesized here.
+    """
+    candidate = deepcopy(output)
+    if not any(
+        key in candidate for key in
+        ("observation", "diagnosis", "action", "patch", "repair", "summary", "changes")
+    ):
+        for wrapper in ("result", "data", "output", "response"):
+            nested = _as_json_object(candidate.get(wrapper))
+            if nested is not None:
+                candidate = nested
+                break
+
+    aliases = {
+        "observations": "observation",
+        "observation_advice": "observation",
+        "analysis": "diagnosis",
+        "diagnosis_result": "diagnosis",
+        "patch": "action",
+        "repair": "action",
+        "score": "confidence",
+        "escalate": "need_escalation",
+        "requires_escalation": "need_escalation",
+    }
+    normalized: dict[str, Any] = {}
+    for key, value in candidate.items():
+        target = aliases.get(key, key)
+        if target not in normalized or target == key:
+            normalized[target] = value
+
+    if "action" not in normalized and (
+        "summary" in normalized or "changes" in normalized
+    ):
+        normalized["action"] = {
+            "summary": normalized.get("summary", ""),
+            "changes": normalized.get("changes", []),
+        }
+
+    observation = _as_json_object(normalized.get("observation"))
+    diagnosis = _as_json_object(normalized.get("diagnosis"))
+    action = _as_json_object(normalized.get("action"))
+    normalized["observation"] = observation or deepcopy(fallback_observation)
+    normalized["diagnosis"] = diagnosis or deepcopy(fallback_diagnosis)
+    if action is not None:
+        normalized["action"] = action
+
+    confidence = normalized.get("confidence", 0.5)
+    if isinstance(confidence, str):
+        try:
+            confidence = float(confidence.strip())
+        except (TypeError, ValueError):
+            confidence = 0.5
+    normalized["confidence"] = (
+        confidence if isinstance(confidence, (int, float)) and not isinstance(confidence, bool)
+        else 0.5
+    )
+    escalation = normalized.get("need_escalation", False)
+    if isinstance(escalation, str):
+        escalation = escalation.strip().lower() in {"1", "true", "yes", "on"}
+    normalized["need_escalation"] = bool(escalation)
+    return normalized
+
+
 def _failed_events(evaluation: dict) -> list[dict]:
     events = []
     for scenario in evaluation.get("scenario_results", []):
@@ -556,14 +640,11 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
         )
         if not output:
             return fallback
-        if "summary" in output and "changes" in output:
-            output = {
-                "observation": fallback,
-                "diagnosis": fallback_diagnosis,
-                "action": output,
-                "confidence": 1.0,
-                "need_escalation": False,
-            }
+        output = _normalize_compact_output(
+            output,
+            fallback_observation=fallback,
+            fallback_diagnosis=fallback_diagnosis,
+        )
         required = ("observation", "diagnosis", "action", "confidence", "need_escalation")
         invalid = [key for key in required if key not in output]
         if (

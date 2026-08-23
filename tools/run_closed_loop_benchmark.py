@@ -248,6 +248,8 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
     feedback_provenance = feedback.get("provenance") if isinstance(feedback, dict) else {}
     if not isinstance(feedback_provenance, dict):
         feedback_provenance = {}
+    tracecoder_stats = feedback_provenance.get("llm_stats") or {}
+    tracecoder_invoked = feedback_provenance.get("source") != "tracecoder_skipped"
     return {
         "case_id": case["id"],
         "category": case["category"],
@@ -274,9 +276,14 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
         "feedback_provenance": {
             "source": feedback_provenance.get("source"),
             "mode": feedback_provenance.get("mode"),
+            "profile": feedback_provenance.get("profile"),
+            "routing_mode": feedback_provenance.get("routing_mode"),
+            "trigger_reasons": feedback_provenance.get("trigger_reasons") or [],
             "model": feedback_provenance.get("model"),
             "fallback": bool(feedback_provenance.get("fallback")),
-            "llm_stats": feedback_provenance.get("llm_stats") or {},
+            "latency_ms": feedback_provenance.get("latency_ms"),
+            "tracecoder_invoked": tracecoder_invoked,
+            "llm_stats": tracecoder_stats,
         },
         "execution": {
             "status": execution.get("status"),
@@ -292,6 +299,8 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
             "retryable": feedback.get("retryable"),
             "final_passed": feedback.get("final_passed"),
         },
+        "tracecoder_invoked": tracecoder_invoked,
+        "tracecoder_requests": int(tracecoder_stats.get("calls", 0) or 0),
         "retry_count": result.get("retry_count", 0),
         "d_repair_required": bool(case.get("requires_d_repair", False)),
         "attempt_count": len(result.get("attempts") or []),
@@ -365,12 +374,28 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
         if item["strategy"].get("provider") == "huaweicloud-codearts-agent"
     ]
     end_to_end_latencies = [item.get("elapsed_ms") for item in records]
+    tracecoder_stats = [item["feedback_provenance"]["llm_stats"] for item in records]
+    tracecoder_latency = [stats.get("total_latency_ms") for stats in tracecoder_stats]
+    tracecoder_invocations = sum(1 for item in records if item["tracecoder_invoked"])
+    tracecoder_requests = sum(int(stats.get("calls", 0) or 0) for stats in tracecoder_stats)
+    tracecoder_prompt_tokens = sum(int(stats.get("prompt_tokens", 0) or 0) for stats in tracecoder_stats)
+    tracecoder_completion_tokens = sum(int(stats.get("completion_tokens", 0) or 0) for stats in tracecoder_stats)
+    tracecoder_reasoning_tokens = sum(int(stats.get("reasoning_tokens", 0) or 0) for stats in tracecoder_stats)
+    tracecoder_total_tokens = sum(int(stats.get("total_tokens", 0) or 0) for stats in tracecoder_stats)
     summary = {
         "cases": len(cases),
         "intent_llm_attempts": sum(1 for item in records if item["intent"]["llm_call_attempted"]),
         "intent_llm_successes": sum(1 for item in records if item["intent"]["llm_call_succeeded"]),
         "intent_fallback_count": sum(1 for item in records if item["intent"]["fallback_used"]),
         "tracecoder_llm_runs": sum(1 for item in records if item["feedback_provenance"]["mode"] in {"optional", "required"}),
+        "tracecoder_invocations": tracecoder_invocations,
+        "tracecoder_skipped_runs": len(records) - tracecoder_invocations,
+        "tracecoder_request_count": tracecoder_requests,
+        "tracecoder_prompt_tokens": tracecoder_prompt_tokens,
+        "tracecoder_completion_tokens": tracecoder_completion_tokens,
+        "tracecoder_reasoning_tokens": tracecoder_reasoning_tokens,
+        "tracecoder_total_tokens": tracecoder_total_tokens,
+        "tracecoder_latency_ms": latency_stats(tracecoder_latency),
         "tracecoder_fallback_count": sum(1 for item in records if item["feedback_provenance"]["fallback"]),
         "runs": len(records),
         "passed_runs": sum(1 for item in records if item["passed"]),

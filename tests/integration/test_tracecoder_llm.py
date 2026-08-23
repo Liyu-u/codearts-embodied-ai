@@ -157,6 +157,24 @@ class TestTraceCoderLLM(unittest.TestCase):
         )
         self.assertEqual(last_move["arguments"]["destination_id"], "right_bin")
 
+    def test_required_compact_partial_envelope_is_normalized(self):
+        """Compact models may omit metadata; preserve the valid action safely."""
+        base_handler = smart_handler()
+
+        def partial_handler(role, payload, seq):
+            output = base_handler(role, payload, seq)
+            if role == "compact":
+                return {"patch": output, "confidence": "0.8"}
+            return output
+
+        fake = FakeLLMProvider(handler=partial_handler)
+        result = self._run_case("grasp_failure", mode="required", provider=fake)
+        diag = self._diag(result)
+        self.assertEqual(diag["status"], "PASSED", diag.get("stopped_reason"))
+        self.assertFalse(diag["llm"]["required_failed"])
+        self.assertEqual(diag["llm"]["stats"]["failed_calls"], 0)
+        self.assertTrue(result["patch"])
+
     def test_required_invalid_repair_aborts_no_fallback(self):
         """无效修复：required 模式 LLM 输出过不了白名单 → 如实中止，绝不留规则补丁。"""
         fake = FakeLLMProvider(handler=smart_handler(invalid=True))
