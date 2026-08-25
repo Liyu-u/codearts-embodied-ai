@@ -17,6 +17,11 @@ ALLOWED_OPERATIONS = {
 
 def validate_patch(patch: dict) -> dict:
     issues = []
+    if not isinstance(patch, dict):
+        return {
+            "passed": False,
+            "issues": ["修改结果必须是 JSON 对象。"],
+        }
     changes = patch.get("changes")
     if not isinstance(changes, list) or not changes:
         return {
@@ -24,6 +29,12 @@ def validate_patch(patch: dict) -> dict:
             "issues": ["修改结果中没有 changes 列表。"],
         }
     for index, change in enumerate(changes):
+        if not isinstance(change, dict):
+            issues.append(
+                f"第 {index + 1} 项必须是包含 operation 的 JSON 对象，"
+                f"实际是 {type(change).__name__}。"
+            )
+            continue
         operation = change.get("operation")
         if operation not in ALLOWED_OPERATIONS:
             issues.append(f"第 {index + 1} 项使用了不支持的修改操作 {operation!r}。")

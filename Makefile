@@ -1,4 +1,4 @@
-.PHONY: install contract-test integration-test acceptance-test demo-quality demo-acceptance demo-start e2e benchmark benchmark-repeat
+.PHONY: install contract-test integration-test acceptance-test demo-quality demo-acceptance demo-start e2e benchmark benchmark-repeat abcd-benchmark final-acceptance
 
 install:
 	python -m pip install -r requirements.txt
@@ -29,3 +29,9 @@ benchmark:
 
 benchmark-repeat:
 	python tools/run_closed_loop_benchmark.py --mode baseline --repeats 3 --output reports/closed_loop_benchmark_baseline_repeat3.json
+
+abcd-benchmark:
+	python tools/run_closed_loop_benchmark.py --manifest testdata/benchmark/abcd_closed_loop_v1.json --mode baseline --repeats 1 --output reports/abcd_closed_loop_v1_baseline.json
+
+final-acceptance:
+	python tools/run_final_acceptance.py --offline-repeats 3 --output reports/final_acceptance_report.json

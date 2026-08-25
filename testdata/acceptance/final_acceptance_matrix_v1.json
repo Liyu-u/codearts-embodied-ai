@@ -1,0 +1,56 @@
+{
+  "schema_version": "final-acceptance-matrix.v1",
+  "name": "abcd_final_acceptance_v1",
+  "version": "1.0.0",
+  "purpose": "上线前分档验收；任何外部环境缺失都必须记录为 BLOCKED/PARTIAL，不得折算为通过。",
+  "profiles": [
+    {
+      "id": "offline_regression",
+      "title": "离线闭环回归",
+      "manifest": "testdata/benchmark/abcd_closed_loop_v1.json",
+      "runner": "tools/run_closed_loop_benchmark.py",
+      "evidence": ["64 cases", "three repeats", "protocol validity", "safe stop", "D repair"],
+      "gates": {"pass_rate": 1.0, "case_stability_rate": 1.0, "strategy_contract_pass_rate": 1.0, "code_null_rate": 1.0, "repair_success_rate": 1.0, "safe_stop_correct_rate": 1.0}
+    },
+    {
+      "id": "codearts_online",
+      "title": "真实 CodeArts 在线策略",
+      "manifest": "testdata/benchmark/abcd_closed_loop_v1.json",
+      "runner": "tools/run_closed_loop_benchmark.py + tools/run_codearts_testsets.py",
+      "evidence": ["provider provenance", "provider calls", "critic passes", "latency P95", "fallback"],
+      "gates": {"provider_calls_gt": 0, "strategy_contract_pass_rate": 1.0, "code_null_rate": 1.0, "pass_rate": 1.0}
+    },
+    {
+      "id": "llm_generalization",
+      "title": "A/B/D LLM 留出泛化",
+      "manifest": "testdata/benchmark/llm_generalization_v1.json",
+      "runner": "tools/run_closed_loop_benchmark.py --mode intelligent",
+      "evidence": ["held-out language", "held-out composition", "A LLM trace", "B provider", "D LLM repair"],
+      "gates": {"pass_rate": 1.0, "intent_llm_successes_gt": 0, "provider_calls_gt": 0, "tracecoder_llm_runs_gt": 0, "strategy_contract_pass_rate": 1.0}
+    },
+    {
+      "id": "isaac_hil_ground_truth",
+      "title": "Isaac Sim Ground Truth HIL",
+      "manifest": "testdata/benchmark/real_isaac_cases.json",
+      "runner": "tools/run_real_acceptance_batch.py",
+      "evidence": ["perception.v1", "execution.v1", "real pose change", "task_id continuity", "feedback evidence"],
+      "gates": {"pass_rate": 1.0, "contract_pass_rate": 1.0, "transport_failures": 0, "business_failures": 0}
+    },
+    {
+      "id": "camera_perception_hil",
+      "title": "RGB-D 相机感知 HIL",
+      "manifest": "testdata/benchmark/real_camera_isaac_cases.json",
+      "runner": "tools/run_real_camera_acceptance_batch.py",
+      "evidence": ["camera observation", "no USD pose for online planning", "camera/GT error", "occlusion or confidence handling"],
+      "gates": {"pass_rate": 1.0, "camera_source_verified": true, "ground_truth_used_for_online_pose": false}
+    },
+    {
+      "id": "real_robot_safety",
+      "title": "真机安全与硬件在环",
+      "manifest": "integration/config/profiles/real.toml",
+      "runner": "tests/unit/test_real_backend.py + hardware-in-loop procedure",
+      "evidence": ["human confirmation", "workspace limit", "collision", "E-stop", "communication loss", "physical recovery"],
+      "gates": {"hardware_evidence_required": true, "estop_verified": true, "communication_loss_fail_closed": true, "collision_fail_closed": true}
+    }
+  ]
+}

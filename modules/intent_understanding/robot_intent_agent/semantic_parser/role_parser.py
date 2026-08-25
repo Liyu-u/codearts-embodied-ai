@@ -11,8 +11,8 @@ from robot_intent_agent.domain.industrial_ontology import match_industrial_templ
 
 COLORS = {
     "红色": "red", "蓝色": "blue", "绿色": "green", "黄色": "yellow",
-    "白色": "white", "黑色": "black", "透明": "transparent",
-    "红": "red", "蓝": "blue", "绿": "green", "黄": "yellow",
+    "白色": "white", "黑色": "black", "紫色": "purple", "透明": "transparent",
+    "红": "red", "蓝": "blue", "绿": "green", "黄": "yellow", "紫": "purple",
     "白": "white", "黑": "black",
 }
 MATERIALS = {"玻璃": "glass", "塑料": "plastic", "金属": "metal", "木质": "wood", "橡胶": "rubber"}
@@ -23,7 +23,7 @@ CATEGORIES = {
     "料箱": "parts_bin", "周转箱": "parts_bin", "工位": "workbench", "工作台": "workbench",
     "托盘": "tray", "桌子": "table", "桌": "table", "操作员": "operator", "用户": "human", "我": "human",
     "传送带": "conveyor", "夹具": "fixture",
-    "方块": "block", "积木": "block", "小球": "ball", "球": "ball",
+    "方块": "block", "块": "block", "积木": "block", "小球": "ball", "球": "ball",
     # Strict acceptance vocabulary. Grounding still owns final identity; these
     # aliases only prevent a valid mention from becoming an empty role.
     "盒子": "box", "箱子": "box", "收纳箱": "bin", "柜子": "cabinet",
@@ -88,7 +88,7 @@ def _find_mention(text: str, category: Optional[str] = None, after: int = 0) -> 
         r"偏小的|偏大的|小型的|大型的|矮胖的|短粗的|细长的|长条的|"
         r"最左边(?:的)?|最右边(?:的)?|左侧(?:的)?|右侧(?:的)?|左边(?:的)?|右边(?:的)?|"
         r"前面(?:的)?|后面(?:的)?|中间(?:的)?|上面(?:的)?|上方(?:的)?|下面(?:的)?|下方(?:的)?|"
-        r"(?:红色|蓝色|绿色|黄色|白色|黑色|透明|红|蓝|绿|黄|白|黑)色?的?|"
+        r"(?:红色|蓝色|绿色|黄色|白色|黑色|紫色|透明|红|蓝|绿|黄|紫|白|黑)色?的?|"
         r"(?:玻璃|塑料|金属|木质|橡胶)的?)"
     )
     # Imperative markers can occur between a scene prefix and its noun:
@@ -224,7 +224,7 @@ def parse_roles(instruction: str, actions: List[str]) -> tuple[List[SemanticEnti
 
     # Explicit role markers are authoritative over generic synonyms.
     destination_match = re.search(
-        r"(?:至|放到|放入|放进|放在|摆放在|摆到|置于|移到|移送到|移送至|搬运到|搬运至|转移到|转移至|送到|送回|装入|收入|归入|安置到|转交到|转送到|改送到|引入|灌到|上料到|倒入|倒进|倾倒|倾入|注入|堆到|叠到|码放在)"
+        r"(?:至|放到|放入|放进|放在|摆放在|摆到|置于|移到|移送到|移送至|搬运到|搬运至|转移到|转移至|送到|送回|装入|收入|归入|归位到|归位于|归位进|安置到|转交到|转送到|改送到|引入|灌到|上料到|倒入|倒进|倾倒|倾入|注入|堆到|叠到|码放在)"
         r"\s*([^，。；,;]+)", text
     )
     if destination_match:
@@ -550,7 +550,7 @@ def parse_roles(instruction: str, actions: List[str]) -> tuple[List[SemanticEnti
         direct_theme = re.search(
             r"(?:把|将|请将)\s*(?P<theme>[^，。；,;]+?)\s*"
             r"(?=(?:送到|送至|运到|移到|搬到|转移到|转运到|放到|放在|放入|"
-            r"拿起|拿住|抓住|抓取|夹住|控住|提起|取回|带回|带到|纳入|顶开|滑过|滑过去|滑动到|递给|交给|推开|倾倒|倾空|"
+            r"拿起|拿住|抓住|抓取|夹住|控住|提起|取回|带回|带到|纳入|顶开|滑过|滑过去|滑动到|递给|交给|推开|倾倒|倾空|放置|归位到|归位于|归位进|"
             r"叠合|叠放|摞到|堆到|$))",
             text,
         )
@@ -746,7 +746,13 @@ def parse_roles(instruction: str, actions: List[str]) -> tuple[List[SemanticEnti
     # Open industrial names are still valid mentions even when the compact
     # lexicon has no category alias (e.g. “镜片盒”, “电源箱”).
     if "theme" not in role_refs:
-        open_theme = re.search(r"(?:把|将|请将|快把)\s*([^，。；,;]+?)\s*(?:拿过来|取过来|抓过来|拿起|抓取|放到|放入|移到)", text)
+        nominal_placement = re.search(
+            r"(?:帮我)?(?:完成|进行|执行)\s*(?P<theme>[^，。；,;]+?)(?:的)?放置",
+            text,
+        )
+        if nominal_placement:
+            add("theme", _find_mention(text, after=nominal_placement.start("theme")))
+        open_theme = re.search(r"(?:把|将|请将|快把)\s*([^，。；,;]+?)\s*(?:拿过来|取过来|抓过来|拿起|抓取|放到|放入|放置|归位到|归位于|归位进|移到)", text)
         if open_theme:
             mention = open_theme.group(1).strip()
             local_ref = f"entity-{len(entities) + 1}"

@@ -418,7 +418,7 @@ def _strategy_native_to_v1(strategy_native: dict) -> dict:
 # task_data 解析：v1 语义 → TraceCoder 引擎任务描述
 # ---------------------------------------------------------------------------
 
-def _derive_objects(native_strategy: dict) -> list[dict]:
+def _derive_objects(native_strategy: dict, task: dict | None = None) -> list[dict]:
     """从策略中推导轻量仿真的物体清单（轻量仿真阶段的位置占位）。
 
     收集 detect_object 引用的物体名和 move_to_target 引用的容器名；
@@ -428,6 +428,12 @@ def _derive_objects(native_strategy: dict) -> list[dict]:
     objects: list[dict] = []
     seen: set[str] = set()
     counter = [0]
+    task = task or {}
+    stable_ids = {
+        str(item) for item in (task.get("target_ids") or []) if item
+    }
+    if task.get("destination_id"):
+        stable_ids.add(str(task["destination_id"]))
 
     def add(name: str, is_container: bool) -> None:
         if not name or name in seen:
@@ -439,8 +445,14 @@ def _derive_objects(native_strategy: dict) -> list[dict]:
             position = [0.6, 0.5 + 0.1 * counter[0], 0.0]
         else:
             position = [0.5 + 0.1 * counter[0], 0.0, 0.0]
+        # Goals and execution arguments use task.v1 IDs.  Synthetic obj_N
+        # IDs made the final goal look failed after a successful repair
+        # because the object was stored in obj_2 while the goal expected the
+        # destination's stable ID.  Keep synthetic IDs only for legacy tasks
+        # that provide no identity at the protocol boundary.
+        object_id = name if name in stable_ids else f"obj_{counter[0]}"
         objects.append({
-            "id": f"obj_{counter[0]}",
+            "id": object_id,
             "name": name,
             "position": position,
             "visible": True,
@@ -581,7 +593,7 @@ def resolve_task_data(
     objects = (
         explicit.get("objects")
         or _perception_objects(perception)
-        or _derive_objects(native_strategy)
+        or _derive_objects(native_strategy, task=task)
     )
     goals = explicit.get("goals") or _derive_goals(task, native_strategy)
     scenarios = explicit.get("scenarios")

@@ -619,9 +619,7 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
         fallback_diagnosis = self.analysis.diagnose(strategy, evaluation, fallback, history)
         fallback_patch = self.repair.propose(strategy, fallback_diagnosis, evaluation, history)
         self._compact_output = None
-        output = self._call(
-            "compact",
-            {
+        compact_payload = {
                 "task": "一次性观察、诊断并给出最小安全策略修改",
                 "strategy": _compact_strategy(strategy),
                 "evaluation": _compact_evaluation(evaluation),
@@ -631,13 +629,37 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
                 "required_output": {
                     "observation": {"focus_steps": ["step id"], "observe": ["state path"], "reason": "text"},
                     "diagnosis": {"failure_step": "step id or null", "failure_type": "text", "evidence": ["text"], "root_cause": "text", "repair_plan": ["text"]},
-                    "action": {"summary": "text", "changes": ["allowed patch change"]},
+                    "action": {
+                        "summary": "text",
+                        "changes": [{
+                            "operation": "update_step",
+                            "target_step": "grasp_cup",
+                            "content": {
+                                "on_failure": {
+                                    "max_attempts": 1,
+                                    "steps": [{
+                                        "id": "grasp_cup_retry",
+                                        "action": "grasp",
+                                        "arguments": {"object_name": "red_cup"},
+                                    }],
+                                    "on_exhausted": "stop",
+                                }
+                            },
+                        }],
+                    },
                     "confidence": 0.0,
                     "need_escalation": False,
                 },
-            },
-            {},
-        )
+            }
+        try:
+            output = self._call("compact", compact_payload, {})
+        except LLMRequiredError as error:
+            if self.mode != "required":
+                return fallback
+            return self._escalate_compact_repair(
+                strategy, evaluation, history, fallback, fallback_diagnosis,
+                fallback_patch, str(error),
+            )
         if not output:
             return fallback
         output = _normalize_compact_output(
@@ -662,10 +684,56 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
                 self._last_record["error"] = message
                 self._last_record["used_fallback"] = self.mode != "required"
             if self.mode == "required":
-                raise LLMRequiredError("compact", message)
+                return self._escalate_compact_repair(
+                    strategy, evaluation, history, fallback, fallback_diagnosis,
+                    fallback_patch, message,
+                )
             return fallback
         self._compact_output = output
         return output["observation"]
+
+    def _escalate_compact_repair(
+        self, strategy, evaluation, history, fallback_observation,
+        fallback_diagnosis, fallback_patch, reason: str,
+    ):
+        """Retry a broken compact answer with the strict repair contract.
+
+        This is still a required LLM path: the local patch is supplied only
+        as context, never accepted as the result.  The compact call can fail
+        because a small model returned prose or an incomplete envelope; a
+        second, narrower JSON contract gives the same provider a safe chance
+        to produce the repair without silently switching to rules.
+        """
+        detailed = self._call(
+            "repair",
+            {
+                "task": "简短结果不可用，请只按完整修复格式输出最小范围的策略修改",
+                "strategy": _compact_strategy(strategy),
+                "evaluation": _compact_evaluation(evaluation),
+                "diagnosis": fallback_diagnosis,
+                "history": _compact_history(history),
+                "failure_reason": reason,
+                "allowed_operations": sorted(ALLOWED_OPERATIONS),
+                "operation_contract": {
+                    "update_argument": ["operation", "target_step", "argument", "value"],
+                    "update_step": ["operation", "target_step", "content"],
+                    "insert_before": ["operation", "target_step", "content"],
+                    "insert_after": ["operation", "target_step", "content"],
+                    "append_step": ["operation", "content"],
+                    "delete_step": ["operation", "target_step"],
+                    "replace_action": ["operation", "target_step", "action"],
+                },
+            },
+            fallback_patch,
+        )
+        self._compact_output = {
+            "observation": fallback_observation,
+            "diagnosis": fallback_diagnosis,
+            "action": detailed,
+            "confidence": 0.0,
+            "need_escalation": False,
+        }
+        return fallback_observation
 
     def diagnosis(self, strategy, evaluation, advice, history):
         fallback = self.analysis.diagnose(strategy, evaluation, advice, history)
@@ -720,7 +788,25 @@ class LLMPolicyAgentSuite(PolicyAgentSuite):
                     fallback,
                 )
                 return self._validated_patch(llm_patch, fallback, evaluation, "repair")
-            return self._validated_patch(llm_patch, fallback, evaluation, "compact")
+            try:
+                return self._validated_patch(llm_patch, fallback, evaluation, "compact")
+            except LLMRequiredError as error:
+                if self.mode != "required":
+                    raise
+                detailed = self._call(
+                    "repair",
+                    {
+                        "task": "简短修复动作未通过校验，请按完整修复格式重新输出",
+                        "strategy": _compact_strategy(strategy),
+                        "evaluation": _compact_evaluation(evaluation),
+                        "diagnosis": diagnosis,
+                        "history": _compact_history(history),
+                        "failure_reason": str(error),
+                        "allowed_operations": sorted(ALLOWED_OPERATIONS),
+                    },
+                    fallback,
+                )
+                return self._validated_patch(detailed, fallback, evaluation, "repair")
 
         llm_patch = self._call(
             "repair",

@@ -22,7 +22,9 @@ from pathlib import Path
 import integration.adapters.tracecoder as adapter_mod
 from integration.adapters.tracecoder import configure_llm, run
 from modules.evaluator.tracecoder.llm_provider import LLMConfig, LLMProvider
+from modules.evaluator.tracecoder.processor import process_policy
 from tests.helpers.fake_llm_provider import FakeLLMProvider, smart_handler
+from tests.helpers.tracecoder_fixtures import DEMO_STRATEGY_V1, demo_task_data
 
 _ROOT = Path(__file__).resolve().parents[2]
 _CASES = json.loads(
@@ -174,6 +176,32 @@ class TestTraceCoderLLM(unittest.TestCase):
         self.assertFalse(diag["llm"]["required_failed"])
         self.assertEqual(diag["llm"]["stats"]["failed_calls"], 0)
         self.assertTrue(result["patch"])
+
+    def test_required_malformed_compact_response_escalates_to_full_repair(self):
+        """A broken short answer gets one strict LLM retry, not a rule fallback."""
+        base_handler = smart_handler()
+
+        def malformed_then_full(role, payload, seq):
+            if role == "compact":
+                return {"text": "模型返回了无法使用的简短结果"}
+            return base_handler(role, payload, seq)
+
+        fake = FakeLLMProvider(handler=malformed_then_full)
+        result = process_policy(
+            demo_task_data(),
+            initial_strategy=adapter_mod._strategy_v1_to_native(DEMO_STRATEGY_V1),
+            max_repair_attempts=1,
+            optimize_quality=False,
+            call_style="compact",
+            llm_mode="required",
+            llm_provider=fake,
+        )
+
+        self.assertEqual(result["status"], "PASSED", result["stopped_reason"])
+        self.assertFalse(result["llm_required_failed"])
+        self.assertEqual([item["role"] for item in fake.calls[:2]], ["compact", "repair"])
+        self.assertEqual(result["llm_stats"]["failed_calls"], 1)
+        self.assertTrue(result["best_strategy"])
 
     def test_required_invalid_repair_aborts_no_fallback(self):
         """无效修复：required 模式 LLM 输出过不了白名单 → 如实中止，绝不留规则补丁。"""

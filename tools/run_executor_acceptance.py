@@ -43,7 +43,7 @@ def _spawn_objects(*, include_dynamic: bool = True) -> list[tuple[object, tuple[
     from isaacsim.core.utils.stage import get_current_stage
     from isaacsim.core.experimental.objects import Cube
     from isaacsim.core.experimental.prims import GeomPrim, RigidPrim
-    from pxr import Gf, UsdGeom
+    from pxr import Gf, Usd, UsdGeom
 
     stage = get_current_stage()
     specs = [
@@ -58,8 +58,33 @@ def _spawn_objects(*, include_dynamic: bool = True) -> list[tuple[object, tuple[
         ("zone_unstack_target", (0.45, 0.10, 0.02575), (0.10, 0.10, 0.02), "gray"),
     ]
     dynamic_objects = []
+
+    def set_display_color(path: str, color: str) -> None:
+        # The official FrankaPickPlace controller creates green_cube before
+        # this helper runs.  Do not construct a second experimental Cube
+        # view for an existing dynamic body: on Isaac Sim 6 that can mutate
+        # the body's view/physics state and break the first grasp contact.
+        # Set USD displayColor directly on the existing GPrims instead.
+        colors = {
+            "red": Gf.Vec3f(1.0, 0.0, 0.0),
+            "green": Gf.Vec3f(0.0, 1.0, 0.0),
+            "gray": Gf.Vec3f(0.45, 0.45, 0.45),
+        }
+        display_color = colors[color]
+        root = stage.GetPrimAtPath(path)
+        for prim in Usd.PrimRange(root):
+            if not prim or not prim.IsA(UsdGeom.Gprim):
+                continue
+            gprim = UsdGeom.Gprim(prim)
+            attr = gprim.GetDisplayColorAttr()
+            if not attr:
+                attr = gprim.CreateDisplayColorAttr()
+            attr.Set([display_color])
+
     for object_id, pos, scale, color in specs:
         if object_id == "green_cube" and not include_dynamic:
+            if stage.GetPrimAtPath(f"/World/{object_id}"):
+                set_display_color(f"/World/{object_id}", color)
             continue
         path = f"/World/{object_id}"
         if object_id == "green_cube":
@@ -72,6 +97,7 @@ def _spawn_objects(*, include_dynamic: bool = True) -> list[tuple[object, tuple[
                 colors=color,
             )
             GeomPrim(paths=cube.paths, apply_collision_apis=True)
+            set_display_color(path, color)
             dynamic_objects.append((RigidPrim(paths=cube.paths), pos))
         else:
             # Use plain USD geometry for static scene markers.  The official
@@ -83,6 +109,7 @@ def _spawn_objects(*, include_dynamic: bool = True) -> list[tuple[object, tuple[
             geom.CreateSizeAttr(1.0)
             geom.AddTranslateOp().Set(Gf.Vec3d(*pos))
             geom.AddScaleOp().Set(Gf.Vec3f(*scale))
+            set_display_color(path, color)
         prim = stage.GetPrimAtPath(path)
         if prim is None:
             raise RuntimeError(f"failed to create Isaac Sim prim {path}")
@@ -140,6 +167,11 @@ def main(argv: list[str] | None = None) -> int:
         choices=["cpu", "cuda", "cuda:0"],
         help="Isaac Sim physics device (default: ISAAC_SIM_DEVICE or cpu)",
     )
+    parser.add_argument(
+        "--skip-static-markers",
+        action="store_true",
+        help="diagnostic mode: do not add red/target USD markers",
+    )
     args, _ = parser.parse_known_args(argv)
     rd = Path(args.result_dir)
     rd.mkdir(parents=True, exist_ok=True)
@@ -168,8 +200,11 @@ def main(argv: list[str] | None = None) -> int:
         # 2) 场景物体（prim 路径与 perception object_id 一致）
         # 官方控制器已经创建 green_cube；这里只补充静态 perception 标记，
         # 避免第二个实验版动态 Cube 触发额外的 PhysX tensor 初始化。
-        _spawn_objects(include_dynamic=False)
-        log(rd, "scene", "done", "objects spawned")
+        if not args.skip_static_markers:
+            _spawn_objects(include_dynamic=False)
+            log(rd, "scene", "done", "objects spawned")
+        else:
+            log(rd, "scene", "done", "static markers skipped")
         driver.start()
         log(rd, "start", "done", "official FrankaPickPlace reset after timeline start")
 

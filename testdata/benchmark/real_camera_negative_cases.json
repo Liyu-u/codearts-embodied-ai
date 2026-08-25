@@ -1,0 +1,30 @@
+{
+  "schema_version": "real-isaac-acceptance.v1",
+  "name": "real_camera_abcd_negative_boundaries",
+  "seed": 20260824,
+  "default_repeats": 2,
+  "perception_source": "reports/camera-real-20260824-06/perception.json",
+  "cases": [
+    {
+      "id": "unknown_blue_cube_camera",
+      "category": "intent_safety_camera",
+      "instruction": "把蓝色方块放到桌子上",
+      "expected_status": "BLOCKED",
+      "run_remote": false
+    },
+    {
+      "id": "grasp_support_surface_camera",
+      "category": "capability_boundary_camera",
+      "instruction": "抓取桌子",
+      "expected_status": "BLOCKED",
+      "run_remote": false
+    },
+    {
+      "id": "unknown_purple_cube_camera",
+      "category": "perception_binding_camera",
+      "instruction": "把看不见的紫色方块放到桌子上",
+      "expected_status": "BLOCKED",
+      "run_remote": false
+    }
+  ]
+}

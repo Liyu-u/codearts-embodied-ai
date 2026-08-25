@@ -43,6 +43,15 @@ class ReleaseVerifyingDriver(FakeDriver):
         }
 
 
+class TargetSettingDriver(ReleaseVerifyingDriver):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.target_poses = []
+
+    def set_target_pose(self, target_pose):
+        self.target_poses.append(target_pose)
+
+
 class IsaacSimBackendTests(unittest.TestCase):
     def test_complete_pick_and_place_updates_object_position(self):
         backend, _ = make_backend()
@@ -161,6 +170,25 @@ class IsaacSimBackendTests(unittest.TestCase):
         ]:
             self.assertEqual(backend.execute(action, args)["status"], "SUCCESS")
         self.assertEqual(backend.execute("release", {})["status"], "SUCCESS")
+
+    def test_real_driver_receives_measured_target_before_motion(self):
+        scene, objects = scene_objects()
+        driver = TargetSettingDriver(objects=objects, release_verified=True)
+        backend = IsaacSimBackend.from_perception(scene, safety=SafetyPolicy(), driver=driver)
+        for action, args in [
+            ("detect_object", {"object_id": "green_cube"}),
+            ("move_to_object", {"object_id": "green_cube"}),
+            ("grasp", {"object_id": "green_cube"}),
+        ]:
+            self.assertEqual(backend.execute(action, args)["status"], "SUCCESS")
+        result = backend.execute(
+            "move_to_target", {"destination_id": "zone_unstack_target"}
+        )
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(len(driver.target_poses), 1)
+        self.assertEqual(
+            driver.target_poses[0], objects["zone_unstack_target"]["pose"]
+        )
 
     def test_real_driver_release_mismatch_is_fail_closed(self):
         scene, objects = scene_objects()

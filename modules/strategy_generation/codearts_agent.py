@@ -133,13 +133,14 @@ class CodeArtsStrategyClient:
                 return _failure(f"CODEARTS_PROVIDER_ERROR:{provider_error}", trace)
             return _failure("CODEARTS_OUTPUT_MISSING_STRATEGY", trace)
 
+        # The task ID belongs to this local request.  CodeArts sometimes
+        # echoes the ID from its example prompt, or combines that mismatch
+        # with an empty ``steps`` array.  Bind a concrete provider ID before
+        # validating the remaining strategy fields; otherwise the combined
+        # error skips the safe retry path and hides the actual empty-plan
+        # problem.
+        candidate = _bind_provider_task_id(candidate, task, trace)
         errors = validate_strategy(candidate, task)
-        if errors == ["task_id does not match input task"] and _has_explicit_task_id(candidate):
-            candidate = dict(candidate)
-            candidate["task_id"] = task["task_id"]
-            trace["task_id_bound_locally"] = True
-            trace["binding_reason"] = "provider_task_id_mismatch_only"
-            errors = validate_strategy(candidate, task)
 
         # A zero-step envelope is a transient provider formatting failure in
         # practice.  Spend only the bounded B retry budget on that shape;
@@ -158,13 +159,8 @@ class CodeArtsStrategyClient:
             candidate = extract_strategy(retry_completed.stdout)
             if candidate is None:
                 return _failure("CODEARTS_OUTPUT_MISSING_STRATEGY", trace)
+            candidate = _bind_provider_task_id(candidate, task, trace)
             errors = validate_strategy(candidate, task)
-            if errors == ["task_id does not match input task"] and _has_explicit_task_id(candidate):
-                candidate = dict(candidate)
-                candidate["task_id"] = task["task_id"]
-                trace["task_id_bound_locally"] = True
-                trace["binding_reason"] = "provider_task_id_mismatch_only"
-                errors = validate_strategy(candidate, task)
 
         if errors:
             trace["validation"] = {"passed": False, "errors": list(errors)}
@@ -257,13 +253,19 @@ class CodeArtsStrategyClient:
 
         review = extract_review(completed.stdout)
         if review is None:
+            provider_error = extract_provider_error(completed.stdout)
+            if provider_error:
+                return _review_failure(f"CODEARTS_PROVIDER_ERROR:{provider_error}", trace)
             return _review_failure("CODEARTS_REVIEW_OUTPUT_MISSING", trace)
         errors = validate_review(review)
         if errors:
             return _review_failure("CODEARTS_REVIEW_REJECTED:" + errors[0], trace)
         if review["status"] != "PASS":
+            issues = review.get("issues") or []
+            detail = ":" + " | ".join(str(item).strip() for item in issues if str(item).strip())
             return _review_failure(
-                "CODEARTS_REVIEW_REJECTED:" + review["status"], trace
+                "CODEARTS_REVIEW_REJECTED:" + review["status"] + detail,
+                trace,
             )
         trace["validation"] = {"passed": True, "errors": []}
         trace["status"] = "PASS"
@@ -459,6 +461,28 @@ def _has_explicit_task_id(strategy: dict[str, Any]) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _bind_provider_task_id(
+    strategy: dict[str, Any], task: dict[str, Any], trace: dict[str, Any]
+) -> dict[str, Any]:
+    """Bind a concrete provider task ID to the current local task.
+
+    The binding only changes the envelope identity.  It never fills in
+    missing steps or changes an action, target, destination, or argument.
+    Missing IDs remain invalid and are handled by ``validate_strategy``.
+    """
+
+    if not _has_explicit_task_id(strategy):
+        return strategy
+    expected = task.get("task_id")
+    if strategy.get("task_id") == expected:
+        return strategy
+    bound = dict(strategy)
+    bound["task_id"] = expected
+    trace["task_id_bound_locally"] = True
+    trace["binding_reason"] = "provider_task_id_mismatch"
+    return bound
+
+
 def _compact_error(value: str) -> str:
     compact = " ".join((value or "unknown error").split())
     return compact[:300]
@@ -560,16 +584,49 @@ code 必须为 null。不要输出解释、Markdown 或可执行代码。
 def _build_review_prompt(
     task: dict[str, Any], strategy: dict[str, Any], round_no: int
 ) -> str:
-    task_json = json.dumps(task, ensure_ascii=False, separators=(",", ":"))
-    strategy_json = json.dumps(strategy, ensure_ascii=False, separators=(",", ":"))
-    return f"""只返回一个审查 JSON，不调用工具、读取文件或修改候选策略。
-这是第 {round_no} 轮独立安全审查。检查动作白名单、稳定 ID、步骤顺序、引用、恢复限制和 code=null。
-任务：{task_json}
-候选策略：{strategy_json}
-必须把唯一 JSON 放在 {REVIEW_BEGIN} 和 {REVIEW_END} 之间，严格使用：
-{{"status":"PASS","issues":[],"risk_level":"LOW"}}
-如果有问题，status 只能是 REPAIR_REQUIRED 或 BLOCK，issues 必须给出简短原因；不要输出解释或 Markdown。
+    # ``generate`` returns a strategy.v1 envelope plus runtime metadata such
+    # as success/mode/provenance.  The critic must receive only the public
+    # strategy contract; metadata makes the CodeArts skill treat the input as
+    # an unsupported wrapper instead of a candidate_strategy.
+    review_steps = []
+    for step in strategy.get("steps", []):
+        if isinstance(step, dict):
+            # The bounded grasp recovery branch is added and validated by
+            # this repository.  CodeArts currently stalls when that local
+            # wrapper is included in its critic input, so the critic checks
+            # the provider's main plan while the local validator remains the
+            # authority for recovery safety.
+            review_steps.append(
+                {key: value for key, value in step.items() if key != "on_failure"}
+            )
+    review_strategy = {
+        key: strategy[key]
+        for key in ("schema_version", "task_id", "steps", "code")
+        if key in strategy
+    }
+    if "steps" in review_strategy:
+        review_strategy["steps"] = review_steps
+    review_input = json.dumps(
+        {
+            "task": task,
+            "candidate_strategy": review_strategy,
+            "round": round_no,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    prompt = f"""Review the candidate strategy and return exactly one JSON object between {REVIEW_BEGIN} and {REVIEW_END}.
+Do not call tools, read files, edit files, or return prose.
+The input JSON is: {review_input}
+The JSON field candidate_strategy is the only strategy to review; task is the task definition and round is the review round.
+Check the main action whitelist, stable IDs, step order, references, and code=null. The local system separately validates its bounded recovery wrapper.
+The review object must be exactly like {{"status":"PASS","issues":[],"risk_level":"LOW"}}.
+If there is a problem, status must be REPAIR_REQUIRED or BLOCK and issues must contain a short reason.
 """
+    # The Windows CodeArts CLI treats embedded newlines in a positional
+    # message as argument boundaries. Keep the entire review request in one
+    # argument, just like the strategy-generation request.
+    return " ".join(line.strip() for line in prompt.splitlines() if line.strip())
 
 
 def extract_strategy(stdout: str) -> dict[str, Any] | None:
@@ -639,7 +696,12 @@ def extract_provider_error(stdout: str) -> str | None:
                 continue
     for document in documents:
         for candidate in _walk_objects(document):
-            if candidate.get("type") != "error":
+            is_error_event = (
+                candidate.get("type") == "error"
+                or str(candidate.get("status", "")).lower() == "error"
+                or bool(candidate.get("code")) and "issues" not in candidate
+            )
+            if not is_error_event:
                 continue
             error = candidate.get("error")
             if isinstance(error, dict):
@@ -650,6 +712,14 @@ def extract_provider_error(stdout: str) -> str | None:
                     return " ".join(str(error["message"]).split())[:300]
             if isinstance(error, str) and error.strip():
                 return " ".join(error.split())[:300]
+            code = candidate.get("code")
+            message = candidate.get("message")
+            required = candidate.get("required")
+            details = [str(item).strip() for item in (code, message) if item]
+            if isinstance(required, list) and required:
+                details.append("required=" + ",".join(str(item) for item in required))
+            if details:
+                return " ".join(" ".join(details).split())[:300]
     return None
 
 
@@ -719,6 +789,8 @@ def _json_payloads_with_markers(text: str, begin: str, end: str) -> Iterator[str
     )
     if marker:
         yield marker.group(1)
+    for fenced in re.finditer(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL):
+        yield fenced.group(1)
     stripped = text.strip()
     if stripped.startswith("{") and stripped.endswith("}"):
         yield stripped

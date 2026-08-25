@@ -49,6 +49,12 @@ class PerceptionServiceTests(unittest.TestCase):
                 for tray in ("left_sort_tray", "middle_sort_tray", "right_sort_tray")
             )
         )
+        self.assertTrue(
+            all(
+                by_id[tray]["attributes"]["support_surface"]
+                for tray in ("left_sort_tray", "middle_sort_tray", "right_sort_tray")
+            )
+        )
 
     def test_non_mock_backend_is_rejected_in_phase_one(self):
         with self.assertRaisesRegex(ValueError, "backend must be mock"):

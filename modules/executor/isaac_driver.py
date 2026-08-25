@@ -22,6 +22,159 @@ from __future__ import annotations
 from typing import Protocol
 
 
+def _path_text(value) -> str:
+    """Return a USD path for the several PhysX/pxr path representations."""
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        for key in ("pathString", "path_string", "path", "prim_path", "primPath"):
+            if key in value:
+                path = _path_text(value[key])
+                if path:
+                    return path
+        return ""
+    if hasattr(value, "GetPath"):
+        try:
+            value = value.GetPath()
+        except Exception:  # noqa: BLE001
+            pass
+    for attribute in ("pathString", "path_string"):
+        candidate = getattr(value, attribute, None)
+        if candidate:
+            return str(candidate)
+    text = str(value)
+    return text if text.startswith("/") else ""
+
+
+def _decode_physx_path(value) -> str:
+    """Decode PhysX's encoded SdfPath variants when direct paths are absent."""
+    if value is None:
+        return ""
+    try:
+        from pxr import PhysicsSchemaTools
+    except Exception:  # noqa: BLE001 - unavailable outside Isaac Sim
+        return ""
+    for name in ("decodeSdfPath", "intToSdfPath"):
+        decoder = getattr(PhysicsSchemaTools, name, None)
+        if not callable(decoder):
+            continue
+        try:
+            decoded = decoder(value)
+        except Exception:  # noqa: BLE001 - bindings differ by Isaac version
+            continue
+        path = _path_text(decoded)
+        if path:
+            return path
+    return ""
+
+
+def _physx_hit_path(hit) -> str:
+    """Extract a collider/body path from Isaac Sim 6 scene-query hit variants."""
+    direct_fields = (
+        "rigid_body",
+        "rigidBody",
+        "collision",
+        "collider",
+        "actor",
+        "shape",
+        "path",
+        "prim_path",
+        "primPath",
+    )
+    encoded_fields = (
+        "rigid_body_encoded",
+        "rigidBodyEncoded",
+        "collision_encoded",
+        "collisionEncoded",
+    )
+    if isinstance(hit, dict):
+        for key in direct_fields:
+            if key in hit:
+                path = _path_text(hit[key])
+                if path:
+                    return path
+        for key in encoded_fields:
+            if key in hit:
+                path = _decode_physx_path(hit[key])
+                if path:
+                    return path
+        return ""
+    for attribute in direct_fields:
+        if hasattr(hit, attribute):
+            path = _path_text(getattr(hit, attribute))
+            if path:
+                return path
+    for attribute in encoded_fields:
+        if hasattr(hit, attribute):
+            path = _decode_physx_path(getattr(hit, attribute))
+            if path:
+                return path
+    return ""
+
+
+def _physx_hit_debug(hit) -> str:
+    """Return bounded diagnostics for a hit whose path cannot be decoded."""
+    if isinstance(hit, dict):
+        keys = sorted(str(key) for key in hit.keys())
+        return f"dict_keys={keys[:20]}"
+    try:
+        names = [
+            name for name in dir(hit)
+            if not name.startswith("_") and any(token in name.lower() for token in ("path", "body", "collision", "actor", "shape"))
+        ]
+    except Exception:  # noqa: BLE001
+        names = []
+    return f"type={type(hit).__name__};attrs={names[:20]}"
+
+
+def _raycast_overlap_fallback(query, origin, radius, carb_module):
+    """Resolve a count-only overlap through short radial raycasts.
+
+    Some GPU PhysX builds return a positive overlap count but do not invoke the
+    Python overlap callback.  Raycast-closest still returns the documented
+    path-bearing dictionary on those builds, so probe the sphere from its
+    center in a bounded 26-direction stencil.  This never reports "free" when
+    a hit is seen but cannot be identified.
+    """
+
+    diagonal = 0.7071067811865476
+    directions = (
+        (1.0, 0.0, 0.0), (-1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0), (0.0, -1.0, 0.0),
+        (0.0, 0.0, 1.0), (0.0, 0.0, -1.0),
+        (diagonal, diagonal, 0.0), (diagonal, -diagonal, 0.0),
+        (-diagonal, diagonal, 0.0), (-diagonal, -diagonal, 0.0),
+        (diagonal, 0.0, diagonal), (diagonal, 0.0, -diagonal),
+        (-diagonal, 0.0, diagonal), (-diagonal, 0.0, -diagonal),
+        (0.0, diagonal, diagonal), (0.0, diagonal, -diagonal),
+        (0.0, -diagonal, diagonal), (0.0, -diagonal, -diagonal),
+        (diagonal, diagonal, diagonal), (diagonal, diagonal, -diagonal),
+        (diagonal, -diagonal, diagonal), (diagonal, -diagonal, -diagonal),
+        (-diagonal, diagonal, diagonal), (-diagonal, diagonal, -diagonal),
+        (-diagonal, -diagonal, diagonal), (-diagonal, -diagonal, -diagonal),
+    )
+    paths: list[str] = []
+    unresolved = False
+    for direction in directions:
+        try:
+            info = query.raycast_closest(
+                origin,
+                carb_module.Float3(*direction),
+                float(radius),
+            )
+        except Exception:  # noqa: BLE001 - fallback is best effort
+            continue
+        if not isinstance(info, dict) or not info.get("hit"):
+            continue
+        path = _physx_hit_path(info)
+        if path:
+            if path not in paths:
+                paths.append(path)
+        else:
+            unresolved = True
+    return paths, unresolved
+
+
 class DriverError(RuntimeError):
     """驱动层不可恢复错误（例如 Isaac 未连接、PhysX 查询失败）。
 
@@ -114,16 +267,23 @@ class FrankaPickPlaceDriver:
 
     IK_METHOD = "damped-least-squares"
     RELEASE_TOLERANCE_M = 0.06
+    # FrankaPickPlace.target_position is the end-effector command, not the
+    # physical cube center.  Start from the measured tool offset and close
+    # the remaining XY error during transport with a bounded PhysX feedback
+    # correction; a fixed offset alone is not reliable across IK states.
+    CONTROLLER_TARGET_XY_OFFSET_M = (0.05, 0.05)
+    CONTROLLER_TARGET_Z_M = 0.03
+    TRANSPORT_FEEDBACK_GAIN = 0.40
+    TRANSPORT_FEEDBACK_MAX_CORRECTION_M = (0.03, 0.05)
 
     def __init__(
         self,
         app,
         device: str = "cuda",
         cube_position=(0.50, 0.0, 0.0258),
-        # The official example applies an internal (0.05, 0.10) scene offset to
-        # this setup marker; with these inputs its physical cube settles at
-        # (0.45, 0.10, 0.02575), which is the acceptance perception target.
-        target_position=(0.40, 0.0, 0.03),
+        # This default is retained for the fixed acceptance scene.  The
+        # backend calls set_target_pose() for camera-derived destinations.
+        target_position=(0.40, 0.05, 0.03),
     ) -> None:
         self._app = app
         self._device = device
@@ -133,6 +293,10 @@ class FrankaPickPlaceDriver:
         self._connected = False
         self._started = False
         self._stopped = False
+        self._phase_history: list[dict] = []
+        self._physical_target_pose: dict | None = None
+        self._controller_target_nominal = None
+        self._last_transport_feedback: dict | None = None
 
     def connect(self, *, defer_start: bool = False) -> None:
         if self._connected:
@@ -154,7 +318,14 @@ class FrankaPickPlaceDriver:
 
         SimulationManager.set_physics_sim_device(self._device)
         self._app.update()
-        self._controller = FrankaPickPlace()
+        # Keep NVIDIA's published phase timing.  The controller's close and
+        # lift phases are coupled to its internal gripper trajectory; adding
+        # extra frames here can move the fingers through the contact window
+        # and make a real grasp less reliable, even though the end-effector
+        # phase history still looks successful.
+        self._controller = FrankaPickPlace(
+            events_dt=[60, 40, 20, 40, 80, 20, 20]
+        )
         self._controller.setup_scene(
             cube_initial_position=np.asarray(self._cube_position, dtype=float),
             cube_initial_orientation=np.asarray((1.0, 0.0, 0.0, 0.0), dtype=float),
@@ -165,6 +336,8 @@ class FrankaPickPlaceDriver:
         self._connected = True
         self._started = False
         self._stopped = False
+        self._phase_history = []
+        self._last_transport_feedback = None
         if not defer_start:
             self.start()
 
@@ -186,6 +359,18 @@ class FrankaPickPlaceDriver:
         self._started = False
         self._controller = None
 
+    def reset_for_control(self) -> None:
+        """Reset the official controller immediately before C execution.
+
+        The live RGB-D capture intentionally advances a few simulation ticks
+        after the timeline starts.  Resetting once more after that capture
+        restores the same reset-to-first-forward boundary as NVIDIA's sample
+        and prevents an idle physics tick from changing the contact setup.
+        """
+        self._ensure_started()
+        self._controller.reset()
+        self._phase_history = []
+
     def _ensure_started(self) -> None:
         if not self._connected or self._controller is None:
             raise DriverError("FrankaPickPlaceDriver not connected")
@@ -199,6 +384,17 @@ class FrankaPickPlaceDriver:
         pos = positions[0]
         return {"x": float(pos[0]), "y": float(pos[1]), "z": float(pos[2])}
 
+    def _controller_cube_pose(self) -> dict | None:
+        """Read the official dynamic-body tensor for diagnostic comparison."""
+        try:
+            positions = self._controller.cube.get_world_poses()[0]
+            if hasattr(positions, "numpy"):
+                positions = positions.numpy()
+            pos = positions[0]
+            return {"x": float(pos[0]), "y": float(pos[1]), "z": float(pos[2])}
+        except Exception:  # noqa: BLE001
+            return None
+
     def _run_current_phase(self, timeout_s: float, *, trajectory: list[dict] | None = None) -> dict:
         import time
 
@@ -208,6 +404,8 @@ class FrankaPickPlaceDriver:
         initial_event = int(self._controller._event)
         frames = 0
         while int(self._controller._event) == initial_event and not self._controller.is_done():
+            if initial_event == 4:
+                self._apply_transport_feedback()
             self._controller.forward(self.IK_METHOD)
             self._app.update()
             frames += 1
@@ -218,6 +416,13 @@ class FrankaPickPlaceDriver:
                 )
         wall_ms = int((time.monotonic() - start) * 1000)
         pose = self._controller_pose()
+        self._phase_history.append({
+            "event_before": initial_event,
+            "event_after": int(self._controller._event),
+            "frames": frames,
+            "pose": dict(pose),
+            "controller_cube_pose": self._controller_cube_pose(),
+        })
         trajectory.append({
             "timestamp_ms": wall_ms,
             "coordinate_frame": "world",
@@ -234,10 +439,116 @@ class FrankaPickPlaceDriver:
             velocity_m_s=0.20,
         )
 
+    def diagnostics(self) -> dict:
+        """Return bounded controller state for real-run audit evidence."""
+        controller = self._controller
+        if controller is None:
+            return {"connected": False, "phase_history": list(self._phase_history)}
+        values = {
+            "connected": bool(self._connected),
+            "started": bool(self._started),
+            "event": int(getattr(controller, "_event", -1)),
+            "step": int(getattr(controller, "_step", -1)),
+            "phase_history": list(self._phase_history),
+            "physical_target_pose": self._physical_target_pose,
+            "controller_target_nominal": (
+                self._controller_target_nominal.tolist()
+                if self._controller_target_nominal is not None
+                else None
+            ),
+            "last_transport_feedback": self._last_transport_feedback,
+        }
+        for name in ("events_dt", "cube_position", "target_position"):
+            value = getattr(controller, name, None)
+            if value is None:
+                value = getattr(self, f"_{name}", None)
+            if value is not None:
+                try:
+                    values[name] = value.tolist()
+                except AttributeError:
+                    values[name] = list(value) if isinstance(value, tuple) else value
+        return values
+
     def move_to(self, pose: dict, linear_speed: float, timeout_s: float) -> dict:
         if float(linear_speed) <= 0:
             return _failed("SPEED_LIMIT_EXCEEDED", 0)
         return self._run_current_phase(timeout_s)
+
+    def set_target_pose(self, target_pose: dict) -> None:
+        """Map a physical camera target to the official controller target.
+
+        The experimental NVIDIA example accepts an end-effector target even
+        though its public argument is named ``target_position``.  Passing the
+        camera's object-center pose directly therefore leaves a systematic
+        XY placement error.  Apply the measured tool offset before phase 4;
+        changing it after transport starts would make the sequence ambiguous.
+        """
+        if not self._connected or self._controller is None:
+            raise DriverError("FrankaPickPlaceDriver not connected")
+        if self._started and int(getattr(self._controller, "_event", 0)) > 4:
+            raise DriverError("target calibration is too late; controller is already releasing")
+        import numpy as np
+
+        offset_x, offset_y = self.CONTROLLER_TARGET_XY_OFFSET_M
+        target = np.asarray(
+            (
+                float(target_pose["x"]) - float(offset_x),
+                float(target_pose["y"]) - float(offset_y),
+                float(self.CONTROLLER_TARGET_Z_M),
+            ),
+            dtype=float,
+        )
+        # Record the physical target even when the official controller already
+        # has the same numerical target.  This keeps the transport feedback
+        # and audit evidence correct on repeated setter calls.
+        self._target_position = tuple(float(value) for value in target)
+        self._controller_target_nominal = target.copy()
+        self._physical_target_pose = {
+            "x": float(target_pose["x"]),
+            "y": float(target_pose["y"]),
+            "z": float(target_pose.get("z", 0.0)),
+        }
+        if np.allclose(
+            np.asarray(getattr(self._controller, "target_position", target), dtype=float),
+            target,
+        ):
+            return
+        self._controller.target_position = target
+
+    def _apply_transport_feedback(self) -> None:
+        """Bounded XY correction using the live PhysX cube pose.
+
+        The NVIDIA controller remains responsible for all motion and gripper
+        commands.  This only nudges its phase-4 end-effector target from the
+        measured cube error, preventing the fixed tool offset from turning
+        into a systematic placement miss.
+        """
+        if self._physical_target_pose is None or self._controller_target_nominal is None:
+            return
+        cube = self._controller_cube_pose()
+        if cube is None:
+            return
+        import numpy as np
+
+        error = np.asarray(
+            [
+                self._physical_target_pose["x"] - cube["x"],
+                self._physical_target_pose["y"] - cube["y"],
+            ],
+            dtype=float,
+        )
+        max_correction = np.asarray(self.TRANSPORT_FEEDBACK_MAX_CORRECTION_M, dtype=float)
+        correction = np.clip(self.TRANSPORT_FEEDBACK_GAIN * error, -max_correction, max_correction)
+        target = np.asarray(self._controller_target_nominal, dtype=float).copy()
+        target[:2] += correction
+        self._controller.target_position = target
+        self._last_transport_feedback = {
+            "cube_pose": dict(cube),
+            "target_pose": dict(self._physical_target_pose),
+            "error_xy_m": [float(value) for value in error],
+            "correction_xy_m": [float(value) for value in correction],
+            "controller_target": [float(value) for value in target],
+        }
 
     def gripper_open(self, width: float, timeout_s: float) -> dict:
         return self._run_current_phase(timeout_s)
@@ -247,12 +558,16 @@ class FrankaPickPlaceDriver:
 
     def read_object_pose(self, object_id: str) -> dict:
         self._ensure_started()
+        # The official Franka controller owns green_cube as a PhysX dynamic
+        # body.  On Isaac Sim 6 GPU physics, its USD root transform can lag
+        # the live rigid-body tensor for several frames (or remain at the
+        # spawn pose after a timeline stop).  Use the controller's dynamic
+        # tensor for the moving object while the controller is active; keep
+        # USD as the source for static scene objects.
         if object_id == "green_cube":
-            positions, _ = self._controller.cube.get_world_poses()
-            if hasattr(positions, "numpy"):
-                positions = positions.numpy()
-            pos = positions[0]
-            return {"x": float(pos[0]), "y": float(pos[1]), "z": float(pos[2])}
+            controller_pose = self._controller_cube_pose()
+            if controller_pose is not None:
+                return controller_pose
         from pxr import UsdGeom
         import omni.usd
 
@@ -264,12 +579,20 @@ class FrankaPickPlaceDriver:
         return {"x": float(pos[0]), "y": float(pos[1]), "z": float(pos[2])}
 
     def verify_grasp(self, object_id: str, initial_pose: dict | None = None, lift_z: float = 0.20) -> dict:
+        # The controller phase boundary is observed immediately after a
+        # physics tick, while the USD stage bridge can publish the dynamic
+        # body's transform a few app ticks later.  Sample after a short
+        # settling window so a valid physical lift is not rejected merely
+        # because USD has not caught up with PhysX yet.
+        for _ in range(5):
+            self._app.update()
         pose = self.read_object_pose(object_id)
         initial_z = float((initial_pose or {}).get("z", pose["z"]))
         threshold = max(initial_z + 0.04, float(lift_z) - 0.04)
         return {
             "verified": pose["z"] >= threshold,
             "object_pose": pose,
+            "controller_cube_pose": self._controller_cube_pose(),
             "reason": "" if pose["z"] >= threshold else "OBJECT_DID_NOT_LIFT",
         }
 
@@ -297,12 +620,13 @@ class FrankaPickPlaceDriver:
 
         excluded = tuple(str(path).rstrip("/") for path in excluded_paths)
         hits: list[str] = []
+        unknown_hits: list[str] = []
         ignored_ground = False
+        resolved_overlap = False
 
         def report_hit(hit) -> bool:
-            nonlocal ignored_ground
-            path = getattr(hit, "rigid_body", None) or getattr(hit, "actor", None)
-            text = str(path) if path is not None else ""
+            nonlocal ignored_ground, resolved_overlap
+            text = _physx_hit_path(hit)
             # The broad-phase safety sphere is intentionally conservative.  A
             # grasp pose puts the sphere's lower edge slightly below z=0 even
             # though the gripper itself is above the cube.  Treat the ground
@@ -313,19 +637,45 @@ class FrankaPickPlaceDriver:
             ground_clearance = float(pose.get("z", 0.0)) >= max(0.04, float(radius) * 0.8)
             if is_ground and ground_clearance:
                 ignored_ground = True
+                resolved_overlap = True
+                return True
+            if any(text == item or text.startswith(item + "/") for item in excluded):
+                resolved_overlap = True
                 return True
             if not any(
                 text == item or text.startswith(item + "/") for item in excluded
             ):
-                hits.append(text or "<unknown>")
+                if text:
+                    hits.append(text)
+                else:
+                    unknown_hits.append(_physx_hit_debug(hit))
+                    hits.append("<unknown>")
             return True
 
         origin = carb.Float3(float(pose["x"]), float(pose["y"]), float(pose["z"]))
         count = get_physx_scene_query_interface().overlap_sphere(float(radius), origin, report_hit, False)
         if count is None or int(count) < 0:
             raise DriverError("invalid PhysX overlap query result")
-        if count > 0 and not hits and not ignored_ground:
-            raise DriverError("PhysX overlap hit path unavailable")
+        if count > 0 and not resolved_overlap and (not hits or all(item == "<unknown>" for item in hits)):
+            if hits and all(item == "<unknown>" for item in hits):
+                hits.clear()
+            fallback_paths, fallback_unresolved = _raycast_overlap_fallback(
+                get_physx_scene_query_interface(), origin, radius, carb
+            )
+            for text in fallback_paths:
+                is_ground = text == "/World/ground_plane" or text.startswith("/World/ground_plane/")
+                ground_clearance = float(pose.get("z", 0.0)) >= max(0.04, float(radius) * 0.8)
+                if is_ground and ground_clearance:
+                    ignored_ground = True
+                    resolved_overlap = True
+                elif not any(text == item or text.startswith(item + "/") for item in excluded):
+                    hits.append(text)
+                    resolved_overlap = True
+                else:
+                    resolved_overlap = True
+            if fallback_unresolved or not fallback_paths:
+                detail = ";".join(unknown_hits[:2]) or "raycast fallback found no path"
+                raise DriverError(f"PhysX overlap hit path unavailable ({detail})")
         return not hits
 
     def e_stop(self) -> None:
@@ -608,6 +958,8 @@ class OmniDriver:
         lift_z: float = 0.20,
     ) -> dict:
         """确认物体是否随末端抬升，避免用夹爪指令值冒充抓取力。"""
+        for _ in range(5):
+            self._app.update()
         pose = self.read_object_pose(object_id)
         initial_z = float((initial_pose or {}).get("z", pose["z"]))
         threshold = max(initial_z + 0.04, float(lift_z) - 0.04)
@@ -662,18 +1014,28 @@ class OmniDriver:
             from omni.physx import get_physx_scene_query_interface
 
             hits: list[str] = []
+            unknown_hits: list[str] = []
+            resolved_overlap = False
             excluded = tuple(str(path).rstrip("/") for path in excluded_paths)
 
             def report_hit(hit) -> bool:
-                path = getattr(hit, "rigid_body", None)
-                if path is None:
-                    path = getattr(hit, "actor", None)
-                path_text = str(path) if path is not None else ""
+                nonlocal resolved_overlap
+                path_text = _physx_hit_path(hit)
+                if any(
+                    path_text == item or path_text.startswith(item + "/")
+                    for item in excluded
+                ):
+                    resolved_overlap = True
+                    return True
                 if not any(
                     path_text == item or path_text.startswith(item + "/")
                     for item in excluded
                 ):
-                    hits.append(path_text or "<unknown>")
+                    if path_text:
+                        hits.append(path_text)
+                    else:
+                        unknown_hits.append(_physx_hit_debug(hit))
+                        hits.append("<unknown>")
                 return True
 
             origin = carb.Float3(float(pose["x"]), float(pose["y"]), float(pose["z"]))
@@ -681,8 +1043,24 @@ class OmniDriver:
             hit_count = query.overlap_sphere(float(radius), origin, report_hit, False)
             if hit_count is None or int(hit_count) < 0:
                 raise DriverError("invalid PhysX overlap query result")
-            if hit_count > 0 and not hits:
-                raise DriverError("PhysX overlap hit path unavailable")
+            if hit_count > 0 and not resolved_overlap and (not hits or all(item == "<unknown>" for item in hits)):
+                if hits and all(item == "<unknown>" for item in hits):
+                    hits.clear()
+                fallback_paths, fallback_unresolved = _raycast_overlap_fallback(
+                    query, origin, radius, carb
+                )
+                for path_text in fallback_paths:
+                    if not any(
+                        path_text == item or path_text.startswith(item + "/")
+                        for item in excluded
+                    ):
+                        hits.append(path_text)
+                    resolved_overlap = True
+                else:
+                    resolved_overlap = True
+                if fallback_unresolved or not fallback_paths:
+                    detail = ";".join(unknown_hits[:2]) or "raycast fallback found no path"
+                    raise DriverError(f"PhysX overlap hit path unavailable ({detail})")
             return not hits
         except DriverError:
             raise

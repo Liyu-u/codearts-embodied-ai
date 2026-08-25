@@ -93,6 +93,7 @@ SORTING_WORKCELL = {
                 "display_name": "红色托盘",
                 "color": "red",
                 "purpose": "sorting_destination",
+                "support_surface": True,
                 "slot": "left",
             },
             "execution": {
@@ -110,6 +111,7 @@ SORTING_WORKCELL = {
                 "display_name": "绿色托盘",
                 "color": "green",
                 "purpose": "sorting_destination",
+                "support_surface": True,
                 "slot": "middle",
             },
             "execution": {
@@ -127,6 +129,7 @@ SORTING_WORKCELL = {
                 "display_name": "蓝色托盘",
                 "color": "blue",
                 "purpose": "sorting_destination",
+                "support_surface": True,
                 "slot": "right",
             },
             "execution": {

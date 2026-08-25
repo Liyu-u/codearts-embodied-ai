@@ -394,6 +394,21 @@ class BaseRobotBackend:
         else:
             return _failed(f"PLACEMENT_MODE_UNSUPPORTED:{placement_mode}", 0)
 
+        # A real driver may need the measured destination before its native
+        # controller enters the transport phase.  This is optional so the
+        # mock/Omni drivers keep their existing contract, but a real-driver
+        # calibration failure must remain fail-closed.
+        target_setter = getattr(self._driver, "set_target_pose", None)
+        if callable(target_setter):
+            try:
+                target_setter(deepcopy(placement_pose))
+            except DriverError as exc:
+                return self._fail_closed_driver_error("move_to_target", exc)
+            except Exception as exc:  # noqa: BLE001
+                return self._fail_closed_driver_error(
+                    "move_to_target", DriverError(f"target calibration failed: {exc}")
+                )
+
         approach = self._approach_above(placement_pose)
         result = self._guarded_move_to(
             approach, "move_to_target", ignore_object_ids=(destination_id,)
@@ -484,6 +499,7 @@ class BaseRobotBackend:
         return _succeeded(
             opened.get("duration_ms", 0) + retreat["duration_ms"],
             object_id=released_id,
+            verification=verification if callable(verifier) else None,
             safety_events=opened.get("safety_events", [])
             + retreat.get("safety_events", []),
         )

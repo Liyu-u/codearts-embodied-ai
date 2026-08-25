@@ -1,0 +1,800 @@
+{
+  "schema_version": "closed-loop-benchmark.v1",
+  "name": "abcd_closed_loop_v1",
+  "version": "1.0.0",
+  "description": "自研 A/B/C/D 全链路联调基准。以公开具身智能基准的语言落地、多任务组合、长链动作、场景变化和失败恢复思想为设计依据，但以本项目 v1 协议、Isaac/Mock 执行边界和 TraceCoder 安全策略为最终判定标准。",
+  "default_repeats": 3,
+  "design_basis": [
+    {
+      "benchmark": "ALFRED",
+      "method": "自然语言目标、指代消解、长链家庭任务",
+      "applied_to": ["grounded_language", "intent_safety"]
+    },
+    {
+      "benchmark": "TEACh",
+      "method": "对话式澄清、目标缺失和交互式任务完成",
+      "applied_to": ["intent_safety", "capability_boundary"]
+    },
+    {
+      "benchmark": "LIBERO/CALVIN",
+      "method": "多任务组合、语言条件动作链、实体/空间关系迁移",
+      "applied_to": ["happy_path", "capability_boundary"]
+    },
+    {
+      "benchmark": "BEHAVIOR-1K/RoboCasa365",
+      "method": "场景多样性、目标组合和长时程闭环",
+      "applied_to": ["happy_path", "execution_failure"]
+    },
+    {
+      "benchmark": "REBOOT/failure-aware recovery",
+      "method": "把执行失败、恢复和不可恢复状态作为一等测试信号",
+      "applied_to": ["recoverable_failure", "safe_stop", "execution_failure"]
+    }
+  ],
+  "protocol_contracts": [
+    "perception.v1",
+    "task.v1",
+    "strategy.v1",
+    "execution.v1",
+    "feedback.v1"
+  ],
+  "evaluation_gates": {
+    "contract_pass_rate": 1.0,
+    "intent_safety_block_precision": 1.0,
+    "safe_stop_correct_rate": 1.0,
+    "code_null_rate": 1.0,
+    "target_task_success_rate": 0.95,
+    "required_repeat_stability": 1.0,
+    "d_repair_cases_must_not_bypass_policy": true
+  },
+  "case_schema": {
+    "required": [
+      "id",
+      "category",
+      "source",
+      "expected_status",
+      "seed",
+      "benchmark_basis",
+      "test_dimensions"
+    ],
+    "replay_fields": [
+      "scene_id",
+      "instruction",
+      "path",
+      "failures",
+      "expected_retry_count",
+      "requires_d_repair"
+    ]
+  },
+  "cases": [
+    {
+      "id": "gnd-001",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "stacking_cubes",
+      "instruction": "把绿色方块放到桌子上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1001,
+      "benchmark_basis": ["ALFRED", "LIBERO/CALVIN"],
+      "test_dimensions": ["grounded_goal", "object_binding", "five_step_execution"]
+    },
+    {
+      "id": "gnd-002",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "single_red_cube",
+      "instruction": "把红色方块放到桌子上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1002,
+      "benchmark_basis": ["ALFRED", "LIBERO"],
+      "test_dimensions": ["single_object_grounding", "minimal_closed_loop"]
+    },
+    {
+      "id": "gnd-003",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "standalone_grasp",
+      "instruction": "抓起绿色方块",
+      "expected_status": "SUCCEEDED",
+      "seed": 1003,
+      "benchmark_basis": ["LIBERO/CALVIN"],
+      "test_dimensions": ["subtask_boundary", "partial_plan", "grasp_only"]
+    },
+    {
+      "id": "gnd-004",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "transfer_green",
+      "instruction": "把绿色方块搬运到桌子上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1004,
+      "benchmark_basis": ["ALFRED", "CALVIN"],
+      "test_dimensions": ["verb_generalization", "transfer", "destination_binding"]
+    },
+    {
+      "id": "gnd-005",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "fetch_to_table",
+      "instruction": "把红色方块拿过来放到桌子上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1005,
+      "benchmark_basis": ["TEACh", "ALFRED"],
+      "test_dimensions": ["composite_intent", "delivery_constraint", "longer_language"]
+    },
+    {
+      "id": "gnd-006",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "stack_green_on_red",
+      "instruction": "把绿色方块叠到红色方块上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1006,
+      "benchmark_basis": ["LIBERO", "CALVIN"],
+      "test_dimensions": ["spatial_relation", "stack_on", "geometric_final_state"]
+    },
+    {
+      "id": "gnd-007",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "sorting_workcell",
+      "instruction": "把红色方块放到红色托盘里",
+      "expected_status": "SUCCEEDED",
+      "seed": 1007,
+      "benchmark_basis": ["BEHAVIOR-1K", "RoboCasa365"],
+      "test_dimensions": ["multi_object_scene", "attribute_matching", "sorting"]
+    },
+    {
+      "id": "gnd-008",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "sorting_workcell",
+      "instruction": "把绿色方块放到绿色托盘里",
+      "expected_status": "SUCCEEDED",
+      "seed": 1008,
+      "benchmark_basis": ["BEHAVIOR-1K", "RoboCasa365"],
+      "test_dimensions": ["multi_object_scene", "color_grounding", "destination_binding"]
+    },
+    {
+      "id": "gnd-009",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "sorting_workcell",
+      "instruction": "把蓝色方块放到蓝色托盘里",
+      "expected_status": "SUCCEEDED",
+      "seed": 1009,
+      "benchmark_basis": ["BEHAVIOR-1K", "RoboCasa365"],
+      "test_dimensions": ["multi_object_scene", "color_grounding", "repeatable_task_family"]
+    },
+    {
+      "id": "gnd-010",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "single_red_cube",
+      "instruction": "请把红色方块放到桌子上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1010,
+      "benchmark_basis": ["ALFRED", "TEACh"],
+      "test_dimensions": ["politeness_paraphrase", "grounded_goal"]
+    },
+    {
+      "id": "gnd-011",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "single_red_cube",
+      "instruction": "帮我把红色方块放到桌子上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1011,
+      "benchmark_basis": ["ALFRED", "TEACh"],
+      "test_dimensions": ["politeness_paraphrase", "instruction_following"]
+    },
+    {
+      "id": "gnd-012",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "stacking_cubes",
+      "instruction": "先抓起绿色方块再放到桌子上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1012,
+      "benchmark_basis": ["ALFRED", "CALVIN"],
+      "test_dimensions": ["step_hint_in_language", "compositional_instruction"]
+    },
+    {
+      "id": "gnd-013",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "ambiguous_red_cubes",
+      "instruction": "把左边红色方块放到桌子上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1013,
+      "benchmark_basis": ["ALFRED", "TEACh"],
+      "test_dimensions": ["referring_expression", "spatial_disambiguation", "object_id_binding"]
+    },
+    {
+      "id": "gnd-014",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "ambiguous_red_cubes",
+      "instruction": "把右边红色方块放到桌子上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1014,
+      "benchmark_basis": ["ALFRED", "TEACh"],
+      "test_dimensions": ["referring_expression", "spatial_disambiguation", "alternative_target"]
+    },
+    {
+      "id": "gnd-015",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "single_red_cube",
+      "instruction": "把红色方块移到桌子上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1015,
+      "benchmark_basis": ["ALFRED", "CALVIN"],
+      "test_dimensions": ["verb_variation", "transfer", "destination_binding"]
+    },
+    {
+      "id": "gnd-016",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "stacking_cubes",
+      "instruction": "把绿色方块放在桌面上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1016,
+      "benchmark_basis": ["ALFRED", "TEACh"],
+      "test_dimensions": ["destination_paraphrase", "grounded_goal"]
+    },
+    {
+      "id": "gnd-017",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "sorting_workcell",
+      "instruction": "请把红色方块放到红色托盘里",
+      "expected_status": "SUCCEEDED",
+      "seed": 1017,
+      "benchmark_basis": ["RoboCasa365", "TEACh"],
+      "test_dimensions": ["instruction_paraphrase", "sorting", "multi_object_scene"]
+    },
+    {
+      "id": "gnd-018",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "sorting_workcell",
+      "instruction": "帮我把绿色方块放到绿色托盘里",
+      "expected_status": "SUCCEEDED",
+      "seed": 1018,
+      "benchmark_basis": ["RoboCasa365", "TEACh"],
+      "test_dimensions": ["instruction_paraphrase", "sorting", "attribute_matching"]
+    },
+    {
+      "id": "gnd-019",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "sorting_workcell",
+      "instruction": "请把蓝色方块放到蓝色托盘里",
+      "expected_status": "SUCCEEDED",
+      "seed": 1019,
+      "benchmark_basis": ["RoboCasa365", "BEHAVIOR-1K"],
+      "test_dimensions": ["instruction_paraphrase", "sorting", "repeatable_task_family"]
+    },
+    {
+      "id": "gnd-020",
+      "category": "happy_path",
+      "source": "demo",
+      "scene_id": "stack_green_on_red",
+      "instruction": "请把绿色方块叠到红色方块上",
+      "expected_status": "SUCCEEDED",
+      "seed": 1020,
+      "benchmark_basis": ["LIBERO", "CALVIN"],
+      "test_dimensions": ["instruction_paraphrase", "stack_on", "final_pose_verification"]
+    },
+
+    {
+      "id": "safe-intent-001",
+      "category": "intent_safety",
+      "source": "demo",
+      "scene_id": "ambiguous_red_cubes",
+      "instruction": "把红色方块放到桌子上",
+      "expected_status": "BLOCKED",
+      "seed": 2001,
+      "benchmark_basis": ["ALFRED", "TEACh"],
+      "test_dimensions": ["ambiguity_detection", "no_guessing", "no_execution"]
+    },
+    {
+      "id": "safe-intent-002",
+      "category": "intent_safety",
+      "source": "demo",
+      "scene_id": "no_destination",
+      "instruction": "把红色方块放到安全区",
+      "expected_status": "BLOCKED",
+      "seed": 2002,
+      "benchmark_basis": ["TEACh", "BEHAVIOR-1K"],
+      "test_dimensions": ["missing_destination", "clarification", "no_execution"]
+    },
+    {
+      "id": "safe-intent-003",
+      "category": "intent_safety",
+      "source": "demo",
+      "scene_id": "target_not_found",
+      "instruction": "把蓝色方块放到桌子上",
+      "expected_status": "BLOCKED",
+      "seed": 2003,
+      "benchmark_basis": ["ALFRED", "TEACh"],
+      "test_dimensions": ["target_not_found", "clarification", "no_substitution"]
+    },
+    {
+      "id": "safe-intent-004",
+      "category": "intent_safety",
+      "source": "demo",
+      "scene_id": "invalid_destination",
+      "instruction": "把红色方块放到桌子上",
+      "expected_status": "BLOCKED",
+      "seed": 2004,
+      "benchmark_basis": ["BEHAVIOR-1K", "RoboCasa365"],
+      "test_dimensions": ["affordance_check", "invalid_destination", "no_execution"]
+    },
+    {
+      "id": "safe-intent-005",
+      "category": "intent_safety",
+      "source": "demo",
+      "scene_id": "sorting_workcell",
+      "instruction": "把方块放到红色托盘里",
+      "expected_status": "BLOCKED",
+      "seed": 2005,
+      "benchmark_basis": ["ALFRED", "TEACh"],
+      "test_dimensions": ["underspecified_object", "clarification", "no_execution"]
+    },
+    {
+      "id": "safe-intent-006",
+      "category": "intent_safety",
+      "source": "demo",
+      "scene_id": "sorting_workcell",
+      "instruction": "把黄色方块放到红色托盘里",
+      "expected_status": "BLOCKED",
+      "seed": 2006,
+      "benchmark_basis": ["BEHAVIOR-1K", "RoboCasa365"],
+      "test_dimensions": ["target_not_found", "attribute_mismatch", "no_substitution"]
+    },
+    {
+      "id": "safe-intent-007",
+      "category": "intent_safety",
+      "source": "demo",
+      "scene_id": "unsupported_push",
+      "instruction": "把红色方块推到桌子上",
+      "expected_status": "BLOCKED",
+      "seed": 2007,
+      "benchmark_basis": ["BEHAVIOR-1K", "RoboCasa365"],
+      "test_dimensions": ["unsupported_action", "capability_gate", "no_execution"]
+    },
+    {
+      "id": "safe-intent-008",
+      "category": "intent_safety",
+      "source": "acceptance",
+      "path": "cases/016_action_fetch_needs_clarification.json",
+      "expected_status": "BLOCKED",
+      "seed": 2008,
+      "benchmark_basis": ["TEACh"],
+      "test_dimensions": ["missing_delivery_location", "clarification", "no_execution"]
+    },
+    {
+      "id": "safe-intent-009",
+      "category": "intent_safety",
+      "source": "acceptance",
+      "path": "cases/017_action_handover_needs_clarification.json",
+      "expected_status": "BLOCKED",
+      "seed": 2009,
+      "benchmark_basis": ["TEACh"],
+      "test_dimensions": ["missing_receiver_pose", "clarification", "no_execution"]
+    },
+    {
+      "id": "safe-intent-010",
+      "category": "intent_safety",
+      "source": "acceptance",
+      "path": "cases/018_action_custom_needs_clarification.json",
+      "expected_status": "BLOCKED",
+      "seed": 2010,
+      "benchmark_basis": ["TEACh"],
+      "test_dimensions": ["open_ended_instruction", "clarification", "no_execution"]
+    },
+    {
+      "id": "safe-intent-011",
+      "category": "intent_safety",
+      "source": "demo",
+      "scene_id": "no_destination",
+      "instruction": "请把红色方块拿过来",
+      "expected_status": "BLOCKED",
+      "seed": 2011,
+      "benchmark_basis": ["TEACh"],
+      "test_dimensions": ["incomplete_composite_intent", "clarification", "no_execution"]
+    },
+    {
+      "id": "safe-intent-012",
+      "category": "intent_safety",
+      "source": "acceptance",
+      "path": "cases/005_missing_destination.json",
+      "expected_status": "BLOCKED",
+      "seed": 2012,
+      "benchmark_basis": ["TEACh", "BEHAVIOR-1K"],
+      "test_dimensions": ["missing_destination", "blocking_reason", "no_execution"]
+    },
+
+    {
+      "id": "boundary-001",
+      "category": "capability_boundary",
+      "source": "acceptance",
+      "path": "cases/006_unsupported_action.json",
+      "expected_status": "BLOCKED",
+      "seed": 3001,
+      "benchmark_basis": ["RoboCasa365"],
+      "test_dimensions": ["unsupported_action", "strategy_gate", "no_execution"]
+    },
+    {
+      "id": "boundary-002",
+      "category": "capability_boundary",
+      "source": "acceptance",
+      "path": "cases/012_action_dynamic_grasp_blocked_by_strategy.json",
+      "expected_status": "BLOCKED",
+      "seed": 3002,
+      "benchmark_basis": ["LIBERO/CALVIN"],
+      "test_dimensions": ["unsupported_action", "strategy_gate", "no_execution"]
+    },
+    {
+      "id": "boundary-003",
+      "category": "capability_boundary",
+      "source": "acceptance",
+      "path": "cases/014_action_pour_blocked_by_strategy.json",
+      "expected_status": "BLOCKED",
+      "seed": 3003,
+      "benchmark_basis": ["BEHAVIOR-1K", "RoboCasa365"],
+      "test_dimensions": ["unsupported_action", "strategy_gate", "no_execution"]
+    },
+    {
+      "id": "boundary-004",
+      "category": "capability_boundary",
+      "source": "acceptance",
+      "path": "cases/015_action_wait_blocked_by_strategy.json",
+      "expected_status": "BLOCKED",
+      "seed": 3004,
+      "benchmark_basis": ["BEHAVIOR-1K"],
+      "test_dimensions": ["unsupported_action", "strategy_gate", "no_execution"]
+    },
+    {
+      "id": "boundary-005",
+      "category": "capability_boundary",
+      "source": "acceptance",
+      "path": "cases/010_action_pick_blocked_by_strategy.json",
+      "expected_status": "SUCCEEDED",
+      "seed": 3005,
+      "benchmark_basis": ["LIBERO", "CALVIN"],
+      "test_dimensions": ["supported_subtask", "partial_plan", "execution_allowed"]
+    },
+    {
+      "id": "boundary-006",
+      "category": "capability_boundary",
+      "source": "acceptance",
+      "path": "cases/011_action_transfer_blocked_by_strategy.json",
+      "expected_status": "SUCCEEDED",
+      "seed": 3006,
+      "benchmark_basis": ["LIBERO", "CALVIN"],
+      "test_dimensions": ["supported_composite_action", "five_step_plan", "execution_allowed"]
+    },
+    {
+      "id": "boundary-007",
+      "category": "capability_boundary",
+      "source": "acceptance",
+      "path": "cases/013_action_stack_blocked_by_strategy.json",
+      "expected_status": "SUCCEEDED",
+      "seed": 3007,
+      "benchmark_basis": ["LIBERO", "CALVIN"],
+      "test_dimensions": ["supported_spatial_relation", "stack_on", "execution_allowed"]
+    },
+    {
+      "id": "boundary-008",
+      "category": "capability_boundary",
+      "source": "acceptance",
+      "path": "cases/016_action_fetch_needs_clarification.json",
+      "expected_status": "BLOCKED",
+      "seed": 3008,
+      "benchmark_basis": ["TEACh"],
+      "test_dimensions": ["composite_action_boundary", "missing_constraint", "no_execution"]
+    },
+    {
+      "id": "boundary-009",
+      "category": "capability_boundary",
+      "source": "acceptance",
+      "path": "cases/017_action_handover_needs_clarification.json",
+      "expected_status": "BLOCKED",
+      "seed": 3009,
+      "benchmark_basis": ["TEACh"],
+      "test_dimensions": ["composite_action_boundary", "missing_constraint", "no_execution"]
+    },
+    {
+      "id": "boundary-010",
+      "category": "capability_boundary",
+      "source": "acceptance",
+      "path": "cases/018_action_custom_needs_clarification.json",
+      "expected_status": "BLOCKED",
+      "seed": 3010,
+      "benchmark_basis": ["TEACh"],
+      "test_dimensions": ["open_ended_action", "safe_clarification", "no_execution"]
+    },
+
+    {
+      "id": "repair-001",
+      "category": "recoverable_failure",
+      "source": "demo",
+      "scene_id": "tracecoder_repair",
+      "instruction": "把绿色方块放到桌子上",
+      "failures": {"grasp": 1},
+      "expected_status": "SUCCEEDED",
+      "expected_retry_count": 1,
+      "requires_d_repair": true,
+      "seed": 4001,
+      "benchmark_basis": ["REBOOT/failure-aware recovery"],
+      "test_dimensions": ["grasp_failure", "d_patch", "policy_revalidation", "closed_loop_recovery"]
+    },
+    {
+      "id": "repair-002",
+      "category": "recoverable_failure",
+      "source": "demo",
+      "scene_id": "grasp_retry_success",
+      "instruction": "把绿色方块放到桌子上",
+      "failures": {"grasp": 1},
+      "expected_status": "SUCCEEDED",
+      "expected_retry_count": 0,
+      "requires_d_repair": false,
+      "seed": 4002,
+      "benchmark_basis": ["REBOOT/failure-aware recovery", "CALVIN"],
+      "test_dimensions": ["grasp_failure", "action_level_recovery", "same_attempt_success"]
+    },
+    {
+      "id": "repair-003",
+      "category": "recoverable_failure",
+      "source": "acceptance",
+      "path": "cases/009_tracecoder_repair_retry.json",
+      "expected_status": "SUCCEEDED",
+      "expected_retry_count": 1,
+      "requires_d_repair": true,
+      "seed": 4003,
+      "benchmark_basis": ["REBOOT/failure-aware recovery"],
+      "test_dimensions": ["fixture_recovery", "d_patch", "feedback_contract"]
+    },
+    {
+      "id": "repair-004",
+      "category": "recoverable_failure",
+      "source": "demo",
+      "scene_id": "tracecoder_repair",
+      "instruction": "请把绿色方块放到桌子上",
+      "failures": {"grasp": 1},
+      "expected_status": "SUCCEEDED",
+      "expected_retry_count": 1,
+      "requires_d_repair": true,
+      "seed": 4004,
+      "benchmark_basis": ["TEACh", "REBOOT/failure-aware recovery"],
+      "test_dimensions": ["language_variation", "d_patch", "closed_loop_recovery"]
+    },
+    {
+      "id": "repair-005",
+      "category": "recoverable_failure",
+      "source": "demo",
+      "scene_id": "tracecoder_repair",
+      "instruction": "先抓起绿色方块再放到桌子上",
+      "failures": {"grasp": 1},
+      "expected_status": "SUCCEEDED",
+      "expected_retry_count": 1,
+      "requires_d_repair": true,
+      "seed": 4005,
+      "benchmark_basis": ["ALFRED", "REBOOT/failure-aware recovery"],
+      "test_dimensions": ["compositional_language", "d_patch", "policy_revalidation"]
+    },
+    {
+      "id": "repair-006",
+      "category": "recoverable_failure",
+      "source": "demo",
+      "scene_id": "grasp_retry_success",
+      "instruction": "把绿色方块放在桌面上",
+      "failures": {"grasp": 1},
+      "expected_status": "SUCCEEDED",
+      "expected_retry_count": 0,
+      "requires_d_repair": false,
+      "seed": 4006,
+      "benchmark_basis": ["ALFRED", "REBOOT/failure-aware recovery"],
+      "test_dimensions": ["language_variation", "action_level_recovery", "final_state"]
+    },
+    {
+      "id": "repair-007",
+      "category": "recoverable_failure",
+      "source": "demo_override",
+      "scene_id": "tracecoder_repair",
+      "instruction": "帮我把绿色方块放到桌子上",
+      "failures": {"grasp": 1},
+      "expected_status": "SUCCEEDED",
+      "expected_retry_count": 1,
+      "requires_d_repair": true,
+      "seed": 4007,
+      "benchmark_basis": ["TEACh", "REBOOT/failure-aware recovery"],
+      "test_dimensions": ["language_variation", "d_patch", "repeatable_failure"]
+    },
+    {
+      "id": "repair-008",
+      "category": "recoverable_failure",
+      "source": "demo_override",
+      "scene_id": "grasp_retry_success",
+      "instruction": "请把绿色方块放到桌子上",
+      "failures": {"grasp": 1},
+      "expected_status": "SUCCEEDED",
+      "expected_retry_count": 0,
+      "requires_d_repair": false,
+      "seed": 4008,
+      "benchmark_basis": ["TEACh", "REBOOT/failure-aware recovery"],
+      "test_dimensions": ["language_variation", "action_level_recovery", "repeatable_failure"]
+    },
+
+    {
+      "id": "stop-001",
+      "category": "safe_stop",
+      "source": "demo",
+      "scene_id": "grasp_safe_stop",
+      "instruction": "把绿色方块放到桌子上",
+      "failures": {"grasp": 2},
+      "expected_status": "SAFE_STOP",
+      "seed": 5001,
+      "benchmark_basis": ["REBOOT/failure-aware recovery"],
+      "test_dimensions": ["recovery_exhaustion", "safe_stop", "no_unsafe_retry"]
+    },
+    {
+      "id": "stop-002",
+      "category": "safe_stop",
+      "source": "acceptance",
+      "path": "cases/008_grasp_safe_stop.json",
+      "expected_status": "SAFE_STOP",
+      "seed": 5002,
+      "benchmark_basis": ["REBOOT/failure-aware recovery"],
+      "test_dimensions": ["recovery_exhaustion", "safe_stop", "feedback_contract"]
+    },
+    {
+      "id": "stop-003",
+      "category": "safe_stop",
+      "source": "demo",
+      "scene_id": "grasp_safe_stop",
+      "instruction": "请把绿色方块放到桌子上",
+      "failures": {"grasp": 2},
+      "expected_status": "SAFE_STOP",
+      "seed": 5003,
+      "benchmark_basis": ["TEACh", "REBOOT/failure-aware recovery"],
+      "test_dimensions": ["language_variation", "recovery_exhaustion", "safe_stop"]
+    },
+    {
+      "id": "stop-004",
+      "category": "safe_stop",
+      "source": "demo_override",
+      "scene_id": "grasp_safe_stop",
+      "instruction": "帮我把绿色方块放到桌子上",
+      "failures": {"grasp": 2},
+      "expected_status": "SAFE_STOP",
+      "seed": 5004,
+      "benchmark_basis": ["TEACh", "REBOOT/failure-aware recovery"],
+      "test_dimensions": ["language_variation", "recovery_exhaustion", "safe_stop"]
+    },
+    {
+      "id": "stop-005",
+      "category": "safe_stop",
+      "source": "demo_override",
+      "scene_id": "stacking_cubes",
+      "instruction": "把绿色方块放到桌子上",
+      "failures": {"grasp": 2},
+      "expected_status": "SAFE_STOP",
+      "seed": 5005,
+      "benchmark_basis": ["REBOOT/failure-aware recovery", "CALVIN"],
+      "test_dimensions": ["recovery_exhaustion", "safe_stop", "same_scene_control"]
+    },
+    {
+      "id": "stop-006",
+      "category": "safe_stop",
+      "source": "demo_override",
+      "scene_id": "single_red_cube",
+      "instruction": "把红色方块放到桌子上",
+      "failures": {"grasp": 2},
+      "expected_status": "SAFE_STOP",
+      "seed": 5006,
+      "benchmark_basis": ["REBOOT/failure-aware recovery", "LIBERO"],
+      "test_dimensions": ["recovery_exhaustion", "safe_stop", "minimal_scene_control"]
+    },
+
+    {
+      "id": "failure-001",
+      "category": "execution_failure",
+      "source": "demo_override",
+      "scene_id": "single_red_cube",
+      "instruction": "把红色方块放到桌子上",
+      "failures": {"release": 1},
+      "expected_status": "FAILED",
+      "seed": 6001,
+      "benchmark_basis": ["REBOOT/failure-aware recovery", "RoboCasa365"],
+      "test_dimensions": ["release_failure", "failure_diagnosis", "final_state_not_claimed"]
+    },
+    {
+      "id": "failure-002",
+      "category": "execution_failure",
+      "source": "demo_override",
+      "scene_id": "single_red_cube",
+      "instruction": "把红色方块放到桌子上",
+      "failures": {"move_to_target": 1},
+      "expected_status": "FAILED",
+      "seed": 6002,
+      "benchmark_basis": ["REBOOT/failure-aware recovery", "CALVIN"],
+      "test_dimensions": ["motion_failure", "failure_diagnosis", "final_state_not_claimed"]
+    },
+    {
+      "id": "failure-003",
+      "category": "execution_failure",
+      "source": "demo_override",
+      "scene_id": "stacking_cubes",
+      "instruction": "把绿色方块放到桌子上",
+      "failures": {"release": 1},
+      "expected_status": "FAILED",
+      "seed": 6003,
+      "benchmark_basis": ["REBOOT/failure-aware recovery", "LIBERO"],
+      "test_dimensions": ["release_failure", "stack_scene", "final_state_not_claimed"]
+    },
+    {
+      "id": "failure-004",
+      "category": "execution_failure",
+      "source": "demo_override",
+      "scene_id": "transfer_green",
+      "instruction": "把绿色方块搬运到桌子上",
+      "failures": {"move_to_target": 1},
+      "expected_status": "FAILED",
+      "seed": 6004,
+      "benchmark_basis": ["CALVIN", "REBOOT/failure-aware recovery"],
+      "test_dimensions": ["transfer_failure", "failure_diagnosis", "no_false_success"]
+    },
+    {
+      "id": "failure-005",
+      "category": "execution_failure",
+      "source": "demo_override",
+      "scene_id": "fetch_to_table",
+      "instruction": "把红色方块拿过来放到桌子上",
+      "failures": {"release": 1},
+      "expected_status": "FAILED",
+      "seed": 6005,
+      "benchmark_basis": ["TEACh", "REBOOT/failure-aware recovery"],
+      "test_dimensions": ["composite_task_failure", "release_failure", "no_false_success"]
+    },
+    {
+      "id": "failure-006",
+      "category": "execution_failure",
+      "source": "demo_override",
+      "scene_id": "sorting_workcell",
+      "instruction": "把红色方块放到红色托盘里",
+      "failures": {"release": 1},
+      "expected_status": "FAILED",
+      "seed": 6006,
+      "benchmark_basis": ["RoboCasa365", "BEHAVIOR-1K"],
+      "test_dimensions": ["multi_object_scene", "release_failure", "final_state_not_claimed"]
+    },
+    {
+      "id": "failure-007",
+      "category": "execution_failure",
+      "source": "demo_override",
+      "scene_id": "sorting_workcell",
+      "instruction": "把蓝色方块放到蓝色托盘里",
+      "failures": {"move_to_target": 1},
+      "expected_status": "FAILED",
+      "seed": 6007,
+      "benchmark_basis": ["RoboCasa365", "BEHAVIOR-1K"],
+      "test_dimensions": ["multi_object_scene", "motion_failure", "no_false_success"]
+    },
+    {
+      "id": "failure-008",
+      "category": "execution_failure",
+      "source": "demo_override",
+      "scene_id": "standalone_grasp",
+      "instruction": "抓起绿色方块",
+      "failures": {"move_to_object": 1},
+      "expected_status": "FAILED",
+      "seed": 6008,
+      "benchmark_basis": ["LIBERO", "REBOOT/failure-aware recovery"],
+      "test_dimensions": ["partial_plan_failure", "grasp_failure", "failure_diagnosis"]
+    }
+  ]
+}

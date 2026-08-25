@@ -69,8 +69,8 @@ def temporary_environment(values: dict[str, str]) -> Iterator[None]:
                 os.environ[key] = value
 
 
-def load_manifest() -> dict[str, Any]:
-    document = json.loads(BENCHMARK_PATH.read_text(encoding="utf-8"))
+def load_manifest(path: Path = BENCHMARK_PATH) -> dict[str, Any]:
+    document = json.loads(path.read_text(encoding="utf-8"))
     if document.get("schema_version") != "closed-loop-benchmark.v1":
         raise ValueError("benchmark manifest schema_version 错误")
     cases = document.get("cases")
@@ -250,12 +250,21 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
         feedback_provenance = {}
     tracecoder_stats = feedback_provenance.get("llm_stats") or {}
     tracecoder_invoked = feedback_provenance.get("source") != "tracecoder_skipped"
+    strategy_steps = (result.get("strategy") or {}).get("steps") or []
+    c_internal_recovery = any(
+        isinstance(step.get("on_failure"), dict) for step in strategy_steps
+    )
+    d_repair_attempted = bool(result.get("retry_count", 0) > 0)
+    d_repair_succeeded = (
+        d_repair_attempted and result.get("status") == "SUCCEEDED"
+    )
     return {
         "case_id": case["id"],
         "category": case["category"],
         "source": case["source"],
         "repeat": repeat,
         "request_id": request_id,
+        "run_id": request_id,
         "expected_status": expected_status,
         "actual_status": result.get("status"),
         "passed": passed,
@@ -263,6 +272,12 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
         "retry_passed": retry_passed,
         "elapsed_ms": elapsed_ms,
         "backend": "mock",
+        "failure_class": None,
+        "original_error": None,
+        "evidence_path": None,
+        "c_internal_recovery": c_internal_recovery,
+        "d_repair_attempted": d_repair_attempted,
+        "d_repair_succeeded": d_repair_succeeded,
         "task": result.get("task"),
         "strategy": strategy_info,
         "intent": {
@@ -359,6 +374,20 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
         and case.get("requires_d_repair", False)
     }
     repair_records = [item for item in records if item["case_id"] in d_repair_case_ids]
+    transport_records = [
+        item for item in records if item.get("failure_class") == "transport_auth"
+    ]
+    business_records = [
+        item for item in records if item.get("failure_class") != "transport_auth"
+    ]
+    contract_failure_records = [
+        item for item in business_records if item["strategy"]["contract_valid"] is False
+    ]
+    safe_stop_records_all = [
+        item for item in business_records if item["actual_status"] == "SAFE_STOP"
+    ]
+    c_internal_records = [item for item in records if item.get("c_internal_recovery")]
+    d_repair_attempt_records = [item for item in records if item.get("d_repair_attempted")]
     provider_calls = sum(
         1 for item in records if item["strategy"]["provider"] == "huaweicloud-codearts-agent"
     )
@@ -374,6 +403,7 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
         if item["strategy"].get("provider") == "huaweicloud-codearts-agent"
     ]
     end_to_end_latencies = [item.get("elapsed_ms") for item in records]
+    end_to_end_latency_stats = latency_stats(end_to_end_latencies)
     tracecoder_stats = [item["feedback_provenance"]["llm_stats"] for item in records]
     tracecoder_latency = [stats.get("total_latency_ms") for stats in tracecoder_stats]
     tracecoder_invocations = sum(1 for item in records if item["tracecoder_invoked"])
@@ -399,7 +429,11 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
         "tracecoder_fallback_count": sum(1 for item in records if item["feedback_provenance"]["fallback"]),
         "runs": len(records),
         "passed_runs": sum(1 for item in records if item["passed"]),
-        "pass_rate": rate(sum(1 for item in records if item["passed"]), len(records)),
+        "pass_rate": rate(sum(1 for item in business_records if item["passed"]), len(business_records)),
+        "transport_failures": len(transport_records),
+        "business_failures": sum(1 for item in business_records if not item["passed"]),
+        "contract_failures": len(contract_failure_records),
+        "safety_failures": len(safe_stop_records_all),
         "passed_cases": sum(1 for item in case_results.values() if item["passed"]),
         "stable_cases": sum(1 for item in case_results.values() if item["stable"]),
         "case_pass_rate": rate(sum(1 for item in case_results.values() if item["passed"]), len(case_results)),
@@ -410,15 +444,25 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
         "provider_calls": provider_calls,
         "provider_attempts": provider_attempts,
         "provider_latency_ms": latency_stats(provider_latencies),
-        "end_to_end_latency_ms": latency_stats(end_to_end_latencies),
+        "end_to_end_latency_ms": end_to_end_latency_stats,
         "fallback_count": sum(1 for item in records if item["strategy"]["fallback"]),
         "execution_attempts": len(execution_records),
         "execution_success_rate": rate(sum(1 for item in execution_records if item["execution"]["status"] == "SUCCEEDED"), len(execution_records)),
         "repair_cases": len(repair_records),
         "repair_success_rate": rate(sum(1 for item in repair_records if item["actual_status"] == "SUCCEEDED" and item["retry_count"] > 0), len(repair_records)),
+        "c_internal_recovery_rate": rate(
+            sum(1 for item in c_internal_records if item["actual_status"] == "SUCCEEDED"),
+            len(c_internal_records),
+        ),
+        "d_repair_success_rate": rate(
+            sum(1 for item in d_repair_attempt_records if item["actual_status"] == "SUCCEEDED"),
+            len(d_repair_attempt_records),
+        ),
         "safe_stop_cases": len(safe_stop_records),
         "safe_stop_correct_rate": rate(sum(1 for item in safe_stop_records if item["actual_status"] == "SAFE_STOP"), len(safe_stop_records)),
         "safety_event_runs": sum(1 for item in records if item["execution"]["safety_events"]),
+        "p50_latency_ms": end_to_end_latency_stats.get("p50_ms"),
+        "p95_latency_ms": end_to_end_latency_stats.get("p95_ms"),
         "by_category": {},
         "case_results": case_results,
     }
@@ -435,6 +479,123 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
     return summary
 
 
+def _partial_path(output: Path | None) -> Path | None:
+    if output is None:
+        return None
+    return Path(str(output) + ".partial.jsonl")
+
+
+def _load_partial(path: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        records.append(json.loads(line))
+    return records
+
+
+def _append_partial(path: Path, record: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _run_one_remote(
+    case: dict[str, Any],
+    repeat: int,
+    remote: dict[str, Any] | None,
+    transport_retries: int,
+) -> dict[str, Any]:
+    """远程 Isaac 批量后端：复用编排器远程通道逐样本闭环执行。"""
+    from tools.orchestrate.orchestrator import orchestrate
+    from tools.orchestrate.types import OrchestrationConfig
+
+    remote = remote or {}
+    config = OrchestrationConfig(
+        instruction=case["instruction"],
+        scene_id=case["scene_id"],
+        server=str(remote.get("server", "")),
+        port=int(remote.get("port", 5122)),
+        user=str(remote.get("user", "")),
+        remote_base=str(remote.get("remote_base", "")),
+        auth_mode="batch",
+        key_path=None,
+        transport_retries=transport_retries,
+        backend="remote_isaac",
+        out_dir=None,
+    )
+    started = time.perf_counter()
+    result = orchestrate(
+        config,
+        command_runner=remote.get("command_runner"),
+    )
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+    request_id = f"benchmark-{case['id']}-r{repeat}"
+    actual_status = "SUCCEEDED" if result.status == "SUCCEEDED" else "FAILED"
+    expected_status = case["expected_status"]
+    passed = result.status == "SUCCEEDED" and actual_status == expected_status
+    return {
+        "case_id": case["id"],
+        "category": case.get("category", ""),
+        "source": case.get("source", "remote_isaac"),
+        "repeat": repeat,
+        "request_id": request_id,
+        "run_id": request_id,
+        "expected_status": expected_status,
+        "actual_status": actual_status,
+        "passed": passed,
+        "status_passed": actual_status == expected_status,
+        "retry_passed": True,
+        "elapsed_ms": elapsed_ms,
+        "backend": "remote_isaac",
+        "failure_class": result.failure_class,
+        "original_error": None,
+        "evidence_path": str(result.artifact_paths.get("execution") or ""),
+        "c_internal_recovery": False,
+        "d_repair_attempted": False,
+        "d_repair_succeeded": None,
+        "task": {"status": "READY" if passed else "FAILED"},
+        "strategy": {
+            "mode": "remote_isaac",
+            "provider": None,
+            "contract_valid": passed,
+            "code_null": True,
+            "actions": [],
+            "fallback": False,
+            "latency_ms": None,
+        },
+        "intent": {
+            "requested_engine": None,
+            "actual_engine": None,
+            "llm_call_attempted": False,
+            "llm_call_succeeded": False,
+            "fallback_used": False,
+            "model": None,
+        },
+        "feedback_provenance": {
+            "source": None,
+            "mode": None,
+            "fallback": False,
+            "tracecoder_invoked": False,
+            "llm_stats": {},
+        },
+        "execution": {
+            "status": "SUCCEEDED" if passed else "FAILED",
+            "safety_events": [],
+        },
+        "feedback": {"status": "D_ACCEPTED" if passed else "D_REJECTED"},
+        "tracecoder_invoked": False,
+        "tracecoder_requests": 0,
+        "retry_count": 0,
+        "d_repair_required": bool(case.get("requires_d_repair", False)),
+        "attempt_count": 1,
+        "stop_reason": "EXECUTION_SUCCEEDED" if passed else result.failure_class,
+        "signature": [actual_status],
+        "replay": {"strategy": None, "execution": None},
+    }
+
+
 def run_benchmark(
     *,
     mode: str,
@@ -445,8 +606,15 @@ def run_benchmark(
     pure: bool,
     limit: int | None = None,
     representative: bool = False,
+    manifest_path: Path = BENCHMARK_PATH,
+    transport_retries: int = 2,
+    backend: str = "mock",
+    interactive_remote: bool = False,
+    resume: bool = False,
+    output: Path | None = None,
+    remote: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    manifest = load_manifest()
+    manifest = load_manifest(manifest_path)
     all_cases = manifest["cases"]
     if representative:
         cases = []
@@ -481,7 +649,15 @@ def run_benchmark(
         env["CODEARTS_STRATEGY_MODEL"] = model
     if pure:
         env["CODEARTS_CLI_PURE"] = "1"
+    if backend == "remote_isaac":
+        env["CODEARTS_STRATEGY_MODE"] = "off"
     records: list[dict[str, Any]] = []
+    partial_path = _partial_path(output)
+    completed: set[tuple[str, str]] = set()
+    if resume and partial_path and partial_path.exists():
+        loaded = _load_partial(partial_path)
+        records.extend(loaded)
+        completed = {(item["case_id"], item["run_id"]) for item in loaded}
     with temporary_environment(env):
         if mode == 'intelligent':
             # Recreate D's provider after the benchmark environment is applied so
@@ -490,20 +666,46 @@ def run_benchmark(
             tracecoder.configure_llm(mode='required', provider=LLMProvider(LLMConfig.from_env()))
         for case in cases:
             for repeat in range(1, repeats + 1):
-                records.append(_run_one(case, repeat))
+                request_id = f"benchmark-{case['id']}-r{repeat}"
+                if (case["id"], request_id) in completed:
+                    continue
+                record = (
+                    _run_one_remote(case, repeat, remote, transport_retries)
+                    if backend == "remote_isaac"
+                    else _run_one(case, repeat)
+                )
+                records.append(record)
+                if partial_path is not None:
+                    _append_partial(partial_path, record)
+    from tools.reporting.report_models import collect_metadata
+
+    metadata = collect_metadata(
+        profile=mode,
+        manifest_path=str(manifest_path),
+        repeats=repeats,
+        argv=sys.argv,
+    )
     return {
         "schema_version": "closed-loop-benchmark-report.v1",
         "benchmark": manifest["name"],
         "mode": mode,
-        "backend": "mock",
+        "backend": backend,
         "policy": policy,
         "repeats": repeats,
+        "metadata": {
+            "git_sha": metadata.git_sha,
+            "profile": metadata.profile,
+            "manifest_path": metadata.manifest_path,
+            "repeats": metadata.repeats,
+            "timestamp": metadata.timestamp,
+            "command": list(metadata.command),
+        },
         "summary": _summarize(records, cases),
         "records": records,
     }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("baseline", "codearts", "intelligent"), default="baseline")
     parser.add_argument("--compare", action="store_true", help="依次运行baseline和codearts并输出对照报告")
@@ -513,15 +715,51 @@ def main() -> int:
     parser.add_argument("--timeout-s", type=int, default=180)
     parser.add_argument("--limit", type=int, default=None, help="run only first N cases")
     parser.add_argument("--representative", action="store_true", help="run first case from each category")
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=BENCHMARK_PATH,
+        help="benchmark manifest; defaults to testdata/benchmark/closed_loop_cases.json",
+    )
     parser.add_argument("--pure", action="store_true")
     parser.add_argument("--output", type=Path, default=ROOT / "reports" / "closed_loop_benchmark.json")
-    args = parser.parse_args()
+    parser.add_argument("--transport-retries", type=int, default=2)
+    parser.add_argument("--resume", action="store_true", help="读取 <output>.partial.jsonl 续跑")
+    parser.add_argument(
+        "--backend", choices=("mock", "remote_isaac"), default="mock"
+    )
+    parser.add_argument(
+        "--interactive-remote",
+        action="store_true",
+        help="仅单次人工冒烟允许交互认证；统计模式默认强制 BatchMode",
+    )
+    parser.add_argument("--server", default="")
+    parser.add_argument("--port", type=int, default=5122)
+    parser.add_argument("--user", default="")
+    parser.add_argument("--remote-base", default="")
+    args = parser.parse_args(argv)
     if args.repeats < 1:
         parser.error("repeats must be positive")
     if args.limit is not None and args.limit < 1:
         parser.error("limit must be positive")
     if args.limit is not None and args.representative:
         parser.error("limit and representative are mutually exclusive")
+    if args.backend == "remote_isaac":
+        if not args.interactive_remote:
+            parser.error(
+                "--backend remote_isaac 需要显式 --interactive-remote；"
+                "统计模式默认强制 BatchMode，隐式远程执行一律拒绝"
+            )
+        if not (args.server and args.user and args.remote_base):
+            parser.error(
+                "--interactive-remote 仍需 --server/--user/--remote-base 完整参数"
+            )
+    remote = {
+        "server": args.server,
+        "port": args.port,
+        "user": args.user,
+        "remote_base": args.remote_base,
+    }
     modes = ["baseline", "codearts"] if args.compare else [args.mode]
     if args.compare and os.environ.get("CODEARTS_BENCHMARK_ALLOW_LIVE") != "1":
         parser.error("--compare 会调用真实 CodeArts；请先设置 CODEARTS_BENCHMARK_ALLOW_LIVE=1")
@@ -535,6 +773,13 @@ def main() -> int:
             pure=args.pure,
             limit=args.limit,
             representative=args.representative,
+            manifest_path=args.manifest,
+            transport_retries=args.transport_retries,
+            backend=args.backend,
+            interactive_remote=args.interactive_remote,
+            resume=args.resume,
+            output=args.output,
+            remote=remote,
         )
         for mode in modes
     ]

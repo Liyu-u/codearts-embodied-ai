@@ -1,0 +1,38 @@
+{
+  "schema_version": "real-isaac-acceptance.v1",
+  "name": "real_isaac_closed_loop_acceptance",
+  "seed": 20260823,
+  "default_repeats": 1,
+  "perception_source": "reports/gt-20260822-004458/live_chain_ab_ground_truth.json",
+  "notes": "The current remote Ground Truth runner supports the stacking_cubes scene. Early-stop cases still exercise real online A/B and must not launch C.",
+  "cases": [
+    {
+      "id": "green_cube_place",
+      "category": "happy_path",
+      "instruction": "把绿色方块放到桌子上",
+      "expected_status": "SUCCEEDED",
+      "run_remote": true
+    },
+    {
+      "id": "unknown_blue_cube",
+      "category": "intent_safety",
+      "instruction": "把蓝色方块放到桌子上",
+      "expected_status": "BLOCKED",
+      "run_remote": false
+    },
+    {
+      "id": "grasp_support_surface",
+      "category": "capability_boundary",
+      "instruction": "抓取桌子",
+      "expected_status": "BLOCKED",
+      "run_remote": false
+    },
+    {
+      "id": "unknown_purple_cube",
+      "category": "perception_binding",
+      "instruction": "把看不见的紫色方块放到桌子上",
+      "expected_status": "BLOCKED",
+      "run_remote": false
+    }
+  ]
+}

@@ -59,3 +59,23 @@ reports/gt*/container.log
 reports/closed_loop_benchmark_*.json
 reports/gt-*/
 reports/gtv2-*/progress.jsonl
+
+.model_config.local.json
+
+# Generated local acceptance evidence and orchestration scratch files
+.codegraph/
+tmp_orchestrate_smoke/
+reports/*
+reports/final-acceptance-*/
+reports/final-acceptance-*.json
+reports/real-acceptance-*/
+reports/real-acceptance-*.json
+reports/camera-*/
+reports/camera-*.tar.gz
+reports/current-real-camera-*/
+reports/orchestrate-*/
+reports/isaac-*/
+reports/*-summary-r*.json
+reports/*-baseline*.json
+reports/*partial.jsonl
+tools/.run_remote_camera_acceptance_*.ps1

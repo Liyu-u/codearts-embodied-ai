@@ -247,6 +247,11 @@ class SemanticCompiler:
             # scene exposes exactly one valid receive surface; the scene,
             # never the language model, owns the physical object id.
             self._complete_fetch_destination_from_scene(graph, scene, instruction)
+            # A nominal placement request such as “完成绿色方块的放置”
+            # omits the destination. Complete it only when perception exposes
+            # exactly one valid support surface; otherwise keep the request
+            # unresolved and do not choose an arbitrary table or tray.
+            self._complete_place_destination_from_scene(graph, scene)
             graph, decisions = self.grounder.ground_graph(graph, scene)
             # Rule-parser candidate keys are deterministic scene-selection
             # witnesses and are retained for compatibility with the existing
@@ -751,6 +756,68 @@ class SemanticCompiler:
                 event.destination_ref = local_ref
 
     @staticmethod
+    def _complete_place_destination_from_scene(graph: SemanticTaskGraph, scene: Any) -> None:
+        """Fill an omitted PLACE destination only when it is unique and safe."""
+
+        if not any(normalize_action(event.action) == "PLACE" for event in graph.events):
+            return
+        surfaces = []
+        for obj in getattr(scene, "objects", []) or []:
+            attrs = getattr(obj, "attributes", {}) or {}
+            upstream = attrs.get("_upstream_affordances", []) or []
+            if isinstance(upstream, str):
+                upstream = [upstream]
+            affordances = {
+                str(item.value if hasattr(item, "value") else item).lower()
+                for item in (getattr(obj, "affordances", []) or [])
+            }
+            affordances.update(str(item).lower() for item in upstream)
+            category = str(
+                getattr(obj, "specific_class", None)
+                or getattr(obj, "label", None)
+                or ""
+            ).lower()
+            execution = attrs.get("_integration_execution", {})
+            if not isinstance(execution, dict):
+                execution = {}
+            is_surface = bool({"support_surface", "fixed", "container"} & affordances) or category in {
+                "table", "tray", "container", "bin", "platform", "workbench",
+            }
+            if is_surface and execution.get("valid_destination") is not False:
+                surfaces.append(obj)
+        if len(surfaces) != 1:
+            return
+        surface = surfaces[0]
+        local_ref = "scene-place-destination"
+        if graph.entity(local_ref) is None:
+            name = getattr(surface, "name", "support surface")
+            graph.entities.append(SemanticEntity(
+                local_ref=local_ref,
+                mention=name,
+                category=getattr(surface, "specific_class", None) or getattr(surface, "label", None),
+                attributes={},
+                evidence_spans=[name],
+                evidence=[EvidenceSpan(
+                    value=name,
+                    source_text=graph.instruction,
+                    confidence=0.95,
+                    rule_id="scene.unique_place_surface",
+                )],
+            ))
+        for event in graph.events:
+            if normalize_action(event.action) != "PLACE":
+                continue
+            current = graph.entity(event.destination_ref) if event.destination_ref else None
+            # An explicit destination mention must remain explicit even before
+            # grounding assigns its scene ID.  Replacing every unresolved
+            # mention with the only visible table turns commands such as
+            # “put the red block on the green block” into a different, unsafe
+            # table-placement task.  Only an omitted destination may be
+            # completed from the unique scene surface.
+            if not event.destination_ref:
+                event.destination_ref = local_ref
+
+    @staticmethod
     def _uses_implicit_fetch_receive_zone(instruction: str,
                                           graph: SemanticTaskGraph) -> bool:
         """Recognize the generic FETCH family that implies a receive zone.
@@ -938,6 +1005,58 @@ class SemanticCompiler:
                     errors.append(
                         f"GROUNDED_RULE_ROLE_LOST:{index}:{'/'.join(group)}"
                     )
+            # An unresolved rule role is still a constraint witness.  The
+            # provider may help locate it, but it may not replace an explicit
+            # user attribute (for example purple -> visible red) merely
+            # because another object is available.  This check is deliberately
+            # independent of whether the rule candidate found a physical ID;
+            # otherwise an absent target could be converted into an executable
+            # target during LLM fusion.
+            for role, rule_ref in rule_refs.items():
+                rule_entity = rule_graph.entity(rule_ref) if rule_ref else None
+                fused_ref = fused_refs.get(role)
+                # Use the grounded copy here.  The original fused graph is
+                # intentionally still ID-free at this stage; checking it
+                # would miss exactly the provider-created red binding.
+                fused_entity = fused_grounded.entity(fused_ref) if fused_ref else None
+                if rule_entity is None or fused_entity is None or not fused_entity.entity_id:
+                    continue
+                # A known parser failure can copy the destination mention into
+                # the theme role (for example both roles become "table" in a
+                # composite fetch-and-place sentence).  That inferred
+                # category is not an explicit target constraint and must not
+                # block an evidenced provider correction.  Explicit
+                # attributes such as color remain protected even in this
+                # situation.
+                duplicate_role_descriptor = any(
+                    other_ref and other_ref != rule_ref
+                    and (other_entity := rule_graph.entity(other_ref)) is not None
+                    and str(other_entity.mention or "") == str(rule_entity.mention or "")
+                    and str(other_entity.category or "") == str(rule_entity.category or "")
+                    for other_ref in rule_refs.values()
+                )
+                if role == "theme" and not (rule_entity.attributes or {}):
+                    # Also cover multi-event parses where event 1 has only a
+                    # theme and event 2 introduces the destination.  If the
+                    # parser gave both roles the same descriptor, the theme
+                    # category came from the duplicated destination mention.
+                    duplicate_role_descriptor = duplicate_role_descriptor or any(
+                        (destination_entity := rule_graph.entity(event.destination_ref)) is not None
+                        and destination_entity.local_ref != rule_ref
+                        and str(destination_entity.mention or "") == str(rule_entity.mention or "")
+                        and str(destination_entity.category or "") == str(rule_entity.category or "")
+                        for event in rule_graph.events
+                        if event.destination_ref
+                    )
+                if duplicate_role_descriptor and not (rule_entity.attributes or {}):
+                    continue
+                mismatch = self._explicit_entity_constraint_mismatch(
+                    scene, fused_entity.entity_id, rule_entity
+                )
+                if mismatch:
+                    errors.append(
+                        f"EXPLICIT_RULE_CONSTRAINT_CHANGED:{index}:{role}:{mismatch}"
+                    )
             if rule_action == final_action:
                 continue
             final_refs = {
@@ -996,6 +1115,93 @@ class SemanticCompiler:
                     if not rule_refs.get(left) or not rule_refs.get(right):
                         errors.append(f"GROUNDED_ROLE_COLLISION:{index}:{left}={right}:{left_id}")
         return list(dict.fromkeys(errors))
+
+    @staticmethod
+    def _explicit_entity_constraint_mismatch(
+        scene: Any, entity_id: str, rule_entity: SemanticEntity
+    ) -> Optional[str]:
+        """Return the first explicit rule constraint violated by a scene object.
+
+        Rule parsing owns what the user explicitly said; perception owns the
+        observed object.  A provider can fill an unresolved role only when
+        both agree.  Missing evidence is treated as a mismatch for explicit
+        attributes, which keeps an unverified object from becoming executable.
+        Internal bookkeeping attributes and spatial wording are not identity
+        constraints and are intentionally excluded here.
+        """
+        if scene is None or not entity_id or rule_entity is None:
+            return None
+        finder = getattr(scene, "find_object", None)
+        obj = finder(entity_id) if callable(finder) else next(
+            (item for item in getattr(scene, "objects", []) or []
+             if str(getattr(item, "id", "")) == str(entity_id)),
+            None,
+        )
+        if obj is None:
+            return None
+
+        aliases = {
+            "红": "red", "红色": "red", "蓝": "blue", "蓝色": "blue",
+            "绿": "green", "绿色": "green", "黄": "yellow", "黄色": "yellow",
+            "紫": "purple", "紫色": "purple", "白": "white", "白色": "white",
+            "黑": "black", "黑色": "black",
+        }
+
+        def norm(value: Any) -> str:
+            text = str(value or "").strip().lower()
+            return aliases.get(text, text)
+
+        def values(value: Any) -> set[str]:
+            if isinstance(value, (list, tuple, set)):
+                return {norm(item) for item in value if item is not None}
+            return {norm(value)} if value is not None else set()
+
+        explicit_attributes = {
+            str(key): value for key, value in (rule_entity.attributes or {}).items()
+            if value is not None and not str(key).startswith("_")
+            and str(key) not in {"spatial_relation", "scene_derived"}
+        }
+        observed_attributes = dict(getattr(obj, "attributes", {}) or {})
+        names = {
+            getattr(obj, "name", ""),
+            getattr(obj, "original_mention", ""),
+            getattr(obj, "label", ""),
+            getattr(obj, "specific_class", ""),
+        }
+        for key, expected in explicit_attributes.items():
+            actual = observed_attributes.get(key)
+            actual_values = values(actual)
+            if not actual_values or actual_values == {"unknown", "none", ""}:
+                # Color is commonly present only in a detector label.  Use
+                # the observed names as a second, read-only evidence source.
+                if key == "color":
+                    actual_values = {
+                        norm(token)
+                        for token in names
+                        for token in str(token).replace("-", "_").split("_")
+                        if token
+                    }
+                if not actual_values:
+                    return f"{key}=UNVERIFIED"
+            expected_values = values(expected)
+            if expected_values and not (expected_values & actual_values):
+                return f"{key}:{expected}->{actual or 'unknown'}"
+
+        generic_categories = {
+            "object", "item", "unknown", "entity", "container", "material"
+        }
+        category = norm(rule_entity.category)
+        if category and category not in generic_categories:
+            observed_categories = {
+                norm(getattr(obj, "specific_class", None)),
+                norm(getattr(obj, "label", None)),
+                norm(getattr(obj, "parent_class", None)),
+                *(norm(item) for item in (getattr(obj, "parent_classes", []) or [])),
+            }
+            observed_categories.discard("")
+            if category not in observed_categories:
+                return f"category:{rule_entity.category}->{getattr(obj, 'specific_class', None) or getattr(obj, 'label', None) or 'unknown'}"
+        return None
 
     def _protect_rule_grounded_roles(self, rule_graph: SemanticTaskGraph,
                                      fused_graph: SemanticTaskGraph,

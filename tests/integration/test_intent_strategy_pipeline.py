@@ -1,6 +1,8 @@
 """Real A -> B smoke test using the unified integration pipeline."""
 
+import os
 import unittest
+from unittest.mock import patch
 
 from integration.adapters import intent, strategy
 from integration.pipeline import run_pipeline
@@ -39,15 +41,19 @@ class TestIntentStrategyPipeline(unittest.TestCase):
                 },
             ],
         }
-        out = run_pipeline(
-            perception,
-            "把红色方块放到桌子上",
-            {
-                "intent": intent,
-                "strategy": strategy,
-                "executor": _MockExecutor(),
-            },
-        )
+        with patch.dict(
+            os.environ,
+            {"CODEARTS_STRATEGY_MODE": "off"},
+        ):
+            out = run_pipeline(
+                perception,
+                "把红色方块放到桌子上",
+                {
+                    "intent": intent,
+                    "strategy": strategy,
+                    "executor": _MockExecutor(),
+                },
+            )
 
         self.assertEqual(out["task"]["schema_version"], "task.v1")
         self.assertEqual(out["task"]["status"], "READY", out["task"])

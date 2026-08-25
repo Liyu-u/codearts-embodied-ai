@@ -99,8 +99,10 @@ def check_a() -> None:
 
 def check_d() -> None:
     try:
-        from modules.evaluator.tracecoder.llm_provider import LLMConfig
+        from modules.evaluator.tracecoder.llm_provider import LLMConfig, try_load_dotenv
 
+        # D 的配置独立于根 .env；体检必须按在线入口相同的方式加载它。
+        try_load_dotenv()
         config = LLMConfig.from_env()
     except Exception as exc:
         report("ERROR", f"D 配置无法解析: {type(exc).__name__}: {exc}")
@@ -198,7 +200,11 @@ def main() -> int:
     print(f"配置体检：{ROOT}")
     check_python()
     check_namespace(".env", "RIA_", required=True)
-    check_namespace("tracecoder_llm.env", "TRACECODER_LLM_")
+    # D also has non-LLM control knobs such as
+    # TRACECODER_MAX_REPAIR_ATTEMPTS.  They belong to the D namespace and
+    # must not be rejected merely because they do not start with
+    # TRACECODER_LLM_.
+    check_namespace("tracecoder_llm.env", "TRACECODER_")
     check_a()
     check_d()
     check_b(args.live_codearts)

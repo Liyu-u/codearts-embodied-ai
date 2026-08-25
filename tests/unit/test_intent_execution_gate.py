@@ -5,7 +5,7 @@ import unittest
 from copy import deepcopy
 from uuid import UUID
 
-from integration.adapters import intent
+from integration.adapters import intent, perception
 
 
 def _perception(*, target_execution=None, destination_execution=None, dimensions=None):
@@ -64,6 +64,54 @@ class IntentExecutionGateTests(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED")
         self.assertFalse(result["execution_allowed"])
         self.assertTrue(any("DESTINATION_VALIDITY_UNKNOWN" in item for item in result["blocking_reasons"]))
+
+    def test_unknown_color_target_is_not_replaced_by_visible_object(self):
+        perception = _perception()
+        result = intent.run({
+            "instruction": "把紫色方块放到桌子上",
+            "perception": perception,
+        })
+
+        self.assertEqual(result["status"], "NEEDS_CLARIFICATION", result)
+        self.assertFalse(result["execution_allowed"])
+        self.assertEqual(result["target_ids"], [])
+        self.assertNotEqual(result["target_ids"], ["obj-red"])
+
+    def test_common_block_and_nominal_place_wording_ground_safely(self):
+        scene = perception.run({"scene_id": "stacking_cubes", "backend": "mock"})
+        cases = (
+            ("请把绿块放到桌子上", "green_cube", "zone_unstack_target"),
+            ("请帮我完成绿色方块的放置", "green_cube", "zone_unstack_target"),
+        )
+        for instruction, target_id, destination_id in cases:
+            with self.subTest(instruction=instruction):
+                result = intent.run({"instruction": instruction, "perception": scene})
+                self.assertEqual(result["status"], "READY", result)
+                self.assertTrue(result["execution_allowed"])
+                self.assertEqual(result["target_ids"], [target_id])
+                self.assertEqual(result["destination_id"], destination_id)
+
+        sorting_scene = perception.run({"scene_id": "sorting_workcell", "backend": "mock"})
+        result = intent.run({
+            "instruction": "将绿色方块归位到绿色托盘",
+            "perception": sorting_scene,
+        })
+        self.assertEqual(result["status"], "READY", result)
+        self.assertEqual(result["target_ids"], ["green_sort_cube"])
+        self.assertEqual(result["destination_id"], "middle_sort_tray")
+
+    def test_explicit_object_destination_is_not_replaced_by_unique_table(self):
+        scene = perception.run({"scene_id": "stacking_cubes", "backend": "mock"})
+        result = intent.run({
+            "instruction": "把红色方块放到绿色方块上",
+            "perception": scene,
+        })
+
+        self.assertEqual(result["status"], "NEEDS_CLARIFICATION", result)
+        self.assertFalse(result["execution_allowed"])
+        self.assertEqual(result["target_ids"], ["red_cube"])
+        self.assertEqual(result["destination_id"], "green_cube")
+        self.assertTrue(any("DESTINATION" in item for item in result["blocking_reasons"]))
 
     def test_missing_or_duplicate_ids_never_get_synthetic_ids(self):
         missing = _perception()

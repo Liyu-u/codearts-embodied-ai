@@ -9,7 +9,7 @@ from unittest.mock import patch
 from pathlib import Path
 
 import integration.adapters.tracecoder as adapter_mod
-from integration.adapters.tracecoder import configure_llm, run
+from integration.adapters.tracecoder import configure_llm, resolve_task_data, run
 from modules.evaluator.tracecoder.processor import process_policy
 from tests.helpers.fake_llm_provider import FakeLLMProvider, smart_handler
 from tests.helpers.tracecoder_fixtures import (
@@ -62,7 +62,15 @@ class TestTraceCoderBudget(unittest.TestCase):
                 "steps": [{"status": "FAILED"}],
             },
         }
-        normal, reasons = adapter_mod._select_tracecoder_budget(failed, "optional")
+        # Keep the assertion independent of a developer's ignored local
+        # tracecoder_llm.env (the repository default is 3072).
+        with patch.dict(os.environ, {
+            "TRACECODER_LLM_MAX_TOKENS": "3072",
+            "TRACECODER_LLM_THINKING": "disabled",
+            "TRACECODER_LLM_MAX_RETRIES": "1",
+            "TRACECODER_MAX_REPAIR_ATTEMPTS": "1",
+        }):
+            normal, reasons = adapter_mod._select_tracecoder_budget(failed, "optional")
         self.assertEqual(normal.tier, "normal")
         self.assertEqual(normal.max_tokens, 3072)
         self.assertEqual(normal.thinking, "disabled")
@@ -130,6 +138,48 @@ class TestTraceCoderBudget(unittest.TestCase):
         self.assertEqual(result["llm_stats"]["calls"], 1)
         self.assertEqual(len(fake.calls), 1)
         self.assertEqual(fake.calls[0]["role"], "compact")
+
+    def test_repair_evaluation_keeps_task_ids_for_derived_scene(self):
+        """A valid D patch must be returned when the input execution failed."""
+        task = {
+            "schema_version": "task.v1",
+            "task_id": "demo_place_cup",
+            "action": "place_object",
+            "target_ids": ["red_cup"],
+            "destination_id": "left_bin",
+            "status": "READY",
+        }
+        execution = {
+            "schema_version": "execution.v1",
+            "task_id": task["task_id"],
+            "status": "FAILED",
+            "steps": [{
+                "step_id": "grasp_cup",
+                "action": "grasp",
+                "status": "FAILED",
+                "reason": "INJECTED_FAILURE:grasp",
+            }],
+            "safety_events": [],
+        }
+        native = adapter_mod._strategy_v1_to_native(DEMO_STRATEGY_V1)
+        task_data = resolve_task_data(task, native, execution)
+        self.assertEqual(
+            {item["id"] for item in task_data["initial_state"]["objects"]},
+            {"red_cup", "left_bin"},
+        )
+
+        fake = FakeLLMProvider(handler=smart_handler())
+        configure_llm(mode="required", provider=fake)
+        result = run({
+            "task": task,
+            "strategy": DEMO_STRATEGY_V1,
+            "execution": execution,
+        })
+
+        self.assertTrue(result["retryable"], result)
+        self.assertIsNotNone(result["patch"])
+        diagnosis = json.loads(result["diagnosis"])
+        self.assertTrue(diagnosis["patch_changed"])
 
 
 if __name__ == "__main__":

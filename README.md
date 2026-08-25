@@ -194,6 +194,10 @@ python -m unittest tests.unit.test_isaac_ground_truth_perception -v
 
 本地 Demo 默认使用 C Mock，适合展示消息流和故障修复；它不能替代 Isaac Sim 真实执行证据。
 
+前端接口、配置方法、当前 Demo 边界和后续 Isaac Sim/RGB-D/真机接入要求见 [`docs/前端接口与仿真平台接入说明.md`](docs/前端接口与仿真平台接入说明.md)。
+
+上线前最终验收使用 `tools/run_final_acceptance.py`，按离线回归、CodeArts 在线、LLM 留出泛化、Isaac Sim HIL、RGB-D 相机 HIL 和真机安全六档分别出具证据。完整矩阵见 `testdata/acceptance/final_acceptance_matrix_v1.json`；只有六档全部 `PASS` 才能将最终报告判定为上线可接受。
+
 ### 6.4 远程 Isaac Sim 验收
 
 前提：校园 VPN、SSH 账号、远程服务器上的 Docker、NVIDIA GPU、Isaac Sim 6.0 镜像和资产目录均可用。
@@ -238,3 +242,15 @@ python -m unittest tests.unit.test_isaac_ground_truth_perception -v
 3. 正式链路统一使用 task_id、object_id、destination_id，并保留 provenance。
 4. 验证顺序为 Mock → 仿真 → 真机；任何真实后端都不得破坏 Mock 回归集。
 5. 真实凭证只通过本地环境变量或被忽略的配置文件提供，禁止进入源代码、报告和提交记录。
+## 真实在线闭环批量验收
+
+最终验收使用 `testdata/benchmark/real_isaac_cases.json`，每个样本固定 seed、独立 `run_id`，保存 A/B/C/反馈原始证据，并把传输认证失败与业务、安全、契约失败分开统计。
+
+批量运行默认启用 SSH `BatchMode`，不会读取或保存密码；请先为远端账号配置可用私钥：
+
+```powershell
+python tools/run_real_acceptance_batch.py --repeats 3 --ssh-key C:/path/to/isaac_ed25519 --output reports/real-acceptance-summary.json
+python tools/summarize_real_acceptance.py --root reports --pattern 'real-acceptance-*' --output reports/real-acceptance-summary.json
+```
+
+`--interactive-remote` 仅用于单次人工冒烟，不用于统计验收。传输错误最多按 `--transport-retries` 重试；业务失败、契约错误和 `SAFE_STOP` 不自动重试。批量验收前应确认：契约通过率 100%、错误成功率 0、安全停止正确率 100%，并在同一任务集上比较旧配置与当前配置的成功率、修复成功率、请求次数、token 和 P95 延迟。

@@ -1,517 +1,96 @@
-const state = {
-  scenarios: [],
-  response: null,
-  running: false,
-  stageOrder: ["perception", "intent", "strategy", "execution", "feedback"],
-};
 
-const $ = (id) => document.getElementById(id);
-const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
-const pretty = (value) => escapeHtml(JSON.stringify(value, null, 2));
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+(function(){
+"use strict";
+var $=function(s,r){return(r||document).querySelector(s)}, $$=function(s,r){return[].slice.call((r||document).querySelectorAll(s))};
+var names={home:"总览",tasks:"任务管理",twin:"数字孪生",robots:"机器人管理",scenes:"场景管理",data:"数据管理",models:"模型管理","model-config":"模型配置",logs:"日志与审计",settings:"系统设置"};
+var state={scenario:null,page:"home"};
+var esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
+var text=function(v){return({READY:"就绪",IDLE:"空闲",MAINTENANCE:"维护中",ONLINE:"在线",DEPLOYED:"已部署",CANARY:"灰度中",STAGING:"测试中",PROCESSING:"处理中",REVIEW:"待复核",SUCCEEDED:"成功",RUNNING:"执行中",BLOCKED:"受阻",QUEUED:"排队中"}[v]||v||"—")};
+var api=function(p,o){o=o||{};return fetch(p,Object.assign({headers:Object.assign({"Content-Type":"application/json"},o.headers||{})},o)).then(function(r){return r.json().catch(function(){return{}}).then(function(d){if(!r.ok)throw Error(d.error||("接口请求失败 "+r.status));return d})})};
+var post=function(p,b){return api(p,{method:"POST",body:JSON.stringify(b)})}, put=function(p,b){return api(p,{method:"PUT",body:JSON.stringify(b)})};
+var toast=function(m,c){var n=$("#toast");if(!n)return;n.textContent=m;n.className="toast show "+(c||"");clearTimeout(toast.t);toast.t=setTimeout(function(){n.className="toast"},2500)};
+var pill=function(v){return'<span class="unit-pill '+String(v||"").toLowerCase()+'">'+esc(text(v))+"</span>"};
+var stat=function(a,b,c,t){return'<article class="unit-stat '+(t||"")+'"><small>'+a+"</small><b>"+b+"</b><span>"+c+"</span></article>"};
+function init(){nav();home();clock();setInterval(clock,1000);loadHome()}
+function clock(){var n=$("#clock");if(n)n.textContent=new Date().toLocaleString("zh-CN",{hour12:false}).replaceAll("/","-")}
+function nav(){$$(".nav").forEach(function(b){b.onclick=function(){go(b.dataset.page)}})}
+function go(p){if(!names[p])return;state.page=p;$$(".nav").forEach(function(b){b.classList.toggle("active",b.dataset.page===p)});$("#homeView").hidden=p!=="home";$("#unitView").hidden=p==="home";$("#pageKicker").textContent=p==="home"?"工作台 / 总览":"平台单元 / "+names[p];$("#pageTitle").textContent=p==="home"?"任务执行中心":names[p];if(p!=="home")unit(p)}
+function health(ok){if($("#health")){$("#health").textContent=ok?"●　服务连接正常":"●　服务连接异常";$("#health").className=ok?"ok":"bad"}if($("#footer"))$("#footer").textContent=ok?"已连接":"异常"}
+function home(){
+var i=$("#instruction"),c=$("#count");if(i)i.oninput=function(){c.textContent=i.value.length+" / 200"};
+if($("#clear"))$("#clear").onclick=function(){i.value="";c.textContent="0 / 200"};
+if($("#voice"))$("#voice").onclick=function(){toast("语音输入接口已预留","info")};
+if($("#view2d"))$("#view2d").onclick=function(){toast("2D 视图接口已预留","info")};
+if($("#full"))$("#full").onclick=function(){$("#scene").classList.toggle("scene-focus")};
+if($("#all"))$("#all").onclick=function(){go("tasks")};
+if($("#run"))$("#run").onclick=run;
+["pause","stop","emergency"].forEach(function(id){if($("#"+id))$("#"+id).onclick=function(){command(id)}})
+}
+function loadHome(){api("/api/health").then(function(d){health(d.healthy)}).catch(function(){health(false)});api("/api/tasks").then(function(d){recent(d.tasks||[])}).catch(function(){recent([])});api("/api/scenarios").then(function(d){state.scenario=d.scenarios&&d.scenarios[0];if(state.scenario)choose(state.scenario)}).catch(function(){})}
+function recent(a){var h=$("#recent");if(!h)return;h.innerHTML=a.slice(0,4).map(function(t,i){return'<button class="recent-item '+(i?"":"selected")+'" data-id="'+esc(t.id)+'"><b>'+esc(t.name)+'</b><em>'+esc(text(t.status))+'</em><small>'+esc(t.focus||t.instruction||"闭环演示")+" · "+esc(t.updated_at)+"</small></button>"}).join("")||"<i>暂无任务</i>";$$(".recent-item",h).forEach(function(n){n.onclick=function(){api("/api/tasks/"+n.dataset.id).then(function(d){choose(d.scenario)})}})}
+function choose(s){state.scenario=s;var x=s.scene||s;$("#sceneName").textContent=s.name||x.id||"stacking_cubes";$("#objectCount").textContent=(x.objects||[]).length+" 个";if($("#svg"))$("#svg").innerHTML=sceneSvg(x.objects||[])}
+function sceneSvg(a){var s='<rect width="960" height="500" fill="#071321"/><path d="M120 330L770 330 880 420 210 420Z" fill="#14263a" stroke="#294b70"/><path d="M170 350h610M215 375h600M210 420l-80-90M350 420l-20-90M500 420V330M650 420l20-90M790 420l-20-90" stroke="#294b70"/>';a.slice(0,6).forEach(function(o,i){var x=230+i%3*170,y=295-Math.floor(i/3)*55,c=["#378bff","#4bdd91","#f3a33b"][i%3];s+='<rect x="'+x+'" y="'+y+'" width="70" height="42" fill="'+c+'" fill-opacity=".16" stroke="'+c+'"/><text x="'+(x+35)+'" y="'+(y+25)+'" text-anchor="middle" fill="#d9eaff" font-size="12">'+esc(o.label||o.name||("目标"+(i+1)))+"</text>"});return s+'<path d="M500 365L535 280 500 210 530 150" fill="none" stroke="#dcecff" stroke-width="22" stroke-linecap="round"/><circle cx="500" cy="365" r="18" fill="#70879c" stroke="#dcecff" stroke-width="4"/><circle cx="535" cy="280" r="16" fill="#70879c" stroke="#dcecff" stroke-width="4"/><path d="M500 360C600 300 610 250 570 160" fill="none" stroke="#16d6ff" stroke-width="3" stroke-dasharray="8 8"/><circle cx="570" cy="160" r="7" fill="#16d6ff"/>'}
+function run(){var i=$("#instruction"),v=i&&i.value.trim()||"把绿色方块放到桌子上";$("#run").disabled=true;post("/api/run",{scene_id:state.scenario&&state.scenario.id||"stacking_cubes",instruction:v}).then(function(d){var r=d.result||{},p=r.status==="SUCCEEDED"?100:42;$("#progress").textContent=p+"%";$("#runtimeState").textContent=text(r.status);$("#taskName").textContent=v;$("#flowStatus").textContent=p===100?"● 已完成":"● 执行中";toast("任务已返回 "+text(r.status),"success")}).catch(function(e){toast(e.message,"bad")}).finally(function(){$("#run").disabled=false})}
+function command(id){var c=id==="pause"?"PAUSE":id==="stop"?"STOP":"ESTOP";post("/api/robots/RBT-001/commands",{command:c}).then(function(){toast(c+" 命令已发送","info")}).catch(function(e){toast(e.message,"bad")})}
+function shell(k,t,d,a,b){return'<div class="unit-shell"><header class="unit-head"><div><h2>'+t+"</h2><p>"+d+'</p></div><div class="unit-actions">'+(a||"")+'</div></header><div class="unit-body">'+b+"</div></div>"}
+function unit(p){var h=$("#unitView");h.innerHTML='<div class="unit-loading">正在加载'+names[p]+"…</div>";load(p).then(function(d){h.innerHTML=page(p,d);bind(p,d)}).catch(function(e){h.innerHTML='<div class="unit-error"><b>页面数据暂不可用</b><p>'+esc(e.message)+'</p></div>'})}
+function load(p){
+if(p==="tasks")return api("/api/tasks").then(function(d){return d.tasks||[]});
+if(p==="robots")return Promise.all([api("/api/robots"),api("/api/robots/RBT-001/telemetry")]).then(function(a){return{robots:a[0].robots||[],telemetry:a[1].telemetry||{}}});
+if(p==="twin")return api("/api/scenes").then(function(d){var a=d.scenes||[];return(a[0]?api("/api/scenes/"+a[0].id):Promise.resolve({})).then(function(x){return{scenes:a,scene:x.scene||{}}})});
+if(p==="scenes")return api("/api/scenes").then(function(d){return d.scenes||[]});
+if(p==="data")return api("/api/datasets").then(function(d){return d.datasets||[]});
+if(p==="models")return api("/api/models").then(function(d){return d.models||[]});
+if(p==="model-config")return api("/api/model-config").then(function(d){return d.config||{}});
+if(p==="logs")return Promise.all([api("/api/logs"),api("/api/audit")]).then(function(a){return{logs:a[0].logs||[],audit:a[1].records||[]}});
+return Promise.all([api("/api/settings"),api("/api/permissions")]).then(function(a){return{settings:a[0].settings||{},roles:a[1].roles||[]}})
+}
+function page(p,d){if(p==="tasks")return tasks(d);if(p==="twin")return twin(d);if(p==="robots")return robots(d);if(p==="scenes")return scenes(d);if(p==="data")return data(d);if(p==="models")return models(d);if(p==="model-config")return modelConfig(d);if(p==="logs")return logs(d);return settings(d)}
+function tasks(a){var rows=a.map(function(t){return'<button class="task-row" data-task="'+esc(t.id)+'"><span class="task-index">'+esc(t.id.slice(-3))+'</span><span class="task-main"><b>'+esc(t.name)+'</b><small>'+esc(t.instruction||t.focus)+'</small></span>'+pill(t.status)+'<strong>'+t.progress+'%</strong></button>'}).join("");return shell("MISSION CONTROL","任务管理","统一查看任务队列、执行状态和闭环结果。",'<button class="unit-secondary" data-action="refresh">刷新</button><button class="unit-primary" data-action="new-task">新建任务</button>','<div class="unit-stats">'+stat("任务总数",a.length,"场景任务")+stat("执行中",a.filter(function(x){return x.status==="RUNNING"}).length,"当前队列","good")+stat("已完成",a.filter(function(x){return x.status==="SUCCEEDED"}).length,"成功闭环","good")+stat("接口","POST","/api/tasks")+'</div><div class="unit-grid task-unit"><article class="unit-panel"><header><b>任务队列</b><span>按更新时间排序</span></header><div class="task-rows">'+rows+'</div></article><article class="unit-panel"><header><b>任务详情</b><span>运行链路</span></header><div class="task-detail"><div class="empty-detail">选择左侧任务查看详情</div></div></article><article class="unit-panel"><header><b>后端契约</b><span>已预留</span></header><div class="contract-list"><p><i></i><b>创建任务</b><code>POST /api/tasks</code></p><p><i></i><b>执行闭环</b><code>POST /api/run</code></p><p><i></i><b>实时事件</b><code>WS /api/events</code></p></div></article></div>')}
+function twin(d){var s=d.scene||{},a=s.objects||[];return shell("DIGITAL TWIN","数字孪生","在统一工作台查看场景、对象、轨迹和仿真接入状态.",'<button class="unit-secondary" data-action="refresh">刷新场景</button><button class="unit-secondary" data-action="2d">2D 视图</button><button class="unit-primary" data-action="simulate">启动仿真</button>','<div class="unit-grid twin-unit"><article class="unit-panel twin-panel"><header><b>'+esc(s.name||"工作站数字孪生")+'</b><span class="live-dot">● 场景在线</span></header><div class="twin-stage"><svg viewBox="0 0 960 460">'+sceneSvg(a)+'</svg></div><footer class="twin-footer"><span>对象 <b>'+a.length+'</b></span><span>坐标系 <b>世界</b></span><span>轨迹 <b>待接入</b></span><span>引擎 <b>Sim-RTX</b></span></footer></article><aside class="unit-panel"><header><b>场景对象</b><span>'+a.length+" 个</span></header><div class=\"object-list\">"+a.map(function(o,i){return'<div><i class="object-dot dot-'+i%4+'"></i><b>'+esc(o.label||o.name||("目标"+(i+1)))+'</b><span>'+esc(({object:"对象",target:"目标",robot:"机器人",workpiece:"工件",bin:"料箱",table:"工作台"}[o.type]||o.type||"对象"))+'</span><em>检测到</em></div>'}).join("")+'</div><header class="subhead"><b>接口状态</b></header><div class="contract-list"><p><i></i><b>场景详情</b><code>GET /api/scenes/{id}</code></p><p><i></i><b>真实仿真</b><code>Isaac Sim / Unity</code></p><p><i></i><b>视频流</b><code>WebRTC / RTSP</code></p></div></aside></div>')}
+function robots(d){var a=d.robots||[],t=d.telemetry||{},j=t.joints||[];return shell("FLEET CONTROL","机器人管理","维护机器人资产、连接状态、关节遥测与安全控制。",'<button class="unit-secondary" data-action="refresh">刷新遥测</button><button class="unit-primary" data-action="robot-command">发送自检</button>','<div class="unit-stats">'+stat("机器人",a.length,"资产总数")+stat("在线",a.filter(function(x){return x.status==="READY"||x.status==="IDLE"}).length,"可调度","good")+stat("维护中",a.filter(function(x){return x.status==="MAINTENANCE"}).length,"需要关注","warn")+stat("实时频率","30 FPS","遥测接口")+'</div><div class="unit-grid robots-unit"><article class="unit-panel"><header><b>机器人资产</b><span>选择设备查看详情</span></header><div class="fleet-list">'+a.map(function(r,i){return'<button class="fleet-card '+(i?"":"selected")+'"><i class="robot-avatar">⌁</i><span><b>'+esc(r.name)+'</b><small>'+esc(r.model)+" · "+esc(r.ip)+"</small></span>"+pill(r.status)+"</button>"}).join("")+'</div></article><article class="unit-panel"><header><b>关节遥测</b><span>RBT-001</span></header><div class="telemetry-table"><div class="telemetry-head"><span>关节</span><span>位置</span><span>负载</span><span>速度</span><span>温度</span></div>'+j.map(function(x){return'<div class="telemetry-row"><b>'+esc(x.name)+'</b><span>'+Number(x.position).toFixed(2)+'°</span><i><em style="width:'+x.load*4+'%"></em></i><span>'+Number(x.velocity).toFixed(1)+'°/s</span><span>'+x.temperature+'°C</span></div>'}).join("")+'</div></article><article class="unit-panel"><header><b>安全状态</b><span class="live-dot">● 正常</span></header><div class="safety-cards"><p>急停状态<strong>未触发</strong></p><p>防护门<strong>'+text(t.safety&&t.safety.door)+'</strong></p><p>碰撞检测<strong>'+text(t.safety&&t.safety.collision)+'</strong></p><p>速度倍率<strong>100%</strong></p></div><div class="api-note">实时接口<br><code>GET /api/robots/{id}/telemetry</code></div></article></div>')}
+function scenes(a){return shell("SCENE REGISTRY","场景管理","管理工作站、仿真环境和场景版本，作为数字孪生和任务执行的输入。",'<button class="unit-secondary" data-action="refresh">刷新目录</button><button class="unit-primary" data-action="new-scene">新建场景</button>','<div class="unit-stats">'+stat("场景总数",a.length,"已登记环境")+stat("在线",a.filter(function(x){return x.status==="ONLINE"}).length,"可用于执行","good")+stat("对象",a.reduce(function(n,x){return n+Number(x.objects||0)},0),"场景对象")+stat("接口","REST","/api/scenes")+'</div><div class="unit-grid scenes-unit"><article class="unit-panel"><header><b>场景目录</b><span>版本 / 状态</span></header><div class="scene-library">'+a.map(function(s,i){return'<button class="scene-card '+(i?"":"selected")+'"><span class="scene-thumb">◇</span><span><b>'+esc(s.name)+'</b><small>'+esc(s.id)+" · rev "+esc(s.revision)+"</small></span>"+pill(s.status)+"<strong>"+s.objects+" 对象</strong></button>"}).join("")+'</div></article><article class="unit-panel scene-summary"><header><b>场景摘要</b><span>stacking_cubes</span></header><div class="scene-preview"><div class="preview-grid"></div><span>3D 场景<br><small>仿真画面占位</small></span></div><div class="summary-list"><p>用途<strong>抓取与叠放</strong></p><p>坐标系<strong>世界坐标系</strong></p><p>资源<strong>RGB-D / 轨迹</strong></p></div></article><article class="unit-panel"><header><b>场景操作</b><span>占位</span></header><div class="action-stack"><button data-action="scene-edit">编辑当前场景</button><button data-action="scene-publish">发布新版本</button><button data-action="scene-export">导出场景 JSON</button></div><div class="api-note">新增场景<br><code>POST /api/scenes</code></div></article></div>')}
+function data(a){var rows=a.map(function(x){return'<div class="data-row"><b>'+esc(x.name)+'</b><span>'+esc(x.type)+'</span><strong>'+Number(x.records).toLocaleString()+'</strong><i><em style="width:'+x.quality+'%"></em></i><span>'+pill(x.status)+'</span><small>'+esc(x.updated_at)+'</small></div>'}).join("");return shell("DATA HUB","数据管理","查看感知、轨迹、任务反馈等数据资产的规模、质量与处理状态。",'<button class="unit-secondary" data-action="refresh">刷新数据</button><button class="unit-primary" data-action="new-dataset">导入数据</button>','<div class="unit-stats">'+stat("数据集",a.length,"资产总数")+stat("记录",a.reduce(function(n,x){return n+x.records},0).toLocaleString(),"累计样本")+stat("平均质量",Math.round(a.reduce(function(n,x){return n+x.quality},0)/Math.max(1,a.length))+"%","质量评分","good")+stat("处理中",a.filter(function(x){return x.status==="PROCESSING"}).length,"数据管线","warn")+'</div><div class="unit-grid data-unit"><article class="unit-panel"><header><b>数据资产</b><span>按质量评分排序</span></header><div class="data-table"><div class="data-head"><span>名称</span><span>类型</span><span>记录数</span><span>质量</span><span>状态</span><span>更新时间</span></div>'+rows+'</div></article><article class="unit-panel"><header><b>数据管线</b><span>数据管线</span></header><div class="pipeline"><p><i class="done"></i><b>采集接入</b><span>已完成</span></p><p><i class="done"></i><b>清洗与校验</b><span>已完成</span></p><p><i class="active"></i><b>标注 / 特征</b><span>处理中</span></p><p><i></i><b>训练集发布</b><span>待执行</span></p></div><div class="api-note">数据服务<br><code>GET /api/datasets</code></div></article></div>')}
+function models(a){return shell("MODEL REGISTRY","模型管理","管理感知、理解、规划和安全策略模型的版本与发布状态。",'<button class="unit-secondary" data-action="refresh">刷新模型</button><button class="unit-primary" data-action="new-model">注册模型</button>','<div class="unit-stats">'+stat("模型版本",a.length,"已注册")+stat("已部署",a.filter(function(x){return x.status==="DEPLOYED"}).length,"生产环境","good")+stat("平均准确率",(a.reduce(function(n,x){return n+x.accuracy},0)/Math.max(1,a.length)).toFixed(1)+"%","离线评估")+stat("灰度发布",a.filter(function(x){return x.status==="CANARY"}).length,"待观察","warn")+'</div><div class="unit-grid models-unit"><article class="unit-panel"><header><b>模型版本</b><span>发布状态</span></header><div class="model-table"><div class="model-head"><span>模型</span><span>类型</span><span>版本</span><span>准确率</span><span>状态</span><span>更新时间</span></div>'+a.map(function(x){return'<div class="model-row"><b>'+esc(x.name)+'</b><span>'+esc(x.type)+'</span><strong>'+esc(x.version)+'</strong><i>'+x.accuracy+'%</i><span>'+pill(x.status)+'</span><small>'+esc(x.updated_at)+'</small></div>'}).join("")+'</div></article><article class="unit-panel"><header><b>发布策略</b><span>发布管理</span></header><div class="release-card"><div class="release-icon">◈</div><h3>安全发布门禁</h3><p>上线前校验模型精度、资源占用和回滚版本。</p><div class="release-check"><span>离线评估 <b>通过</b></span><span>灰度范围 <b>10%</b></span><span>回滚版本 <b>已保留</b></span></div><button data-action="deploy">查看发布流程</button></div><div class="api-note">模型服务<br><code>GET /api/models</code></div></article></div>')}
+function logs(d){var a=d.logs||[],b=d.audit||[];return shell("OBSERVABILITY","日志与审计","聚合系统事件、任务执行记录和关键操作审计，帮助定位闭环异常。",'<button class="unit-secondary" data-action="refresh">刷新日志</button><button class="unit-primary" data-action="export-logs">导出记录</button>','<div class="unit-stats">'+stat("事件",a.length,"最近 24 小时")+stat("成功",a.filter(function(x){return x.level==="SUCCESS"}).length,"执行事件","good")+stat("告警",a.filter(function(x){return x.level==="WARNING"}).length,"需要关注","warn")+stat("审计记录",b.length,"操作留痕")+'</div><div class="unit-grid logs-unit"><article class="unit-panel"><header><b>事件时间线</b><span>最近事件</span></header><div class="timeline-panel">'+a.map(function(x){return'<div class="timeline-row"><time>'+esc(x.time)+'</time><i class="'+String(x.level).toLowerCase()+'"></i><div><b>'+esc(x.title)+'</b><small>'+esc(x.detail)+'</small></div><span>'+esc(x.source)+'</span></div>'}).join("")+'</div></article><article class="unit-panel"><header><b>操作审计</b><span>只读记录</span></header><div class="audit-list">'+b.map(function(x){return'<div class="audit-row"><i></i><div><b>'+esc(x.title)+'</b><small>'+esc(x.detail)+'</small></div><time>'+esc(x.time)+'</time></div>'}).join("")+'</div><div class="api-note">实时流<br><code>WS /api/events</code></div></article></div>')}
 
-const STATUS_LABELS = {
-  READY: "已就绪",
-  NEEDS_CLARIFICATION: "需要澄清",
-  BLOCKED: "安全阻断",
-  SUCCEEDED: "执行成功",
-  FAILED: "执行失败",
-  SAFE_STOP: "安全停止",
-  SUCCESS: "动作成功",
-  SKIPPED: "已跳过",
-};
-const ACTION_LABELS = {
-  pick: "单独抓取",
-  pick_and_place: "抓取并放置",
-  place: "放置",
-  transfer: "搬运",
-  fetch: "取物到目标",
-  stack: "堆叠",
-  detect_object: "检测物体",
-  move_to_object: "移动到物体",
-  grasp: "抓取",
-  move_to_target: "移动到目标区",
-  release: "释放物体",
-  push: "推动物体",
-  stop: "停止执行",
-};
-const STRATEGY_MODE_LABELS = {
-  primitive_plan: "本地原子策略",
-  primitive_plan_fallback: "本地安全回退策略",
-  tracecoder_demo_baseline: "TraceCoder 修复演示基线",
-  codearts_agent: "CodeArts 智能体策略",
-  blocked: "策略已阻断",
-};
-const STOP_REASON_LABELS = {
-  EXECUTION_SUCCEEDED: "执行成功，闭环结束",
-  SAFETY_STOP: "触发安全停止",
-  FEEDBACK_NOT_RETRYABLE: "反馈判定不可重试",
-  SAFETY_EVENT: "检测到安全事件",
-  PATCH_INVALID: "修复 patch 不合法",
-  PATCH_MISSING: "没有可用 patch",
-  PATCH_UNCHANGED: "修复策略没有变化",
-  PATCH_TASK_ID_MISMATCH: "patch 任务编号不匹配",
-  PATCH_CODE_NOT_ALLOWED: "patch 含不允许执行代码",
-  NO_TRACE_CODER: "未配置反馈修复模块",
-  MAX_RETRIES_EXCEEDED: "达到最大重试次数",
-};
-
-function codeWithMeaning(value, meanings = {}) {
-  const code = String(value ?? "—");
-  const meaning = meanings[code];
-  return meaning
-    ? `<span class="meaning-label">${escapeHtml(meaning)}</span><code>${escapeHtml(code)}</code>`
-    : `<code>${escapeHtml(code)}</code>`;
+function modelConfig(d){
+  var modules=d.modules||{}, ids=["A","B","C","D"], smartCount=ids.filter(function(id){return (modules[id]||{}).mode==="smart"}).length, keyCount=ids.filter(function(id){return (modules[id]||{}).api_key_configured}).length;
+  var cards=ids.map(function(id){
+    var x=modules[id]||{}, isC=id==="C";
+    var option=function(v,label){return'<option value="'+v+'"'+(x.mode===v?" selected":"")+'>'+label+"</option>"};
+    var fields=isC
+      ? '<div class="module-backend-fields"><label>执行后端<input data-field="backend" value="'+esc(x.backend||"mock")+'" placeholder="例如：本地模拟 / 仿真引擎 / 真实机器人"></label><p class="config-hint">C 当前默认使用本地模拟执行器；真实仿真或真机通道可在此预留。</p></div>'
+      : '<div class="module-smart-fields" data-smart-fields><label>服务商<input data-field="provider" value="'+esc(x.provider||"")+'" placeholder="例如：DeepSeek / 兼容接口"></label><label>模型名称<input data-field="model" value="'+esc(x.model||"")+'" placeholder="例如：deepseek-v4-flash"></label><label>接口地址<input data-field="base_url" value="'+esc(x.base_url||"")+'" placeholder="https://api.example.com/v1"></label><label>API Key<input type="password" data-field="api_key" value="" placeholder="'+esc(x.api_key_configured?"已配置，留空保持不变":"请输入 API Key")+'" autocomplete="new-password"></label></div>';
+    return '<article class="module-card module-'+id+'" data-module="'+id+'"><header><span class="module-code">'+id+'</span><div><b>'+esc(x.name||id)+'</b></div><span class="module-state">'+(x.mode==="smart"?"智能":"本地")+'</span></header><label class="mode-label">运行模式<select class="module-mode" data-field="mode">'+option("rule","规则模式")+option("mock","MOC 模式")+option("smart","智能模式")+'</select></label>'+fields+'<footer><span>'+esc(x.provider||"本地适配器")+'</span><em>'+(x.api_key_configured?"Key 已配置":"无需 Key / 未配置")+'</em></footer></article>';
+  }).join("");
+  return shell("MODEL CONFIGURATION","模型配置","手动选择 A / B / C / D 模块运行模式；保存后固定写入本地配置文件，刷新和重启服务均不会重置。",'<button class="unit-secondary" data-action="refresh-model-config">重新读取</button><button class="unit-primary" data-action="save-model-config">保存配置</button>','<div class="unit-stats">'+stat("配置模块",ids.length,"A / B / C / D")+stat("智能模式",smartCount,"需要模型配置","good")+stat("凭证状态",keyCount+"/3","A / B / D")+stat("持久化","已启用",".model_config.local.json","good")+'</div><div class="unit-grid model-config-unit"><article class="unit-panel config-board"><header><b>模块模式配置</b><span>未填写的新 Key 会保留原配置</span></header><div class="module-grid">'+cards+'</div></article><aside class="unit-panel config-help"><header><b>配置说明</b><span>安全提示</span></header><div class="config-help-body"><p><i class="good-dot"></i><b>默认配置</b><small>A：DeepSeek 智能　B：CodeArts 智能　C：MOC　D：TraceCoder 智能</small></p><p><i class="blue-dot"></i><b>智能模式</b><small>A / B / D 可输入第三方模型名称、接口地址和 API Key。</small></p><p><i class="orange-dot"></i><b>固定写入</b><small>配置保存在本机根目录的 .model_config.local.json，已加入 Git 忽略。</small></p><p><i class="gray-dot"></i><b>Key 安全</b><small>页面只显示脱敏状态，后端 GET 接口不会返回原始 API Key。</small></p></div><div class="api-note">配置接口<br><code>GET /api/model-config</code><br><code>PUT /api/model-config</code></div></aside></div>');
 }
 
-function idWithMeaning(value, meaning = "对象编号") {
-  if (!value) return "—";
-  return `<span class="meaning-label">${escapeHtml(meaning)}</span><code>${escapeHtml(value)}</code>`;
-}
+function settings(d){var s=d.settings||{};return shell("SYSTEM CONTROL","系统设置","配置运行模式、默认资源、安全策略与前端对接参数。",'<button class="unit-secondary" data-action="reset-settings">恢复默认</button><button class="unit-primary" data-action="save-settings">保存设置</button>','<div class="unit-grid settings-unit"><article class="unit-panel"><header><b>运行参数</b><span>配置项</span></header><div class="settings-form"><label>运行模式<select name="runtime_mode"><option value="AUTO">自动执行</option><option value="MANUAL">手动确认</option></select></label><label>默认机器人<select name="default_robot"><option>RBT-001</option><option>RBT-002</option></select></label><label>默认场景<select name="default_scene"><option value="stacking_cubes">叠放方块</option><option value="sorting_workcell">分拣工作站</option></select></label><label>会话超时（分钟）<input name="session_timeout" type="number" value="'+esc(s.session_timeout)+'"></label><label class="toggle-row"><span>安全控制门禁</span><input name="safe_control" type="checkbox"'+(s.safe_control?" checked":"")+'></label><label class="toggle-row"><span>开启审计留痕</span><input name="audit_enabled" type="checkbox"'+(s.audit_enabled?" checked":"")+'></label></div></article><article class="unit-panel"><header><b>接口与服务</b><span>当前连接</span></header><div class="service-list"><p><b>基础 API</b><code>'+esc(s.api_base)+'</code><span class="live-dot">● 已连接</span></p><p><b>事件通道</b><code>'+esc(s.event_stream)+'</code><span>待接入</span></p><p><b>视频遥测</b><code>GET /api/robots/{id}</code><span>占位</span></p><p><b>真实仿真</b><code>Isaac Sim / Unity</code><span>占位</span></p></div></article><article class="unit-panel"><header><b>角色权限</b><span>RBAC</span></header><div class="role-list">'+(d.roles||[]).map(function(x){return'<div><i>R</i><b>'+esc(x.name)+'</b><span>'+x.permissions+" 项权限</span></div>"}).join("")+'</div><div class="api-note">权限接口<br><code>GET /api/permissions</code></div></article></div>')}
+function bind(p,d){var h=$("#unitView"),n;
+n=$("[data-action=refresh]",h);if(n)n.onclick=function(){unit(p)};
+n=$("[data-action=new-task]",h);if(n)n.onclick=function(){var v=prompt("任务名称","新建抓取任务");if(v)post("/api/tasks",{name:v,instruction:v}).then(function(){toast("任务已创建","success");unit(p)})};
+$$(".task-row",h).forEach(function(x){x.onclick=function(){var t=d.filter(function(q){return q.id===x.dataset.task})[0];$(".task-detail",h).innerHTML='<div class="detail-overview"><div><small>'+esc(t.id)+'</small><h3>'+esc(t.name)+'</h3><p>'+esc(t.instruction||t.focus)+'</p></div>'+pill(t.status)+'</div><div class="detail-progress"><span style="width:'+t.progress+'%"></span></div><div class="mini-flow"><b>感知</b><i>→</i><b>规划</b><i>→</i><b>执行</b><i>→</i><b>验证</b></div><button class="unit-primary" data-run-detail>执行任务</button>'; $("[data-run-detail]",h).onclick=function(){post("/api/run",{scene_id:t.id,instruction:t.instruction||t.name}).then(function(){toast("任务已提交执行","success")})}}});
+n=$('[data-action="2d"]',h);if(n)n.onclick=function(){toast("2D 视图接口已预留","info")};
+n=$("[data-action=simulate]",h);if(n)n.onclick=function(){toast("仿真引擎接口已预留","info")};
+n=$("[data-action=robot-command]",h);if(n)n.onclick=function(){post("/api/robots/RBT-001/commands",{command:"SELF_CHECK"}).then(function(){toast("自检命令已进入队列","success")})};
+["new-scene","new-dataset","new-model","scene-edit","scene-publish","scene-export","deploy","export-logs"].forEach(function(a){n=$("[data-action="+a+"]",h);if(n)n.onclick=function(){toast("该能力已保留接口位置","info")}});
 
-function provenanceHtml(provenance, label = "来源证据") {
-  if (!provenance || typeof provenance !== "object") return "";
-  const source = provenance.source || provenance.provider || "—";
-  const agent = provenance.agent || "—";
-  const model = provenance.model || "—";
-  const requestId = provenance.request_id || provenance.run_id || "—";
-  const latency = provenance.latency_ms == null ? "—" : `${Number(provenance.latency_ms).toFixed(1)} ms`;
-  const fallback = provenance.fallback === true || provenance.used_fallback === true ? "是" : "否";
-  const validation = provenance.validation || provenance.patch_validation;
-  const validationText = validation && validation.passed === false ? "未通过" : validation ? "通过" : "—";
-  return `<div class="provenance-detail"><strong>${escapeHtml(label)}</strong><div class="kv-grid"><div class="kv"><small>实际来源</small><strong>${escapeHtml(String(source))}</strong></div><div class="kv"><small>Agent</small><strong>${escapeHtml(String(agent))}</strong></div><div class="kv"><small>模型</small><strong>${escapeHtml(String(model))}</strong></div><div class="kv"><small>请求/运行 ID</small><strong>${escapeHtml(String(requestId))}</strong></div><div class="kv"><small>调用耗时</small><strong>${escapeHtml(latency)}</strong></div><div class="kv"><small>发生回退</small><strong class="${fallback === "是" ? "status-warn" : "status-ok"}">${fallback}</strong></div><div class="kv"><small>校验结论</small><strong>${escapeHtml(validationText)}</strong></div></div></div>`;
-}
-
-document.addEventListener("DOMContentLoaded", init);
-
-async function init() {
-  buildTimeline();
-  initModuleToggles();
-  $("sceneSelect").addEventListener("change", onSceneChanged);
-  $("instruction").addEventListener("input", () => {
-    if (!state.response) {
-      updateEnvironmentQuick();
-      renderAcceptance(null);
-    }
+$$(".module-mode",h).forEach(function(sel){var sync=function(){var card=sel.closest(".module-card"),fields=$("[data-smart-fields]",card),stateNode=$(".module-state",card);if(fields)fields.hidden=sel.value!=="smart";if(stateNode)stateNode.textContent=sel.value==="smart"?"智能":"本地"};sel.onchange=sync;sync()});
+n=$("[data-action=refresh-model-config]",h);if(n)n.onclick=function(){unit("model-config")};
+n=$("[data-action=save-model-config]",h);if(n)n.onclick=function(){
+  var modules={}, value=function(card,field){var node=$("[data-field="+field+"]",card);return node?node.value:""};
+  $$(".module-card",h).forEach(function(card){
+    var id=card.dataset.module, item={mode:value(card,"mode"),provider:value(card,"provider"),model:value(card,"model"),base_url:value(card,"base_url"),api_key:value(card,"api_key")};
+    if(id==="C")item.backend=value(card,"backend");
+    modules[id]=item;
   });
-  $("runButton").addEventListener("click", runDemo);
-  $("resetButton").addEventListener("click", resetDemo);
-  try {
-    const [scenarioResponse, healthResponse] = await Promise.all([fetchJson("/api/scenarios"), fetchJson("/api/health")]);
-    state.scenarios = scenarioResponse.scenarios || [];
-    fillScenarios();
-    setHealth(healthResponse);
-  } catch (error) {
-    setHealth(null);
-    showError(`无法连接演示服务：${error.message}。请在仓库根目录执行 python demo/server.py。`);
-  }
+  put("/api/model-config",{modules:modules}).then(function(){toast("A / B / C / D 模型配置已固定保存","success");unit("model-config")}).catch(function(e){toast(e.message,"bad")});
+};
+
+n=$("[data-action=save-settings]",h);if(n)n.onclick=function(){var body={},form=$(".settings-form",h);$$("[name]",form).forEach(function(x){body[x.name]=x.type==="checkbox"?x.checked:x.type==="number"?Number(x.value):x.value});put("/api/settings",body).then(function(){toast("设置已保存","success")}).catch(function(e){toast(e.message,"bad")})};
+n=$("[data-action=reset-settings]",h);if(n)n.onclick=function(){unit("settings")}
 }
-
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
-  const data = await response.json();
-  if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-function buildTimeline() {
-  const names = { perception: ["P", "感知"], intent: ["A", "意图"], strategy: ["B", "策略"], execution: ["C", "模拟执行（Mock）"], feedback: ["D", "反馈"] };
-  const timeline = $("timeline");
-  timeline.innerHTML = '<div class="timeline-line"><span id="timelineProgress"></span></div>' + state.stageOrder.map((stage, index) => `
-    <div class="timeline-item" data-stage="${stage}">
-      <div class="timeline-dot">${names[stage][0]}</div><div class="timeline-label">${names[stage][1]}</div>
-    </div>`).join("");
-}
-
-function fillScenarios() {
-  const select = $("sceneSelect");
-  select.innerHTML = state.scenarios.map((scenario) => `<option value="${escapeHtml(scenario.id)}">${escapeHtml(scenario.name)}</option>`).join("");
-  onSceneChanged();
-}
-
-function selectedScenario() {
-  return state.scenarios.find((item) => item.id === $("sceneSelect").value) || state.scenarios[0];
-}
-
-function onSceneChanged() {
-  const scenario = selectedScenario();
-  if (!scenario) return;
-  $("sceneDescription").textContent = scenario.description;
-  $("instruction").value = scenario.instruction;
-  const commands = scenario.commands?.length ? scenario.commands : [{ instruction: scenario.instruction }];
-  $("quickCommands").innerHTML = commands.map((command) => `<button class="quick-btn" type="button">${escapeHtml(command.instruction)}</button>`).join("");
-  $("quickCommands").querySelectorAll("button").forEach((button, index) => {
-    button.addEventListener("click", () => {
-      $("instruction").value = commands[index].instruction;
-      updateEnvironmentQuick();
-      renderAcceptance(null);
-    });
-  });
-  renderMiniScene(scenario.scene);
-  renderEnvironmentDetails(scenario.scene);
-  updateEnvironmentQuick();
-  resetDemo(false);
-}
-
-function initModuleToggles() {
-  document.querySelectorAll("[data-module-toggle]").forEach((button) => {
-    button.dataset.expandLabel = button.textContent.replace(/[＋－]/g, "").trim();
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const card = button.closest(".module-card");
-      if (!card) return;
-      const expanded = card.classList.toggle("expanded");
-      button.setAttribute("aria-expanded", String(expanded));
-      button.innerHTML = expanded ? "收起详情 <span>－</span>" : `${button.dataset.expandLabel} <span>＋</span>`;
-      if (!expanded) return;
-      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
-  });
-}
-
-const SCENE_BOUNDS = { xMin: -0.05, xMax: 0.50, yMin: -0.25, yMax: 0.25 };
-
-function selectedExpected() {
-  const scenario = selectedScenario();
-  if (!scenario) return "—";
-  const instruction = $("instruction")?.value?.trim();
-  const command = scenario.commands?.find((item) => item.instruction === instruction);
-  return command?.expected || scenario.expected;
-}
-
-function updateEnvironmentQuick() {
-  const scenario = selectedScenario();
-  if (!scenario || !$("environmentQuick")) return;
-  $("environmentQuick").innerHTML = `<span class="quick-label">${escapeHtml(scenario.focus || "闭环演示")}</span><strong>${escapeHtml(scenario.name)}</strong><span class="scenario-expectation">当前指令预期：${codeWithMeaning(selectedExpected(), STATUS_LABELS)}</span>`;
-}
-
-function worldToScreen(pose, width, height, margin) {
-  const x = Number(pose?.x || 0);
-  const y = Number(pose?.y || 0);
-  const lateral = Math.max(0, Math.min(1, (y - SCENE_BOUNDS.yMin) / (SCENE_BOUNDS.yMax - SCENE_BOUNDS.yMin)));
-  const depth = Math.max(0, Math.min(1, (x - SCENE_BOUNDS.xMin) / (SCENE_BOUNDS.xMax - SCENE_BOUNDS.xMin)));
-  return { x: margin + lateral * (width - margin * 2), y: height - margin - depth * (height - margin * 2) };
-}
-
-function sceneObjectColor(item) {
-  return item?.attributes?.color || (item?.execution?.valid_destination ? "target" : "blue");
-}
-
-function sceneObjectLabel(item) {
-  const displayName = item?.attributes?.display_name || item?.category || item?.id || "对象";
-  return displayName.length > 8 ? displayName.slice(0, 8) : displayName;
-}
-
-function sceneSpatialMessages(scene, limit = 4) {
-  return (scene?.spatial_messages || []).slice(0, limit).map((item) => item.message || item.text).filter(Boolean);
-}
-
-function renderMiniScene(scene) {
-  const objects = scene?.objects || [];
-  const html = objects.map((item) => {
-    const point = worldToScreen(item.pose, 100, 100, 14);
-    const color = sceneObjectColor(item);
-    return `<span class="mini-object ${escapeHtml(color)}${item.execution?.valid_destination ? " target" : ""}" style="left:${point.x.toFixed(1)}%;top:${point.y.toFixed(1)}%" title="${escapeHtml(`${sceneObjectLabel(item)} · ${item.id} · X=${Number(item.pose?.x || 0).toFixed(2)}, Y=${Number(item.pose?.y || 0).toFixed(2)}, Z=${Number(item.pose?.z || 0).toFixed(2)}`)}"></span>`;
-  }).join("");
-  $("sceneMini").innerHTML = html || '<span class="scene-empty">场景暂无对象</span>';
-  const messages = sceneSpatialMessages(scene, 3);
-  if ($("sceneSpatialMessage")) {
-    $("sceneSpatialMessage").innerHTML = messages.length
-      ? `<span class="scene-spatial-label">空间消息</span>${messages.map((message) => `<span>${escapeHtml(message)}</span>`).join("")}`
-      : '<span class="scene-spatial-label">空间消息</span><span>暂无可用空间关系</span>';
-  }
-}
-
-function renderEnvironmentDetails(scene) {
-  const detail = $("environmentDetail");
-  if (!detail || !scene) return;
-  const objects = scene.objects || [];
-  const messages = sceneSpatialMessages(scene, 8);
-  detail.innerHTML = `<div class="kv-grid"><div class="kv"><small>场景编号</small><strong>${idWithMeaning(scene.scene_id, "场景")}</strong></div><div class="kv"><small>坐标系</small><strong>${escapeHtml(scene.coordinate_frame || "world")} · X前后 / Y左右 / Z高度</strong></div></div><div class="object-list">${objects.map((item) => `<div class="object-row"><span class="object-name"><i class="object-dot ${escapeHtml(sceneObjectColor(item))}"></i>${escapeHtml(sceneObjectLabel(item))}</span><span class="object-meta">${idWithMeaning(item.id)}<br/>(${Number(item.pose?.x || 0).toFixed(2)}, ${Number(item.pose?.y || 0).toFixed(2)}, ${Number(item.pose?.z || 0).toFixed(2)})</span></div>`).join("")}</div><div class="spatial-detail"><strong>空间关系</strong>${messages.length ? messages.map((message) => `<div>${escapeHtml(message)}</div>`).join("") : "<div>暂无空间关系</div>"}</div>`;
-}
-
-function setHealth(data) {
-  const pill = $("healthPill");
-  if (!data) { pill.classList.remove("ready"); pill.innerHTML = '<span class="health-dot"></span>服务未连接'; return; }
-  const modules = Object.values(data.modules || {});
-  const ready = data.status === "ok" && data.healthy === true
-    && modules.every((item) => item.healthy !== false && (item.healthy === true || item.status === "ok" || item.status === "healthy"));
-  pill.classList.toggle("ready", ready);
-  pill.innerHTML = ready
-    ? '<span class="health-dot"></span>本地服务已连接 · 所有模块健康'
-    : '<span class="health-dot"></span>服务已连接 · 存在模块异常';
-}
-
-function renderAcceptance(response = null) {
-  const banner = $("acceptanceBanner");
-  const status = $("acceptanceStatus");
-  const detail = $("acceptanceDetail");
-  if (!banner || !status || !detail) return;
-
-  if (!response) {
-    banner.dataset.state = "pending";
-    status.textContent = "等待运行";
-    detail.innerHTML = selectedScenario()
-      ? `预期结果：${codeWithMeaning(selectedExpected(), STATUS_LABELS)} · 实际结果：尚未运行`
-      : "选择场景并运行后，对比预期结果和系统实际结果。";
-    return;
-  }
-
-  const acceptance = response.acceptance || {};
-  const passed = acceptance.passed === true;
-  const metrics = response.metrics || acceptance.metrics || {};
-  const metricText = metrics.sample_count
-    ? ` · 指标样本 ${metrics.sample_count} · 危险误执行率 ${Number(metrics.dangerous_false_execution_rate || 0).toFixed(2)}`
-    : "";
-  banner.dataset.state = passed ? "passed" : "mismatch";
-  status.innerHTML = passed
-    ? '<span class="status-ok">PASS · 验收通过</span>'
-    : '<span class="status-danger">需检查 · 验收不通过</span>';
-  detail.innerHTML = `预期：${codeWithMeaning(acceptance.expected_status, STATUS_LABELS)} · 实际：${codeWithMeaning(acceptance.actual_status, STATUS_LABELS)} · ${escapeHtml(acceptance.message || "已完成结果对比")}${escapeHtml(metricText)}`;
-}
-
-async function runDemo() {
-  if (state.running) return;
-  const instruction = $("instruction").value.trim();
-  if (!instruction) { showError("请输入一条自然语言指令。"); return; }
-  state.running = true;
-  $("runButton").disabled = true;
-  $("runButton").classList.add("loading");
-  resetDemo(false);
-  $("runStatus").textContent = "正在运行";
-  $("runTime").textContent = "处理中…";
-  try {
-    const response = await fetchJson("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scene_id: $("sceneSelect").value, instruction, engine: $("engineSelect").value }) });
-    state.response = response;
-    await revealStages(response);
-    renderAcceptance(response);
-    $("runStatus").textContent = resultStatus(response.result);
-    $("runTime").textContent = `${response.elapsed_ms} 毫秒`;
-  } catch (error) {
-    showError(error.message);
-    $("runStatus").textContent = "运行失败";
-    $("runTime").textContent = "—";
-  } finally {
-    state.running = false;
-    $("runButton").disabled = false;
-    $("runButton").classList.remove("loading");
-  }
-}
-
-async function revealStages(response) {
-  const result = response.result || {};
-  // B 展示初始策略；D 的修复 patch 已在反馈卡片的尝试明细中单独展示，
-  // 这样页面能清楚区分“B 生成基线”与“D 修复后重试策略”。
-  const stageData = { perception: response.scene, intent: result.task, strategy: result.initial_strategy || result.strategy, execution: result.execution, feedback: result.feedback };
-  for (let index = 0; index < state.stageOrder.length; index += 1) {
-    const stage = state.stageOrder[index];
-    const card = document.querySelector(`[data-stage="${stage}"].result-card`);
-    setStage(stage, index === state.stageOrder.length - 1 ? "running" : "running");
-    const detail = card.querySelector(".module-detail");
-    if (detail) detail.innerHTML = '<div class="empty-state loading">模块运行中</div>';
-    await sleep(300);
-    renderStage(stage, stageData[stage], response);
-    const blocked = stage === "intent" && stageData.intent && stageData.intent.status !== "READY";
-    setStage(stage, blocked ? "blocked" : (stageData[stage] ? "done" : "blocked"));
-    if (blocked) {
-      $("runStatus").textContent = "安全阻断";
-      break;
-    }
-  }
-  renderExecutionScene(response);
-  if (!result.execution) {
-    setStage("strategy", result.strategy ? (result.strategy.blocked ? "blocked" : "done") : "skipped");
-    setStage("execution", "skipped");
-    setStage("feedback", "skipped");
-  }
-}
-
-function setStage(stage, status) {
-  const card = document.querySelector(`[data-stage="${stage}"].result-card`);
-  if (card) {
-    card.classList.remove("running", "done", "blocked", "skipped");
-    card.classList.add(status);
-    const badge = card.querySelector(".stage-state");
-    if (badge) badge.textContent = status === "running" ? "处理中" : status === "done" ? "已完成" : status === "blocked" ? "已阻断" : status === "skipped" ? "未进入" : "待运行";
-  }
-  const item = document.querySelector(`.timeline-item[data-stage="${stage}"]`);
-  if (item) { item.classList.remove("active", "done", "blocked", "skipped"); item.classList.add(status === "running" ? "active" : status); }
-  const index = state.stageOrder.indexOf(stage);
-  $("timelineProgress").style.width = `${Math.max(0, index) * 25}%`;
-}
-
-function renderStage(stage, data, response) {
-  if (stage === "perception") renderPerception(data);
-  if (stage === "intent") renderIntent(data);
-  if (stage === "strategy") renderStrategy(data);
-  if (stage === "execution") renderExecution(data);
-  if (stage === "feedback") renderFeedback(data, response.result);
-}
-
-function renderPerceptionPreview(scene) {
-  const preview = $("perceptionPreview");
-  if (!preview) return;
-  if (!scene) {
-    preview.innerHTML = '<div class="preview-heading"><span>对象概览</span><span class="preview-state">等待感知</span></div><div class="object-preview-placeholder"><span>场景对象</span><i>·</i><span>位置</span><i>·</i><span>可执行目标</span></div><p class="preview-note">运行后显示对象摘要，完整环境 JSON 请展开详情。</p>';
-    return;
-  }
-  const objects = scene.objects || [];
-  const colorLabels = { red: "红色", green: "绿色", blue: "蓝色", target: "目标区" };
-  const visibleObjects = objects.slice(0, 4);
-  preview.innerHTML = `<div class="preview-heading"><span>对象概览</span><span class="preview-state status-ok">${objects.length} 个对象 · ${(scene.relations || []).length} 条关系</span></div>${visibleObjects.length ? `<div class="object-preview-list">${visibleObjects.map((item) => { const color = sceneObjectColor(item); const pose = item.pose || {}; const targetLabel = item.execution?.valid_destination ? " · 目标区" : ""; return `<div class="object-preview-row"><span class="object-preview-name"><i class="object-preview-dot ${escapeHtml(color)}"></i>${escapeHtml(`${colorLabels[color] || "对象"} ${item.category || "物体"}`)}</span><span class="object-preview-meta">X${Number(pose.x || 0).toFixed(2)} · Y${Number(pose.y || 0).toFixed(2)} · Z${Number(pose.z || 0).toFixed(2)}${targetLabel}</span></div>`; }).join("")}</div>` : '<div class="object-preview-placeholder"><span>未发现对象</span></div>'}<p class="preview-note">${objects.length > visibleObjects.length ? `其余 ${objects.length - visibleObjects.length} 个对象请展开详情。` : "统一坐标：X前后、Y左右、Z高度。下方同时展示空间消息。"}</p>`;
-}
-
-function renderPerception(scene) {
-  if (!scene) { renderPerceptionPreview(null); return; }
-  const objects = scene.objects || [];
-  $("perceptionQuick").innerHTML = `<span class="quick-label">已读取场景</span><strong>${escapeHtml(scene.scene_id)}</strong>`;
-  $("perceptionMetrics").innerHTML = `<span>场景 <b>${escapeHtml(scene.scene_id)}</b></span><span>物体数量 <b>${objects.length}</b></span>`;
-  renderPerceptionPreview(scene);
-  const messages = sceneSpatialMessages(scene, 10);
-  $("perceptionResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>场景编号</small><strong>${idWithMeaning(scene.scene_id, "场景")}</strong></div><div class="kv"><small>物体数量</small><strong>${objects.length}</strong></div><div class="kv"><small>空间关系</small><strong>${(scene.relations || []).length} 条</strong></div><div class="kv"><small>空间消息</small><strong>${messages.length} 条</strong></div></div><div class="object-list">${objects.map((item) => `<div class="object-row"><span class="object-name"><i class="object-dot ${escapeHtml(sceneObjectColor(item))}"></i>${escapeHtml(item.category)}</span><span class="object-meta">${idWithMeaning(item.id)}<br/>坐标 X/Y/Z = (${Number(item.pose?.x || 0).toFixed(2)}, ${Number(item.pose?.y || 0).toFixed(2)}, ${Number(item.pose?.z || 0).toFixed(2)})</span></div>`).join("")}</div><div class="spatial-detail"><strong>空间消息</strong>${messages.length ? messages.map((message) => `<div>${escapeHtml(message)}</div>`).join("") : "<div>暂无空间消息</div>"}</div>`;
-}
-
-function renderIntent(task) {
-  if (!task) return;
-  const ready = task.status === "READY";
-  const diagnostics = task.diagnostics || {};
-  const trace = diagnostics.engine_trace || {};
-  const requestedEngine = trace.requested_engine || diagnostics.requested_engine || diagnostics.engine || "—";
-  const actualEngine = trace.actual_engine || diagnostics.actual_engine || "—";
-  const llmAttempted = trace.llm_call_attempted === true;
-  const llmSucceeded = trace.llm_call_succeeded === true;
-  const llmState = llmSucceeded ? "已调用并成功" : llmAttempted ? (trace.llm_transport_succeeded ? "已调用，但结果未采用" : "已尝试但失败") : "未调用";
-  const llmStateClass = llmSucceeded ? "status-ok" : llmAttempted ? "status-warn" : "status-muted";
-  $("intentQuick").innerHTML = ready ? `<span class="quick-label">任务已就绪</span><strong>${codeWithMeaning(task.action, ACTION_LABELS)}</strong>` : `<span class="quick-label">任务已阻断</span><strong>${codeWithMeaning(task.status, STATUS_LABELS)}</strong>`;
-  $("intentResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>状态</small><strong class="${ready ? "status-ok" : "status-danger"}">${codeWithMeaning(task.status, STATUS_LABELS)}</strong></div><div class="kv"><small>动作</small><strong>${codeWithMeaning(task.action, ACTION_LABELS)}</strong></div><div class="kv"><small>目标</small><strong>${(task.target_ids || []).length ? task.target_ids.map((id) => idWithMeaning(id)).join("、") : "未绑定"}</strong></div><div class="kv"><small>目的地</small><strong>${task.destination_id ? idWithMeaning(task.destination_id, "目标区") : "未绑定"}</strong></div><div class="kv"><small>请求引擎</small><strong>${escapeHtml(String(requestedEngine))}</strong></div><div class="kv"><small>实际引擎</small><strong>${escapeHtml(String(actualEngine))}</strong></div><div class="kv"><small>LLM调用</small><strong class="${llmStateClass}">${llmState}</strong></div></div>${trace.fallback_reason ? `<div class="feedback-callout" style="margin-top:11px">${escapeHtml(String(trace.fallback_reason))}</div>` : ""}${ready ? '<p class="helper" style="margin-top:11px">安全门禁通过：已形成稳定的 task.v1（意图任务协议），可交给 B。</p>' : `<div class="feedback-callout" style="margin-top:11px">${escapeHtml((task.blocking_reasons || []).join("；") || "未满足执行条件")}</div>`}`;
-}
-
-function renderStrategyPreview(strategy) {
-  const preview = $("strategyPreview");
-  if (!preview) return;
-  if (!strategy) {
-    preview.innerHTML = '<div class="preview-heading"><span>关键动作预览</span><span class="preview-state">等待任务</span></div><div class="preview-placeholder"><span>感知结果</span><i>→</i><span>意图任务</span><i>→</i><span>原子动作</span></div><p class="preview-note">运行后展示前几步动作，完整步骤请展开详情。</p>';
-    return;
-  }
-  const steps = strategy.steps || [];
-  const visibleSteps = steps.slice(0, 4);
-  const stateLabel = strategy.blocked ? "已阻断" : `${steps.length} 步`;
-  preview.innerHTML = `<div class="preview-heading"><span>关键动作预览</span><span class="preview-state ${strategy.blocked ? "status-danger" : "status-ok"}">${stateLabel}</span></div>${visibleSteps.length ? `<div class="preview-list">${visibleSteps.map((step, index) => `<div class="preview-step"><span class="preview-step-no">${index + 1}</span><span class="preview-step-action">${escapeHtml(ACTION_LABELS[step.action] || step.action || "未命名动作")}</span></div>`).join("")}</div>` : '<div class="preview-placeholder"><span>暂无可执行动作</span></div>'}<p class="preview-note">${steps.length > visibleSteps.length ? `其余 ${steps.length - visibleSteps.length} 步请展开详情。` : "已展示全部关键动作。"}</p>`;
-}
-
-function renderStrategy(strategy) {
-  if (!strategy) { $("strategyQuick").innerHTML = '<span class="quick-label">策略未生成</span><strong>等待上游任务</strong>'; $("strategyMetrics").innerHTML = '<span>步骤数 <b>—</b></span><span>模式 <b>—</b></span>'; $("strategyResult").innerHTML = '<div class="empty-state">未生成策略：上游任务被阻断。</div>'; renderStrategyPreview(null); return; }
-  const steps = strategy.steps || [];
-  $("strategyQuick").innerHTML = `<span class="quick-label">${strategy.blocked ? "策略已阻断" : "策略已生成"}</span><strong>${steps.length ? `${steps.length} 步原子动作` : "无可执行步骤"}</strong>`;
-  $("strategyMetrics").innerHTML = `<span>步骤数 <b>${steps.length}</b></span><span>模式 <b>${escapeHtml(STRATEGY_MODE_LABELS[strategy.mode] || strategy.mode || "—")}</b></span>`;
-  renderStrategyPreview(strategy);
-  const blockingReasons = strategy.blocking_reasons || [];
-  $("strategyResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>生成状态</small><strong class="${strategy.blocked ? "status-danger" : "status-ok"}">${codeWithMeaning(strategy.blocked ? "BLOCKED" : "READY", STATUS_LABELS)}</strong></div><div class="kv"><small>策略模式</small><strong>${codeWithMeaning(strategy.mode || "primitive_plan", STRATEGY_MODE_LABELS)}</strong></div></div>${strategy.blocked && blockingReasons.length ? `<div class="feedback-callout" style="margin-top:11px">${escapeHtml(blockingReasons.join("；"))}</div>` : ""}${provenanceHtml(strategy.provenance, "B 策略实际来源") }<div class="step-list">${steps.map((step, index) => `<div class="step-row"><span class="step-action"><b>${index + 1}</b> ${codeWithMeaning(step.action, ACTION_LABELS)}</span><span class="step-meta">${idWithMeaning(step.step_id, "步骤")}</span></div>`).join("")}</div>`;
-}
-
-function renderExecution(execution) {
-  if (!execution) { $("executionQuick").innerHTML = '<span class="quick-label">C 未进入</span><strong>等待可执行策略</strong>'; $("executionMetrics").innerHTML = '<span>耗时 <b>—</b></span><span>安全事件 <b>—</b></span>'; $("executionResult").innerHTML = '<div class="empty-state">未进入 C：上游没有产生可执行 strategy.v1。</div>'; return; }
-  const statusClass = execution.status === "SUCCEEDED" ? "status-ok" : "status-danger";
-  $("executionQuick").innerHTML = `<span class="quick-label">C 执行结果</span><strong class="${statusClass}">${codeWithMeaning(execution.status, STATUS_LABELS)}</strong>`;
-  $("executionMetrics").innerHTML = `<span>耗时 <b>${Number(execution.total_duration_ms || 0)} 毫秒</b></span><span>安全事件 <b>${(execution.safety_events || []).length}</b></span>`;
-  $("executionResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>最终状态</small><strong class="${statusClass}">${codeWithMeaning(execution.status, STATUS_LABELS)}</strong></div><div class="kv"><small>总耗时</small><strong>${Number(execution.total_duration_ms || 0)} 毫秒</strong></div><div class="kv"><small>轨迹点数量</small><strong>${(execution.trajectory_points || []).length}</strong></div><div class="kv"><small>安全事件数量</small><strong class="${(execution.safety_events || []).length ? "status-danger" : "status-ok"}">${(execution.safety_events || []).length}</strong></div></div>${provenanceHtml(execution.provenance || { source: "mock", backend: "mock", agent: "executor", validation: { passed: true } }, "C 执行实际来源") }<div class="step-list">${(execution.steps || []).map((step) => `<div class="step-row ${step.status === "FAILED" ? "failed" : step.status === "SKIPPED" ? "skipped" : ""}"><span class="step-action"><span class="step-status ${String(step.status || "").toLowerCase()}">${codeWithMeaning(step.status, STATUS_LABELS)}</span>${codeWithMeaning(step.action, ACTION_LABELS)}</span><span class="step-meta">${Number(step.duration_ms || 0)} 毫秒${step.phase ? `<br/>阶段：${escapeHtml(step.phase)}` : ""}${step.reason ? `<br/>${escapeHtml(step.reason)}` : ""}</span></div>`).join("")}</div>`;
-}
-
-function renderFeedbackPreview(feedback, result, diagnosis = {}) {
-  const preview = $("feedbackPreview");
-  if (!preview) return;
-  if (!feedback) {
-    preview.innerHTML = '<div class="preview-heading"><span>闭环诊断预览</span><span class="preview-state">等待 C 执行</span></div><div class="preview-placeholder feedback-placeholder"><span>执行结果</span><i>→</i><span>安全检查</span><i>→</i><span>闭环判定</span></div><p class="preview-note">运行后展示通过状态和重试决策，完整诊断请展开详情。</p>';
-    return;
-  }
-  const passed = Boolean(diagnosis.execution_passed);
-  const retryLabel = feedback.retryable ? "建议重试" : "不重试";
-  preview.innerHTML = `<div class="preview-heading"><span>闭环诊断预览</span><span class="preview-state ${passed ? "status-ok" : "status-danger"}">${passed ? "通过" : "需处理"}</span></div><div class="preview-list"><div class="preview-step"><span class="preview-step-no ${passed ? "preview-ok" : "preview-danger"}">D</span><span class="preview-step-action">执行证据：${passed ? "通过" : "未通过"}</span></div><div class="preview-step"><span class="preview-step-no preview-muted">↻</span><span class="preview-step-action">重试决策：${retryLabel} · ${Number(result?.retry_count || 0)} 次</span></div></div><p class="preview-note">${passed ? "执行证据通过，闭环结束。" : "保留诊断结果，等待安全规则决定下一步。"}</p>`;
-}
-
-function renderFeedback(feedback, result) {
-  if (!feedback) { $("feedbackQuick").innerHTML = '<span class="quick-label">暂无反馈</span><strong>等待 C 执行结果</strong>'; $("feedbackMetrics").innerHTML = '<span>可重试 <b>—</b></span><span>重试次数 <b>—</b></span><span>诊断轮次 <b>—</b></span><span>尝试次数 <b>—</b></span>'; $("feedbackResult").innerHTML = `<div class="empty-state">${result?.stop_reason ? codeWithMeaning(result.stop_reason, STOP_REASON_LABELS) : "没有反馈模块输出"}</div>`; renderFeedbackPreview(null, result); return; }
-  let diagnosis = {};
-  try { diagnosis = JSON.parse(feedback.diagnosis || "{}"); } catch (_) { diagnosis = {}; }
-  $("feedbackQuick").innerHTML = `<span class="quick-label">闭环判定</span><strong class="${diagnosis.execution_passed ? "status-ok" : "status-danger"}">${diagnosis.execution_passed ? "通过" : "需处理"}</strong>`;
-  const repairRounds = Number(diagnosis.repair_rounds || 0);
-  const attempts = Array.isArray(result?.attempts) ? result.attempts : [];
-  $("feedbackMetrics").innerHTML = `<span>可重试 <b>${feedback.retryable ? "是" : "否"}</b></span><span>重试次数 <b>${Number(result?.retry_count || 0)}</b></span><span>诊断轮次 <b>${repairRounds}</b></span><span>尝试次数 <b>${attempts.length}</b></span>`;
-  renderFeedbackPreview(feedback, result, diagnosis);
-  const diagnosisReason = diagnosis.stopped_reason ? `<br/>诊断：${escapeHtml(diagnosis.stopped_reason)}` : "";
-  const attemptHtml = attempts.map((attempt) => {
-    let attemptDiagnosis = {};
-    try { attemptDiagnosis = JSON.parse(attempt.feedback?.diagnosis || "{}"); } catch (_) { attemptDiagnosis = {}; }
-    const currentSteps = attempt.strategy?.steps || [];
-    const patch = attempt.feedback?.patch;
-    const patchSteps = patch?.steps || [];
-    const currentHasRecovery = currentSteps.some((step) => step.on_failure);
-    const patchHasRecovery = patchSteps.some((step) => step.on_failure);
-    const patchLabel = !patch
-      ? "无 patch"
-      : patchHasRecovery && !currentHasRecovery
-        ? "已生成恢复 patch"
-        : "已返回策略 patch";
-    return `<div class="attempt-row"><div class="attempt-heading"><strong>第 ${Number(attempt.attempt || 0)} 次 C 执行</strong><span class="${attempt.execution?.status === "SUCCEEDED" ? "status-ok" : attempt.execution?.status === "FAILED" ? "status-danger" : "status-warn"}">${codeWithMeaning(attempt.execution?.status, STATUS_LABELS)}</span></div><div class="attempt-meta">D 诊断 ${Number(attemptDiagnosis.repair_rounds || 0)} 轮 · ${attempt.feedback?.retryable ? "允许重试" : "不再重试"} · ${escapeHtml(patchLabel)}</div>${patch ? `<details class="attempt-patch"><summary>查看本轮 patch</summary><pre>${pretty(patch)}</pre></details>` : ""}</div>`;
-  }).join("");
-  $("feedbackResult").innerHTML = `<div class="kv-grid"><div class="kv"><small>可重试</small><strong class="${feedback.retryable ? "status-warn" : "status-ok"}">${feedback.retryable ? "是" : "否"}</strong></div><div class="kv"><small>重试次数</small><strong>${Number(result?.retry_count || 0)}</strong></div><div class="kv"><small>诊断轮次</small><strong>${repairRounds}</strong></div><div class="kv"><small>尝试次数</small><strong>${attempts.length}</strong></div><div class="kv"><small>停止原因</small><strong>${result?.stop_reason ? codeWithMeaning(result.stop_reason, STOP_REASON_LABELS) : "—"}</strong></div><div class="kv"><small>执行判定</small><strong class="${diagnosis.execution_passed ? "status-ok" : "status-danger"}">${diagnosis.execution_passed ? "通过" : "未通过"}</strong></div></div>${provenanceHtml(feedback.provenance, "D 反馈实际来源") }<div class="feedback-callout" style="margin-top:11px">${escapeHtml(diagnosis.execution_passed ? "执行证据通过，闭环结束。" : "执行未通过，反馈模块保留诊断并按安全规则决定是否重试。")}${diagnosisReason}</div>${attemptHtml ? `<div class="attempt-list"><div class="attempt-list-title">闭环尝试明细</div>${attemptHtml}</div>` : ""}`;
-}
-
-function renderExecutionScene(response) {
-  const scene = response.scene || {};
-  const execution = response.result?.execution;
-  const snapshot = response.backend_snapshot || {};
-  const svg = $("mockVisual").querySelector("svg");
-  const map = (pose) => worldToScreen(pose, 640, 300, 56);
-  const objects = scene.objects || [];
-  const targetSvg = objects.filter((item) => item.execution?.valid_destination).map((item) => {
-    const point = map(item.pose);
-    const dimensions = item.dimensions || {};
-    const width = Math.max(72, Math.min(128, Number(dimensions.y || 0.12) * 500));
-    const height = Math.max(40, Math.min(62, Number(dimensions.x || 0.12) * 500));
-    return `<rect class="target-zone" x="${point.x - width / 2}" y="${point.y - height / 2}" width="${width}" height="${height}" rx="8"/><text x="${point.x}" y="${point.y + 4}" text-anchor="middle" fill="#ffcf9d" font-size="11">${escapeHtml(sceneObjectLabel(item))}</text>`;
-  }).join("");
-  const movableObjects = objects.filter((item) => !item.execution?.valid_destination);
-  const initialSvg = movableObjects.map((item) => {
-    const point = map(item.pose);
-    const color = sceneObjectColor(item);
-    return `<rect class="cube cube-ghost ${escapeHtml(color)}" x="${point.x - 18}" y="${point.y - 18}" width="36" height="36" rx="6"/><text x="${point.x}" y="${point.y + 4}" text-anchor="middle" fill="#a9bfd5" font-size="9">初始</text>`;
-  }).join("");
-  const finalSvg = movableObjects.map((item) => {
-    const point = map(snapshot.objects?.[item.id]?.pose || item.pose);
-    const color = sceneObjectColor(item);
-    return `<rect class="cube ${escapeHtml(color)}" x="${point.x - 18}" y="${point.y - 18}" width="36" height="36" rx="6"/><text x="${point.x}" y="${point.y + 4}" text-anchor="middle" fill="#fff" font-size="9">${escapeHtml(sceneObjectLabel(item))}</text>`;
-  }).join("");
-  const points = (execution?.trajectory_points || []).map((item) => map(item.pose));
-  const path = points.length ? points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ") : "";
-  const eef = points[points.length - 1] || map(snapshot.eef_pose || { x: 0, y: 0 });
-  const heldLabel = snapshot.held_id ? idWithMeaning(snapshot.held_id, "当前持有") : "无";
-  const safeStopLabel = snapshot.safe_stopped ? "是（已停止）" : "否（正常）";
-  const legend = execution ? "虚线=初始位置 · 实线=当前位置 · 轨迹=夹爪路径" : "当前展示感知到的初始场景 · X前后 / Y左右";
-  svg.innerHTML = `<rect class="scene-table" x="42" y="48" width="556" height="210" rx="15"/><text x="60" y="74" fill="#7e9bb5" font-size="11">C 模拟执行后端 · 世界坐标系</text>${targetSvg}${initialSvg}${execution ? finalSvg : ""}${path ? `<path class="trajectory" d="${path}"/>` : ""}${execution ? `<circle class="eef" cx="${eef.x}" cy="${eef.y}" r="8"/><text x="${eef.x + 14}" y="${eef.y + 4}" fill="#ffcf9d" font-size="10">夹爪</text>` : ""}<text x="42" y="282" fill="#708ba5" font-size="10">${execution ? `轨迹点：${points.length} · 当前持有：${heldLabel} · 安全停止：${safeStopLabel} · ${legend}` : legend}</text>`;
-}
-
-function resultStatus(result) { if (!result) return "无结果"; if (result.status === "SUCCEEDED") return "闭环成功"; if (result.status === "BLOCKED") return "安全阻断"; if (result.status === "SAFE_STOP") return "安全停止"; if (result.status === "FAILED") return "执行失败"; return STATUS_LABELS[result.status] || result.status || "完成"; }
-
-function resetDemo(clearInput = true) {
-  state.response = null;
-  if (clearInput) $("instruction").value = "";
-  $("runStatus").textContent = "等待运行"; $("runTime").textContent = "—";
-  state.stageOrder.forEach((stage) => { setStage(stage, "pending"); const body = document.querySelector(`[data-stage="${stage}"].result-card .module-detail`); if (body) body.innerHTML = '<div class="empty-state">运行后显示该环节的协议输出。</div>'; });
-  $("intentQuick").textContent = "等待输入指令";
-  $("strategyQuick").textContent = "等待策略生成";
-  $("feedbackQuick").textContent = "等待执行反馈";
-  $("perceptionQuick").textContent = "等待感知结果";
-  $("executionQuick").textContent = "等待 C 模块执行";
-  renderAcceptance(null);
-  $("strategyMetrics").innerHTML = '<span>步骤数 <b>—</b></span><span>模式 <b>—</b></span>';
-  $("feedbackMetrics").innerHTML = '<span>可重试 <b>—</b></span><span>重试次数 <b>—</b></span><span>诊断轮次 <b>—</b></span>';
-  $("perceptionMetrics").innerHTML = '<span>场景 <b>—</b></span><span>物体数量 <b>—</b></span>';
-  $("executionMetrics").innerHTML = '<span>耗时 <b>—</b></span><span>安全事件 <b>—</b></span>';
-  renderPerceptionPreview(null);
-  renderStrategyPreview(null);
-  renderFeedbackPreview(null, null);
-  $("mockVisual").querySelector("svg").innerHTML = '<text x="320" y="150" text-anchor="middle" fill="#6f8ca7" font-size="12">运行后显示 C 模块模拟轨迹（Mock）</text>';
-}
-
-function showError(message) { $("runStatus").textContent = "需要检查"; $("runTime").textContent = "—"; console.error(message); }
+document.addEventListener("DOMContentLoaded",init)
+}());
