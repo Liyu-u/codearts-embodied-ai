@@ -85,6 +85,20 @@ class MockExecutorBackendTests(unittest.TestCase):
         result = self.backend.execute("detect_object", {"object_id": "green_cube"})
         self.assertEqual(result["reason"], "BACKEND_SAFE_STOPPED")
 
+    def test_stack_pose_accepts_normalized_rgbd_dimensions(self):
+        pose = MockBackend._stack_pose(
+            {
+                "pose": {"x": 0.25, "y": 0.0, "z": 0.0},
+                "dimensions": {"width": 0.10, "height": 0.04, "depth": 0.10},
+            },
+            {
+                "pose": {"x": 0.0, "y": 0.0, "z": 0.02},
+                "dimensions": {"width": 0.04, "height": 0.04, "depth": 0.04},
+            },
+        )
+
+        self.assertEqual(pose, {"x": 0.25, "y": 0.0, "z": 0.04})
+
 
 if __name__ == "__main__":
     unittest.main()

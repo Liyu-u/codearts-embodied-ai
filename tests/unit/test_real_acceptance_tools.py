@@ -55,6 +55,18 @@ class RealAcceptanceToolTests(unittest.TestCase):
             "transport_auth",
         )
 
+    def test_missing_execution_is_runner_not_contract(self):
+        self.assertEqual(
+            classify({
+                "status": "FAILED",
+                "expected_status": "SUCCEEDED",
+                "failure_class": "contract",
+                "stages": {"A": {"status": "READY"}, "B": {"status": "SUCCEEDED"}, "C": {"status": None}},
+                "contract_checks": {"task_strategy_execution_feedback_task_id_match": False},
+            }),
+            "runner",
+        )
+
     def test_safe_stop_rate_uses_case_expected_status(self):
         result = summarize([
             {

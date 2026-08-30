@@ -31,18 +31,6 @@ if str(ROOT) not in sys.path:
 
 from integration.config.local_env import load_codearts_env, load_local_env  # noqa: E402
 
-# An intentional local codearts.env overrides the offline default. With no
-# local file, the demo remains deterministic and offline.
-load_codearts_env()
-load_local_env(".env")
-load_local_env("tracecoder_llm.env")
-
-# A demo should be repeatable and offline.  The UI still exposes the selected
-# intent engine, but strategy generation remains the local safe primitive plan.
-# Keep the demo reproducible by default, while allowing a caller to opt into
-# the real CodeArts provider with CODEARTS_STRATEGY_MODE=required/auto.
-os.environ.setdefault("CODEARTS_STRATEGY_MODE", "off")
-
 MODEL_CONFIG_PATH = ROOT / ".model_config.local.json"
 _MODEL_IDS = ("A", "B", "C", "D")
 _MODEL_MODES = {"rule", "mock", "smart"}
@@ -182,6 +170,22 @@ def _apply_model_config(config: dict) -> None:
             pass
 
 
+def configure_runtime_environment() -> dict:
+    """Load local runtime configuration explicitly for the HTTP entrypoint.
+
+    Importing ``demo.server`` is also used by unit/e2e tests and benchmark
+    helpers.  Environment loading must therefore happen at process startup,
+    not as an import side effect that changes unrelated test configuration.
+    """
+    load_codearts_env()
+    load_local_env(".env")
+    load_local_env("tracecoder_llm.env")
+    os.environ.setdefault("CODEARTS_STRATEGY_MODE", "off")
+    config = _load_model_config()
+    _apply_model_config(config)
+    return config
+
+
 def _merge_model_config(payload: dict, current: dict) -> dict:
     incoming = payload.get("modules", payload) if isinstance(payload, dict) else None
     if not isinstance(incoming, dict):
@@ -208,7 +212,6 @@ def _merge_model_config(payload: dict, current: dict) -> dict:
 
 
 _MODEL_CONFIG = _load_model_config()
-_apply_model_config(_MODEL_CONFIG)
 
 
 from demo.scenarios import get_scenario, list_scenarios  # noqa: E402
@@ -455,6 +458,18 @@ def _log_catalog() -> list[dict]:
 def _settings_catalog() -> dict:
     return {"runtime_mode": "AUTO", "default_robot": "RBT-001", "default_scene": "stacking_cubes", "event_stream": "WS /api/events", "api_base": "/api", "session_timeout": 30, "safe_control": True, "audit_enabled": True}
 
+
+def _livestream_catalog() -> dict:
+    """Expose only the playback URL; publisher credentials stay server-side."""
+
+    url = os.environ.get("LIVESTREAM_HLS_URL", "").strip()
+    return {
+        "enabled": bool(url),
+        "protocol": "HLS",
+        "url": url,
+        "source": "mediamtx" if url else None,
+    }
+
 class DemoHandler(BaseHTTPRequestHandler):
     server_version = "ClosedLoopDemo/1.0"
 
@@ -489,7 +504,7 @@ class DemoHandler(BaseHTTPRequestHandler):
             scene_id = parsed.path.rsplit("/", 1)[-1]
             try:
                 self._send_json(200, {"scene": get_scenario(scene_id)["scene"]})
-            except KeyError:
+            except (KeyError, ValueError):
                 self._send_json(404, {"ok": False, "error": "scene not found"})
             return
         if parsed.path == "/api/datasets":
@@ -506,6 +521,9 @@ class DemoHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/settings":
             self._send_json(200, {"settings": _settings_catalog()})
+            return
+        if parsed.path == "/api/livestream":
+            self._send_json(200, _livestream_catalog())
             return
 
         if parsed.path == "/api/model-config":
@@ -641,6 +659,7 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
         self.end_headers()
         if body:
             self.wfile.write(body)
@@ -650,6 +669,8 @@ class DemoHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    global _MODEL_CONFIG
+    _MODEL_CONFIG = configure_runtime_environment()
     host = os.environ.get("DEMO_HOST", "127.0.0.1")
     port = int(os.environ.get("DEMO_PORT", "8765"))
     server = ThreadingHTTPServer((host, port), DemoHandler)

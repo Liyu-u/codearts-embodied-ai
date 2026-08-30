@@ -18,6 +18,7 @@ from modules.strategy_generation.codearts_agent import (
     validate_strategy,
     _build_prompt,
     _build_review_prompt,
+    classify_codearts_error,
 )
 
 
@@ -358,6 +359,12 @@ class CodeArtsClientTests(unittest.TestCase):
 
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "CODEARTS_CLI_TIMEOUT")
+
+    def test_provider_balance_failure_is_classified_without_changing_error_text(self):
+        self.assertEqual(
+            classify_codearts_error("CODEARTS_PROVIDER_ERROR:Insufficient Balance"),
+            "provider_balance",
+        )
 
     def test_required_failure_matrix_keeps_structured_provenance(self):
         cases = {

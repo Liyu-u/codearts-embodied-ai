@@ -236,10 +236,15 @@ class StrategyInterpreter:
                 ),
                 "SAFE_STOP",
             )
-        recovery_attempts = sum(
-            1 for item in records
+        # A retry can contain several recovery actions (for example
+        # re-detect -> re-approach -> re-grasp).  Count the retry round once,
+        # instead of reporting the number of recovery action records as the
+        # number of attempts.
+        recovery_attempts = len({
+            str(item.get("phase"))
+            for item in records
             if str(item.get("phase", "")).startswith("recovery_")
-        )
+        })
         return {
             "schema_version": "execution.v1",
             "task_id": task_id,

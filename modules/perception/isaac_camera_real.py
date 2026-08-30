@@ -73,7 +73,10 @@ class IsaacCameraRealObservationProvider(base.IsaacCameraObservationProvider):
             return primary
         self.segmentation_annotator = fallback_annotator
         try:
-            fallback = super().observe()
+            # Both reads belong to the same rendered frame.  The fallback is
+            # allowed to reuse its timestamp; normal external callers still
+            # get the strict monotonic timestamp gate from the base provider.
+            fallback = super().observe(allow_timestamp_reuse=True)
         except (KeyError, RuntimeError, ValueError):
             return primary
         if len(fallback.get("objects", [])) > len(primary.get("objects", [])):

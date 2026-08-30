@@ -50,6 +50,7 @@ class TestTraceCoderBudget(unittest.TestCase):
         })
         diagnosis = json.loads(result["diagnosis"])
         self.assertFalse(diagnosis["tracecoder_invoked"])
+        self.assertEqual(diagnosis["verification_status"], "SKIPPED_HEALTHY_SUCCESS")
         self.assertEqual(result["provenance"]["source"], "tracecoder_skipped")
         self.assertEqual(fake.calls, [])
 

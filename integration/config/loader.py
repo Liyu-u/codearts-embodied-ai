@@ -40,7 +40,7 @@ _DEFAULTS = {
         "workspace": {"x_min": -0.5, "x_max": 0.7, "y_min": -0.5, "y_max": 0.5,
                       "z_min": 0.0, "z_max": 0.6},
         "motion": {"max_linear_velocity_m_s": 0.30, "max_angular_velocity_rad_s": 1.0,
-                   "max_force_n": 10.0, "action_timeout_s": 180.0,
+                   "max_force_n": 10.0, "action_timeout_s": 300.0,
                    "default_linear_speed_m_s": 0.20, "grasp_verify_force_n": 0.5},
         "safety": {"require_human_confirmation": False, "e_stop_enabled": True,
                    "collision_check": True, "fail_closed_on_error": True},

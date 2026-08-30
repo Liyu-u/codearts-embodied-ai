@@ -28,6 +28,11 @@ class ExecutorAdapter:
         if not validation["passed"]:
             raise ValueError("strategy safety validation failed: " + "; ".join(validation["errors"]))
         output = self._interpreter.run(input_json)
+        if output.get("task_id") != input_json.get("task_id"):
+            raise ValueError(
+                "execution task_id mismatch: "
+                f"expected {input_json.get('task_id')!r}, got {output.get('task_id')!r}"
+            )
         output["provenance"] = {
             "source": getattr(self._backend, "mode", "unknown"),
             "backend": getattr(self._backend, "mode", "unknown"),

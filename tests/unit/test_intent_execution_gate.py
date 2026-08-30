@@ -6,6 +6,7 @@ from copy import deepcopy
 from uuid import UUID
 
 from integration.adapters import intent, perception
+from modules.intent_understanding.adapter import _classify_intent_failure
 
 
 def _perception(*, target_execution=None, destination_execution=None, dimensions=None):
@@ -82,6 +83,7 @@ class IntentExecutionGateTests(unittest.TestCase):
         cases = (
             ("请把绿块放到桌子上", "green_cube", "zone_unstack_target"),
             ("请帮我完成绿色方块的放置", "green_cube", "zone_unstack_target"),
+            ("请帮我把绿色方块放好", "green_cube", "zone_unstack_target"),
         )
         for instruction, target_id, destination_id in cases:
             with self.subTest(instruction=instruction):
@@ -140,6 +142,30 @@ class IntentExecutionGateTests(unittest.TestCase):
         result = self._run(_perception())
         self.assertNotIn("destination", result)
         self.assertIn("destination_id", result)
+
+    def test_provider_balance_failure_has_stable_diagnostic_class(self):
+        class BalanceError(Exception):
+            status_code = 402
+
+        code, failure_class = _classify_intent_failure(BalanceError("Insufficient Balance"))
+
+        self.assertEqual(code, "INTENT_PROVIDER_BALANCE")
+        self.assertEqual(failure_class, "provider_balance")
+
+    def test_degraded_camera_quality_blocks_execution_before_semantic_grounding(self):
+        value = _perception()
+        value["quality"] = {
+            "status": "DEGRADED",
+            "reasons": ["LOW_DEPTH_VALID_RATIO"],
+        }
+
+        result = self._run(value)
+
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertIn(
+            "PERCEPTION_QUALITY_DEGRADED:LOW_DEPTH_VALID_RATIO",
+            result["blocking_reasons"],
+        )
 
 
 if __name__ == "__main__":

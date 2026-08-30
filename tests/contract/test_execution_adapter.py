@@ -1,6 +1,7 @@
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from integration.adapters import perception
 from integration.adapters.executor import ExecutorAdapter
@@ -40,6 +41,15 @@ class ExecutionAdapterContractTests(unittest.TestCase):
                 "release",
             ],
         )
+
+    def test_execution_rejects_task_id_drift_at_adapter_boundary(self):
+        with patch.object(
+            self.adapter._interpreter,
+            "run",
+            return_value={"schema_version": "execution.v1", "task_id": "wrong-task-id"},
+        ):
+            with self.assertRaisesRegex(ValueError, "execution task_id mismatch"):
+                self.adapter.run(self.strategy)
 
 
 if __name__ == "__main__":

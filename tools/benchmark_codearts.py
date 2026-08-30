@@ -28,9 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from integration.config.local_env import load_codearts_env  # noqa: E402
+from integration.config.local_env import temporary_local_env  # noqa: E402
 
-load_codearts_env()
 from integration.adapters import strategy as strategy_adapter  # noqa: E402
 from modules.strategy_generation.codearts_agent import validate_strategy  # noqa: E402
 
@@ -57,6 +56,18 @@ def _temporary_environment(values: dict[str, str]) -> Iterator[None]:
                 os.environ[key] = value
 
 
+@contextmanager
+def _provider_environment(values: dict[str, str], *, live: bool) -> Iterator[None]:
+    """Activate live credentials only for the provider call scope."""
+    if live:
+        with temporary_local_env("codearts.env"):
+            with _temporary_environment(values):
+                yield
+        return
+    with _temporary_environment(values):
+        yield
+
+
 def _tasks(case_count: int) -> list[dict[str, Any]]:
     tasks = []
     for index in range(1, case_count + 1):
@@ -68,7 +79,9 @@ def _tasks(case_count: int) -> list[dict[str, Any]]:
 
 def _run_one(task: dict[str, Any], mode: str, repeat: int) -> dict[str, Any]:
     started = time.perf_counter()
-    with _temporary_environment({"CODEARTS_STRATEGY_MODE": mode}):
+    with _provider_environment(
+        {"CODEARTS_STRATEGY_MODE": mode}, live=mode == "required"
+    ):
         output = strategy_adapter.run(task)
     elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
     provider = (output.get("provenance") or {}).get("provider")

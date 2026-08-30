@@ -20,6 +20,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from modules.executor.isaac_driver import DriverError
+from modules.executor.geometry import dimension_axis
 from modules.executor.safety import SafetyPolicy, workspace_violations
 
 COLLISION_RADIUS_M = 0.05
@@ -647,7 +648,7 @@ class BaseRobotBackend:
     def _object_top_z(item: dict) -> float:
         pose = item.get("pose", {})
         dimensions = item.get("dimensions", {})
-        half_height = float(dimensions.get("z", 0.04)) / 2.0
+        half_height = dimension_axis(dimensions, "z", 0.04) / 2.0
         return float(pose.get("z", 0.0)) + half_height
 
     def _approach_pose(self, item: dict) -> dict:
@@ -672,8 +673,8 @@ class BaseRobotBackend:
         held_pose = held.get("pose") or {}
         destination_dimensions = destination.get("dimensions") or {}
         held_dimensions = held.get("dimensions") or {}
-        destination_height = float(destination_dimensions.get("z", 0.0) or 0.0)
-        held_height = float(held_dimensions.get("z", 0.0) or 0.0)
+        destination_height = dimension_axis(destination_dimensions, "z")
+        held_height = dimension_axis(held_dimensions, "z")
         return {
             "x": float(destination_pose.get("x", held_pose.get("x", 0.0))),
             "y": float(destination_pose.get("y", held_pose.get("y", 0.0))),

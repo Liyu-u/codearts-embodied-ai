@@ -135,6 +135,9 @@ class SemanticCompiler:
                 "llm_candidate_valid": bool(provider_trace.get("candidate_valid")) or bool(llm_candidates),
                 "llm_cache_hit": bool(provider_trace.get("cache_hit")),
                 "llm_network_calls": int(bool(provider_trace.get("network_call"))),
+                "llm_attempt_count": int(provider_trace.get("attempt_count", 0) or 0),
+                "llm_error_class": provider_trace.get("error_class"),
+                "llm_status_code": provider_trace.get("status_code"),
             })
         elif should_call_llm:
             engine_trace["fallback_used"] = True

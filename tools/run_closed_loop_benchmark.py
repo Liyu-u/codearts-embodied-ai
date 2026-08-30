@@ -14,6 +14,7 @@ can merge records using the same per-run fields written here.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -29,20 +30,22 @@ ACCEPTANCE_ROOT = ROOT / "testdata" / "acceptance"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from modules.evaluator.tracecoder.llm_provider import try_load_dotenv  # noqa: E402
-
-try_load_dotenv()
 from demo.scenarios import get_scenario  # noqa: E402
 from demo.server import (  # noqa: E402
     _DemoStrategyAdapter,
     _IsolatedTraceCoderAdapter,
 )
 from integration.adapters import intent, perception, strategy, tracecoder  # noqa: E402
+from integration.config.local_env import temporary_local_env  # noqa: E402
 from integration.adapters.executor import ExecutorAdapter  # noqa: E402
 from integration.contract_validation import assert_contract  # noqa: E402
 from integration.pipeline import run_pipeline  # noqa: E402
 from modules.executor.mock_backend import MockBackend  # noqa: E402
-from tests.e2e.test_closed_loop_acceptance import _load_json, _load_scene, _run_case  # noqa: E402
+from tests.e2e.test_closed_loop_acceptance import (  # noqa: E402
+    _load_json,
+    _load_scene,
+    _tracecoder_fixture_adapters,
+)
 
 
 DEFAULT_ACTIONS = [
@@ -52,6 +55,50 @@ DEFAULT_ACTIONS = [
     "move_to_target",
     "release",
 ]
+
+PROTOCOL_VERSION = "1.0.0"
+VARIANT_AUTO = "auto"
+AVAILABLE_VARIANTS = (
+    "V0_RULE_BASELINE",
+    "V1_CODEARTS_B",
+    "V2_FULL_NO_D",
+    "V4_FULL",
+)
+
+
+def _default_variant(mode: str) -> str:
+    return {
+        "baseline": "V0_RULE_BASELINE",
+        "codearts": "V1_CODEARTS_B",
+        "intelligent": "V4_FULL",
+    }[mode]
+
+
+def _resolve_variant(mode: str, variant_id: str | None) -> str:
+    variant = variant_id or _default_variant(mode)
+    if variant not in AVAILABLE_VARIANTS:
+        raise ValueError(f"当前运行器不支持变体: {variant}")
+    compatible = {
+        "V0_RULE_BASELINE": {"baseline"},
+        "V1_CODEARTS_B": {"codearts"},
+        "V2_FULL_NO_D": {"intelligent"},
+        "V4_FULL": {"intelligent"},
+    }
+    if mode not in compatible[variant]:
+        raise ValueError(f"变体 {variant} 与运行模式 {mode} 不匹配")
+    return variant
+
+
+def _stable_seed(case: dict[str, Any]) -> int:
+    value = case.get("seed")
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    digest = hashlib.sha256(str(case["id"]).encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % 2_147_483_647
+
+
+def _new_experiment_id() -> str:
+    return time.strftime("exp-%Y%m%dT%H%M%SZ", time.gmtime())
 
 
 @contextmanager
@@ -67,6 +114,20 @@ def temporary_environment(values: dict[str, str]) -> Iterator[None]:
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+@contextmanager
+def benchmark_environment(
+    values: dict[str, str], *, load_online_credentials: bool
+) -> Iterator[None]:
+    """Scope local provider files and benchmark overrides to one run."""
+    if load_online_credentials:
+        with temporary_local_env("codearts.env", ".env", "tracecoder_llm.env"):
+            with temporary_environment(values):
+                yield
+        return
+    with temporary_environment(values):
+        yield
 
 
 def load_manifest(path: Path = BENCHMARK_PATH) -> dict[str, Any]:
@@ -92,7 +153,11 @@ def _demo_scene(case: dict[str, Any]) -> dict[str, Any]:
     return scene
 
 
-def _run_demo_case(case: dict[str, Any], request_id: str) -> dict[str, Any]:
+def _run_demo_case(
+    case: dict[str, Any],
+    request_id: str,
+    variant_id: str,
+) -> dict[str, Any]:
     scenario = get_scenario(case["scene_id"])
     scene = _demo_scene(case)
     failures = case.get("failures")
@@ -108,8 +173,9 @@ def _run_demo_case(case: dict[str, Any], request_id: str) -> dict[str, Any]:
         "intent": intent,
         "strategy": strategy_adapter,
         "executor": ExecutorAdapter(backend),
-        "tracecoder": _IsolatedTraceCoderAdapter(),
     }
+    if variant_id == "V4_FULL":
+        adapters["tracecoder"] = _IsolatedTraceCoderAdapter()
     result = run_pipeline(
         scene,
         case["instruction"],
@@ -124,28 +190,49 @@ def _run_demo_case(case: dict[str, Any], request_id: str) -> dict[str, Any]:
     }
 
 
-def _run_acceptance_case(case: dict[str, Any]) -> dict[str, Any]:
+def _run_acceptance_case(case: dict[str, Any], variant_id: str) -> dict[str, Any]:
     source = _load_json(ACCEPTANCE_ROOT / case["path"])
     intelligent = os.getenv("RIA_PLANNER_ENGINE", "rule").strip().lower() == "llm"
-    if intelligent and source.get("mode") != "tracecoder_fixture":
-        scene = _load_scene(source)
-        failures = (source.get("executor") or {}).get("failures")
-        backend = MockBackend.from_perception(scene, failures=failures)
-        adapters = {
-            "intent": intent,
-            "strategy": strategy,
-            "executor": ExecutorAdapter(backend),
-            "tracecoder": tracecoder,
+    if source.get("mode") == "tracecoder_fixture":
+        # The fixture deliberately produces one failed execution that D can
+        # repair.  V0/V1/V2 must stop after the first attempt; V4 keeps D.
+        fixture_adapters = _tracecoder_fixture_adapters()
+        if variant_id != "V4_FULL":
+            fixture_adapters.pop("tracecoder", None)
+        perception_input = {
+            "schema_version": "perception.v1",
+            "scene_id": "acceptance_tracecoder_fixture",
+            "objects": [],
         }
         result = run_pipeline(
-            scene,
+            perception_input,
             source["instruction"],
-            adapters,
-            engine="llm",
+            fixture_adapters,
+            engine="llm" if intelligent else None,
             request_id=source.get("case_id"),
         )
-    else:
-        result, backend = _run_case(source)
+        return {
+            "result": result,
+            "source_case": source,
+            "backend_snapshot": None,
+        }
+    scene = _load_scene(source)
+    failures = (source.get("executor") or {}).get("failures")
+    backend = MockBackend.from_perception(scene, failures=failures)
+    adapters = {
+        "intent": intent,
+        "strategy": strategy,
+        "executor": ExecutorAdapter(backend),
+    }
+    if variant_id == "V4_FULL":
+        adapters["tracecoder"] = tracecoder
+    result = run_pipeline(
+        scene,
+        source["instruction"],
+        adapters,
+        engine="llm" if intelligent else source.get("engine", "rule"),
+        request_id=source.get("case_id"),
+    )
     return {
         "result": result,
         "source_case": source,
@@ -154,7 +241,7 @@ def _run_acceptance_case(case: dict[str, Any]) -> dict[str, Any]:
 
 
 def _extract_feedback_status(feedback: Any) -> str | None:
-    if not isinstance(feedback, dict):
+    if not isinstance(feedback, dict) or not feedback:
         return None
     if feedback.get("safety_stop") is True or feedback.get("execution_status") == "SAFE_STOP":
         return "C_SAFE_STOP"
@@ -220,13 +307,236 @@ def _signature(result: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
+def _expected_binding(case: dict[str, Any], names: tuple[str, ...]) -> Any:
+    for name in names:
+        if name in case:
+            return case[name]
+    expected = case.get("expect")
+    if isinstance(expected, dict):
+        for name in names:
+            if name in expected:
+                return expected[name]
+    return None
+
+
+def _normalize_ids(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        return value
+    return None
+
+
+def _infer_failure_class(result: dict[str, Any], expected_status: str) -> str | None:
+    actual_status = result.get("status")
+    if actual_status == "SUCCEEDED":
+        return None
+    if actual_status == "SAFE_STOP":
+        return "safety_stop"
+    execution = result.get("execution") or {}
+    if expected_status in {"BLOCKED", "NEEDS_CLARIFICATION"} and not execution:
+        return "intent_or_strategy_block"
+    if execution.get("status") in {"FAILED", "ERROR"}:
+        return "execution_failure"
+    strategy = result.get("strategy") or {}
+    if strategy.get("provider") == "huaweicloud-codearts-agent" and strategy.get("fallback"):
+        return "provider_fallback"
+    stop_reason = result.get("stop_reason")
+    return str(stop_reason).lower() if stop_reason else "unknown_failure"
+
+
+def _close_pose(left: Any, right: Any, tolerance: float = 1e-6) -> bool:
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return False
+    return all(
+        isinstance(left.get(axis), (int, float))
+        and isinstance(right.get(axis), (int, float))
+        and abs(float(left[axis]) - float(right[axis])) <= tolerance
+        for axis in ("x", "y", "z")
+    )
+
+
+def _verify_world_state(
+    case: dict[str, Any],
+    result: dict[str, Any],
+    snapshot: Any,
+) -> bool | None:
+    """Verify the final Mock state when the case declares a checkable goal."""
+
+    expected = case.get("expected_world_state")
+    if not isinstance(expected, dict):
+        return None
+    expected_type = expected.get("type")
+    actual_status = result.get("status")
+    execution = result.get("execution") or {}
+    if expected_type == "not_executed":
+        return actual_status == "BLOCKED" and not execution
+    if expected_type == "execution_failed":
+        return actual_status == "FAILED"
+    if expected_type == "safe_stop":
+        return (
+            actual_status == "SAFE_STOP"
+            and isinstance(snapshot, dict)
+            and snapshot.get("safe_stopped") is True
+        )
+    if not isinstance(snapshot, dict):
+        return None
+    object_id = expected.get("object_id")
+    raw_objects = snapshot.get("objects")
+    if isinstance(raw_objects, list):
+        objects = {
+            item.get("id"): item
+            for item in raw_objects
+            if isinstance(item, dict) and item.get("id")
+        }
+        robot = snapshot.get("robot") or {}
+        if expected_type == "held":
+            return actual_status == "SUCCEEDED" and robot.get("gripper_object") == object_id
+        if expected_type not in {"placed", "stacked"}:
+            return None
+        item = objects.get(object_id)
+        return (
+            actual_status == "SUCCEEDED"
+            and isinstance(item, dict)
+            and item.get("container") == expected.get("destination_id")
+        )
+    if not isinstance(raw_objects, dict):
+        return None
+    objects = raw_objects
+    if expected_type == "held":
+        return actual_status == "SUCCEEDED" and snapshot.get("held_id") == object_id
+    if expected_type not in {"placed", "stacked"}:
+        return None
+    if actual_status != "SUCCEEDED" or object_id not in objects:
+        return False
+    object_pose = objects[object_id].get("pose")
+    destination_id = expected.get("destination_id")
+    destination = objects.get(destination_id) if destination_id else None
+    if not isinstance(destination, dict):
+        return False
+    destination_pose = destination.get("pose")
+    if expected_type == "placed":
+        return _close_pose(object_pose, destination_pose)
+    if not isinstance(object_pose, dict) or not isinstance(destination_pose, dict):
+        return False
+    return (
+        abs(float(object_pose.get("x", 0.0)) - float(destination_pose.get("x", 0.0))) <= 1e-6
+        and abs(float(object_pose.get("y", 0.0)) - float(destination_pose.get("y", 0.0))) <= 1e-6
+        and float(object_pose.get("z", 0.0)) > float(destination_pose.get("z", 0.0))
+    )
+
+
+def _attach_protocol_fields(
+    record: dict[str, Any],
+    case: dict[str, Any],
+    *,
+    experiment_id: str,
+    protocol_version: str,
+    variant_id: str,
+    git_sha: str | None,
+    manifest: str,
+    model: str | None,
+    policy: str,
+) -> dict[str, Any]:
+    """Add the fields needed to compare, audit, and replay one run."""
+
+    task = record.get("task") or {}
+    strategy_info = record.get("strategy") or {}
+    execution = record.get("execution") or {}
+    feedback = record.get("feedback") or {}
+    expected_status = record.get("expected_status", case.get("expected_status"))
+    expected_target_ids = _normalize_ids(
+        _expected_binding(case, ("expected_target_ids", "target_ids", "expected_target_id"))
+    )
+    expected_destination_ids = _normalize_ids(
+        _expected_binding(
+            case,
+            ("expected_destination_ids", "destination_ids", "expected_destination_id"),
+        )
+    )
+    actual_target_ids = _normalize_ids(task.get("target_ids"))
+    actual_destination_id = task.get("destination_id")
+    actual_destination_ids = (
+        [actual_destination_id] if isinstance(actual_destination_id, str) else None
+    )
+    target_exact_match = (
+        actual_target_ids == expected_target_ids
+        if expected_target_ids is not None
+        else None
+    )
+    destination_exact_match = (
+        actual_destination_ids == expected_destination_ids
+        if expected_destination_ids is not None
+        else None
+    )
+    world_state_verified = record.get("world_state_verified")
+    if world_state_verified is None:
+        for candidate in (execution, feedback):
+            value = candidate.get("world_state_verified")
+            if isinstance(value, bool):
+                world_state_verified = value
+                break
+    execution_status = execution.get("status")
+    provider = strategy_info.get("provider")
+    provider_present = bool(provider) or bool(strategy_info.get("fallback"))
+    feedback_present = any(
+        feedback.get(key) is not None
+        for key in ("status", "execution_status", "stop_reason", "retryable", "final_passed")
+    ) or bool(feedback.get("safety_stop"))
+    trace_complete = (
+        bool(task.get("task_id"))
+        and bool(strategy_info)
+        and bool(execution)
+        and feedback_present
+    )
+    record.update(
+        {
+            "experiment_id": experiment_id,
+            "protocol_version": protocol_version,
+            "variant_id": variant_id,
+            "git_sha": git_sha,
+            "manifest": manifest,
+            "seed": _stable_seed(case),
+            "expected_world_state": case.get("expected_world_state"),
+            "model": model or strategy_info.get("model"),
+            "policy": policy,
+            "target_id_expected": expected_target_ids,
+            "target_id_actual": actual_target_ids,
+            "destination_id_expected": expected_destination_ids,
+            "destination_id_actual": actual_destination_id,
+            "target_exact_match": target_exact_match,
+            "destination_exact_match": destination_exact_match,
+            "strategy_contract_passed": bool(strategy_info.get("contract_valid")),
+            "code_null": bool(strategy_info.get("code_null")),
+            "provider_calls": int(record.get("provider_calls", 1 if provider == "huaweicloud-codearts-agent" else 0)),
+            "provider_attempts": int(record.get("provider_attempts", 1 if provider_present else 0)),
+            "provider_error_class": record.get("provider_error_class"),
+            "execution_attempts": int(record.get("execution_attempts", record.get("attempt_count", 0))),
+            "execution_status": execution_status,
+            "failure_class": record.get("failure_class")
+            or (None if record.get("actual_status") == "SUCCEEDED" else _infer_failure_class(record, expected_status)),
+            "safe_stop_expected": expected_status == "SAFE_STOP",
+            "safe_stop_actual": record.get("actual_status") == "SAFE_STOP",
+            "unsafe_execution": expected_status in {"BLOCKED", "NEEDS_CLARIFICATION"}
+            and bool(execution_status),
+            "world_state_verified": world_state_verified,
+            "trace_complete": trace_complete,
+            "manual_intervention_count": int(record.get("manual_intervention_count", 0)),
+            "raw_evidence_path": record.get("evidence_path") or None,
+        }
+    )
+    return record
+
+
+def _run_one(case: dict[str, Any], repeat: int, variant_id: str) -> dict[str, Any]:
     request_id = f"benchmark-{case['id']}-r{repeat}"
     started = time.perf_counter()
     if case["source"] in {"demo", "demo_override"}:
-        payload = _run_demo_case(case, request_id)
+        payload = _run_demo_case(case, request_id, variant_id)
     elif case["source"] == "acceptance":
-        payload = _run_acceptance_case(case)
+        payload = _run_acceptance_case(case, variant_id)
     else:
         raise ValueError(f"未知 benchmark source: {case['source']}")
     elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
@@ -249,7 +559,13 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
     if not isinstance(feedback_provenance, dict):
         feedback_provenance = {}
     tracecoder_stats = feedback_provenance.get("llm_stats") or {}
-    tracecoder_invoked = feedback_provenance.get("source") != "tracecoder_skipped"
+    tracecoder_invoked = bool(feedback_provenance) and feedback_provenance.get("source") != "tracecoder_skipped"
+    world_state_verified = _verify_world_state(
+        case,
+        result,
+        payload.get("backend_snapshot")
+        or (result.get("execution") or {}).get("final_state"),
+    )
     strategy_steps = (result.get("strategy") or {}).get("steps") or []
     c_internal_recovery = any(
         isinstance(step.get("on_failure"), dict) for step in strategy_steps
@@ -300,11 +616,14 @@ def _run_one(case: dict[str, Any], repeat: int) -> dict[str, Any]:
             "tracecoder_invoked": tracecoder_invoked,
             "llm_stats": tracecoder_stats,
         },
+        "world_state_verified": world_state_verified,
         "execution": {
             "status": execution.get("status"),
             "total_duration_ms": execution.get("total_duration_ms"),
             "step_count": len(execution.get("steps") or []),
             "safety_events": execution.get("safety_events") or [],
+            "world_state_verified": execution.get("world_state_verified"),
+            "final_state": execution.get("final_state"),
         },
         "feedback": {
             "status": _extract_feedback_status(feedback),
@@ -366,7 +685,23 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
 
     strategy_records = [item for item in records if item["strategy"]["actions"]]
     execution_records = [item for item in records if item["execution"]["status"]]
-    safe_stop_records = [item for item in records if item["category"] == "safe_stop"]
+    safe_stop_records = [item for item in records if item["expected_status"] == "SAFE_STOP"]
+    valid_task_records = [item for item in records if item["expected_status"] == "SUCCEEDED"]
+    binding_records = [
+        item
+        for item in records
+        if item.get("target_exact_match") is not None
+        or item.get("destination_exact_match") is not None
+    ]
+    dangerous_records = [
+        item
+        for item in records
+        if item["expected_status"] in {"BLOCKED", "NEEDS_CLARIFICATION"}
+    ]
+    world_state_records = [
+        item for item in records if isinstance(item.get("world_state_verified"), bool)
+    ]
+    trace_complete_count = sum(1 for item in records if item.get("trace_complete"))
     d_repair_case_ids = {
         case["id"]
         for case in cases
@@ -448,6 +783,29 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
         "fallback_count": sum(1 for item in records if item["strategy"]["fallback"]),
         "execution_attempts": len(execution_records),
         "execution_success_rate": rate(sum(1 for item in execution_records if item["execution"]["status"] == "SUCCEEDED"), len(execution_records)),
+        "valid_task_success_rate": rate(
+            sum(1 for item in valid_task_records if item["actual_status"] == "SUCCEEDED"),
+            len(valid_task_records),
+        ),
+        "semantic_exact_match_rate": rate(
+            sum(
+                1
+                for item in binding_records
+                if all(
+                    value is True
+                    for value in (
+                        item.get("target_exact_match"),
+                        item.get("destination_exact_match"),
+                    )
+                    if value is not None
+                )
+            ),
+            len(binding_records),
+        ),
+        "unsafe_false_execution_rate": rate(
+            sum(1 for item in dangerous_records if item.get("unsafe_execution")),
+            len(dangerous_records),
+        ),
         "repair_cases": len(repair_records),
         "repair_success_rate": rate(sum(1 for item in repair_records if item["actual_status"] == "SUCCEEDED" and item["retry_count"] > 0), len(repair_records)),
         "c_internal_recovery_rate": rate(
@@ -458,8 +816,30 @@ def _summarize(records: list[dict[str, Any]], cases: list[dict[str, Any]]) -> di
             sum(1 for item in d_repair_attempt_records if item["actual_status"] == "SUCCEEDED"),
             len(d_repair_attempt_records),
         ),
+        "recoverable_failure_recovery_rate": rate(
+            sum(
+                1
+                for item in records
+                if item["category"] == "recoverable_failure"
+                and item["actual_status"] == "SUCCEEDED"
+            ),
+            sum(1 for item in records if item["category"] == "recoverable_failure"),
+        ),
         "safe_stop_cases": len(safe_stop_records),
         "safe_stop_correct_rate": rate(sum(1 for item in safe_stop_records if item["actual_status"] == "SAFE_STOP"), len(safe_stop_records)),
+        "false_success_rate": rate(
+            sum(
+                1
+                for item in world_state_records
+                if item["actual_status"] == "SUCCEEDED"
+                and item["world_state_verified"] is False
+            ),
+            sum(1 for item in world_state_records if item["actual_status"] == "SUCCEEDED"),
+        ),
+        "trace_completeness_rate": rate(trace_complete_count, len(records)),
+        "manual_intervention_count": sum(
+            int(item.get("manual_intervention_count", 0) or 0) for item in records
+        ),
         "safety_event_runs": sum(1 for item in records if item["execution"]["safety_events"]),
         "p50_latency_ms": end_to_end_latency_stats.get("p50_ms"),
         "p95_latency_ms": end_to_end_latency_stats.get("p95_ms"),
@@ -613,7 +993,12 @@ def run_benchmark(
     resume: bool = False,
     output: Path | None = None,
     remote: dict[str, Any] | None = None,
+    variant_id: str | None = None,
+    experiment_id: str | None = None,
+    protocol_version: str = PROTOCOL_VERSION,
 ) -> dict[str, Any]:
+    variant_id = _resolve_variant(mode, variant_id)
+    experiment_id = experiment_id or _new_experiment_id()
     manifest = load_manifest(manifest_path)
     all_cases = manifest["cases"]
     if representative:
@@ -633,7 +1018,10 @@ def run_benchmark(
     # variables set below therefore cannot change its already-created config;
     # use the adapter's explicit runtime override to keep this benchmark
     # deterministic and offline for both baseline and CodeArts-B comparisons.
-    tracecoder.configure_llm(mode="required" if mode == "intelligent" else "off")
+    d_enabled = variant_id == "V4_FULL"
+    tracecoder.configure_llm(
+        mode="required" if mode == "intelligent" and d_enabled else "off"
+    )
     env = {
         "CODEARTS_STRATEGY_MODE": "required" if mode in {"codearts", "intelligent"} else "off",
         "CODEARTS_STRATEGY_POLICY": policy,
@@ -642,7 +1030,7 @@ def run_benchmark(
         # optional online LLM must be disabled here; otherwise importing the
         # repository-local tracecoder_llm.env can silently turn an offline
         # Mock run into a network benchmark.
-        "TRACECODER_LLM_MODE": "required" if mode == "intelligent" else "off",
+        "TRACECODER_LLM_MODE": "required" if mode == "intelligent" and d_enabled else "off",
         "RIA_PLANNER_ENGINE": "llm" if mode == "intelligent" else "rule",
     }
     if model:
@@ -651,15 +1039,57 @@ def run_benchmark(
         env["CODEARTS_CLI_PURE"] = "1"
     if backend == "remote_isaac":
         env["CODEARTS_STRATEGY_MODE"] = "off"
+    from tools.reporting.report_models import collect_metadata
+
+    metadata = collect_metadata(
+        profile=mode,
+        manifest_path=str(manifest_path),
+        repeats=repeats,
+        argv=sys.argv,
+    )
     records: list[dict[str, Any]] = []
     partial_path = _partial_path(output)
+    run_config = {
+        "mode": mode,
+        "repeats": repeats,
+        "policy": policy,
+        "model": model,
+        "timeout_s": timeout_s,
+        "pure": pure,
+        "limit": limit,
+        "representative": representative,
+        "manifest": str(manifest_path.resolve()),
+        "transport_retries": transport_retries,
+        "backend": backend,
+        "experiment_id": experiment_id,
+        "protocol_version": protocol_version,
+        "variant_id": variant_id,
+    }
     completed: set[tuple[str, str]] = set()
     if resume and partial_path and partial_path.exists():
         loaded = _load_partial(partial_path)
+        if any(item.get("run_config") != run_config for item in loaded):
+            raise ValueError(
+                "partial benchmark 配置与当前运行不一致；请使用新的 output，"
+                "或删除对应的 .partial.jsonl 后重新开始"
+            )
         records.extend(loaded)
         completed = {(item["case_id"], item["run_id"]) for item in loaded}
-    with temporary_environment(env):
-        if mode == 'intelligent':
+    elif partial_path and partial_path.exists():
+        partial_path.unlink()
+    with benchmark_environment(
+        env,
+        load_online_credentials=mode in {"codearts", "intelligent"},
+    ):
+        if mode == "intelligent":
+            # The online .env is loaded after this module is imported.  Clear
+            # cached A settings so the live run cannot reuse offline config
+            # from an earlier call in the same Python process.
+            from modules.intent_understanding.robot_intent_agent.config.settings import get_settings
+            from modules.intent_understanding import adapter as intent_core
+            get_settings.cache_clear()
+            intent_core._LLM_PLANNER_CACHE.clear()
+        if mode == 'intelligent' and d_enabled:
             # Recreate D's provider after the benchmark environment is applied so
             # timeout/retry values are honored for this bounded real-model run.
             from modules.evaluator.tracecoder.llm_provider import LLMConfig, LLMProvider
@@ -672,23 +1102,30 @@ def run_benchmark(
                 record = (
                     _run_one_remote(case, repeat, remote, transport_retries)
                     if backend == "remote_isaac"
-                    else _run_one(case, repeat)
+                    else _run_one(case, repeat, variant_id)
                 )
+                record = _attach_protocol_fields(
+                    record,
+                    case,
+                    experiment_id=experiment_id,
+                    protocol_version=protocol_version,
+                    variant_id=variant_id,
+                    git_sha=metadata.git_sha,
+                    manifest=str(manifest_path.resolve()),
+                    model=model,
+                    policy=policy,
+                )
+                record["run_config"] = run_config
                 records.append(record)
                 if partial_path is not None:
                     _append_partial(partial_path, record)
-    from tools.reporting.report_models import collect_metadata
-
-    metadata = collect_metadata(
-        profile=mode,
-        manifest_path=str(manifest_path),
-        repeats=repeats,
-        argv=sys.argv,
-    )
     return {
         "schema_version": "closed-loop-benchmark-report.v1",
         "benchmark": manifest["name"],
         "mode": mode,
+        "variant_id": variant_id,
+        "experiment_id": experiment_id,
+        "protocol_version": protocol_version,
         "backend": backend,
         "policy": policy,
         "repeats": repeats,
@@ -709,6 +1146,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("baseline", "codearts", "intelligent"), default="baseline")
     parser.add_argument("--compare", action="store_true", help="依次运行baseline和codearts并输出对照报告")
+    parser.add_argument(
+        "--variant",
+        choices=(VARIANT_AUTO, *AVAILABLE_VARIANTS),
+        default=VARIANT_AUTO,
+        help="实验变体；默认根据 --mode 自动选择",
+    )
+    parser.add_argument(
+        "--experiment-id",
+        default=None,
+        help="实验批次编号；不传则自动生成，并写入每条记录",
+    )
+    parser.add_argument(
+        "--protocol-version",
+        default=PROTOCOL_VERSION,
+        help="统一实验协议版本",
+    )
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--policy", choices=("planner", "quality", "max"), default="quality")
     parser.add_argument("--model", default=None)
@@ -744,6 +1197,13 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("limit must be positive")
     if args.limit is not None and args.representative:
         parser.error("limit and representative are mutually exclusive")
+    if args.variant != VARIANT_AUTO:
+        if args.compare:
+            parser.error("--compare 不能同时指定单一 --variant")
+        try:
+            _resolve_variant(args.mode, args.variant)
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.backend == "remote_isaac":
         if not args.interactive_remote:
             parser.error(
@@ -763,6 +1223,7 @@ def main(argv: list[str] | None = None) -> int:
     modes = ["baseline", "codearts"] if args.compare else [args.mode]
     if args.compare and os.environ.get("CODEARTS_BENCHMARK_ALLOW_LIVE") != "1":
         parser.error("--compare 会调用真实 CodeArts；请先设置 CODEARTS_BENCHMARK_ALLOW_LIVE=1")
+    experiment_id = args.experiment_id or _new_experiment_id()
     reports = [
         run_benchmark(
             mode=mode,
@@ -780,6 +1241,9 @@ def main(argv: list[str] | None = None) -> int:
             resume=args.resume,
             output=args.output,
             remote=remote,
+            variant_id=(None if args.variant == VARIANT_AUTO else args.variant),
+            experiment_id=experiment_id,
+            protocol_version=args.protocol_version,
         )
         for mode in modes
     ]
@@ -789,6 +1253,12 @@ def main(argv: list[str] | None = None) -> int:
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+    partial_path = _partial_path(args.output)
+    if partial_path is not None:
+        try:
+            partial_path.unlink()
+        except FileNotFoundError:
+            pass
     print(json.dumps({"output": str(args.output), "summaries": [report["summary"] for report in reports]}, ensure_ascii=False, indent=2))
     return 0 if all(report["summary"]["pass_rate"] == 1.0 for report in reports) else 2
 

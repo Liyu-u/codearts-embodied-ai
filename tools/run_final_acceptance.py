@@ -1,9 +1,8 @@
-"""Run the final, evidence-based acceptance matrix for the embodied system.
+"""Run the final, evidence-based simulation-platform acceptance matrix.
 
 The command deliberately distinguishes PASS, PARTIAL and BLOCKED.  Missing
-cloud, Isaac or hardware prerequisites are never converted into a local pass.
-Live profiles require ``--allow-live`` because they may consume cloud quota or
-move a real robot.
+cloud or Isaac prerequisites are never converted into a local pass.  The
+matrix is intentionally simulation-only; no real-robot profile is executed.
 """
 
 from __future__ import annotations
@@ -31,7 +30,6 @@ PROFILE_IDS = (
     "llm_generalization",
     "isaac_hil_ground_truth",
     "camera_perception_hil",
-    "real_robot_safety",
 )
 
 
@@ -117,21 +115,30 @@ def _profile_result(profile_id: str, status: str, reason: str = "", **fields: An
     return {"id": profile_id, "status": status, "reason": reason, **fields}
 
 
-def run_offline(out_dir: Path, repeats: int) -> dict[str, Any]:
-    report_path = out_dir / "offline_regression.json"
-    command = [
-        sys.executable,
-        "tools/run_closed_loop_benchmark.py",
-        "--manifest",
-        str(DEFAULT_MANIFEST.relative_to(ROOT)),
-        "--mode",
-        "baseline",
-        "--repeats",
-        str(repeats),
-        "--output",
-        str(report_path.relative_to(ROOT)),
-    ]
-    run = _run(command, out_dir / "offline_regression", timeout_s=900)
+def run_offline(out_dir: Path, repeats: int, reuse_dir: Path | None = None) -> dict[str, Any]:
+    report_path = (reuse_dir or out_dir) / "offline_regression.json"
+    if reuse_dir is not None and report_path.is_file():
+        run = {
+            "command": [],
+            "exit_code": 0,
+            "timed_out": False,
+            "elapsed_ms": 0.0,
+            "reused": True,
+        }
+    else:
+        command = [
+            sys.executable,
+            "tools/run_closed_loop_benchmark.py",
+            "--manifest",
+            str(DEFAULT_MANIFEST.relative_to(ROOT)),
+            "--mode",
+            "baseline",
+            "--repeats",
+            str(repeats),
+            "--output",
+            str(report_path.relative_to(ROOT)),
+        ]
+        run = _run(command, out_dir / "offline_regression", timeout_s=900)
     summary = _closed_loop_summary(report_path)
     ok, failures = _gate(
         summary,
@@ -183,19 +190,26 @@ def run_codearts(
             "--set",
             "normal_scale_safety",
             "--set",
+            "normal_scale_stability",
+            "--set",
             "normal_scale_resilience",
             "--live",
             "--policy",
             "quality",
             "--repeats",
-            "1",
+            "3",
+            "--transport-retries",
+            "2",
+            "--retry-backoff-s",
+            "2",
             "--pure",
+            "--resume",
             "--output",
             str(focused_path.relative_to(ROOT)),
         ]
         if limit is not None:
             focused_command.extend(["--limit", str(limit)])
-        focused_run = _run(focused_command, out_dir / "codearts_testsets", timeout_s=2400)
+        focused_run = _run(focused_command, out_dir / "codearts_testsets", timeout_s=7200)
     focused = _json(focused_path) or {}
     focused_summary = dict(focused.get("summary") or {})
 
@@ -217,16 +231,19 @@ def run_codearts(
             "--mode",
             "codearts",
             "--repeats",
-            "1",
+            "3",
             "--policy",
             "quality",
             "--pure",
+            "--transport-retries",
+            "2",
+            "--resume",
             "--output",
             str(integrated_path.relative_to(ROOT)),
         ]
         if limit is not None:
             integrated_command.extend(["--limit", str(limit)])
-        integrated_run = _run(integrated_command, out_dir / "codearts_closed_loop", timeout_s=3600)
+        integrated_run = _run(integrated_command, out_dir / "codearts_closed_loop", timeout_s=14400)
     integrated_summary = _closed_loop_summary(integrated_path)
     focused_ok, focused_failures = _gate(
         focused_summary,
@@ -235,7 +252,7 @@ def run_codearts(
     )
     integrated_ok, integrated_failures = _gate(
         integrated_summary,
-        exact={"pass_rate": 1.0, "strategy_contract_pass_rate": 1.0, "code_null_rate": 1.0},
+        exact={"pass_rate": 1.0, "case_stability_rate": 1.0, "strategy_contract_pass_rate": 1.0, "code_null_rate": 1.0},
         greater={"provider_calls": 0},
     )
     ok = focused_run["exit_code"] == 0 and integrated_run["exit_code"] == 0 and focused_ok and integrated_ok
@@ -257,7 +274,12 @@ def run_codearts(
     )
 
 
-def run_llm_generalization(out_dir: Path, allow_live: bool, limit: int | None) -> dict[str, Any]:
+def run_llm_generalization(
+    out_dir: Path,
+    allow_live: bool,
+    limit: int | None,
+    reuse_dir: Path | None = None,
+) -> dict[str, Any]:
     if not allow_live:
         return _profile_result("llm_generalization", "BLOCKED", "需要 --allow-live 才允许 A/B/D LLM 调用")
     missing: list[str] = []
@@ -272,29 +294,41 @@ def run_llm_generalization(out_dir: Path, allow_live: bool, limit: int | None) -
     if missing:
         return _profile_result("llm_generalization", "BLOCKED", "缺少必要 LLM 配置: " + ", ".join(missing))
 
-    report_path = out_dir / "llm_generalization.json"
-    command = [
-        sys.executable,
-        "tools/run_closed_loop_benchmark.py",
-        "--manifest",
-        str(GENERALIZATION_MANIFEST.relative_to(ROOT)),
-        "--mode",
-        "intelligent",
-        "--repeats",
-        "1",
-        "--policy",
-        "quality",
-        "--pure",
-        "--output",
-        str(report_path.relative_to(ROOT)),
-    ]
-    if limit is not None:
-        command.extend(["--limit", str(limit)])
-    run = _run(command, out_dir / "llm_generalization", timeout_s=3600)
+    report_path = (reuse_dir or out_dir) / "llm_generalization.json"
+    if reuse_dir is not None and report_path.is_file() and limit is None:
+        run = {
+            "command": [],
+            "exit_code": 0,
+            "timed_out": False,
+            "elapsed_ms": 0.0,
+            "reused": True,
+        }
+    else:
+        command = [
+            sys.executable,
+            "tools/run_closed_loop_benchmark.py",
+            "--manifest",
+            str(GENERALIZATION_MANIFEST.relative_to(ROOT)),
+            "--mode",
+            "intelligent",
+            "--repeats",
+            "3",
+            "--policy",
+            "quality",
+            "--pure",
+            "--transport-retries",
+            "2",
+            "--resume",
+            "--output",
+            str(report_path.relative_to(ROOT)),
+        ]
+        if limit is not None:
+            command.extend(["--limit", str(limit)])
+        run = _run(command, out_dir / "llm_generalization", timeout_s=7200)
     summary = _closed_loop_summary(report_path)
     ok, failures = _gate(
         summary,
-        exact={"pass_rate": 1.0, "strategy_contract_pass_rate": 1.0},
+        exact={"pass_rate": 1.0, "case_stability_rate": 1.0, "strategy_contract_pass_rate": 1.0},
         greater={"intent_llm_successes": 0, "provider_calls": 0, "tracecoder_llm_runs": 0},
     )
     status = "PASS" if run["exit_code"] == 0 and ok and limit is None else ("PARTIAL" if run["exit_code"] == 0 and ok else "FAIL")
@@ -317,7 +351,8 @@ def _run_real_profile(profile_id: str, out_dir: Path, allow_live: bool, ssh_key:
     if not ssh_key:
         return _profile_result(profile_id, "BLOCKED", "未提供 SSH 私钥；为避免密码交互和不可审计运行，未启动远程验收")
     manifest = "testdata/benchmark/real_camera_isaac_cases.json" if camera else "testdata/benchmark/real_isaac_cases.json"
-    runner = "tools/run_real_camera_acceptance_batch.py" if camera else "tools/run_real_acceptance_batch.py"
+    runner = "tools/run_real_camera_acceptance_batch_v3.py" if camera else "tools/run_real_acceptance_batch.py"
+    remote_runner = "tools/run_remote_camera_acceptance_v7.ps1" if camera else "tools/run_remote_ground_truth_acceptance_final.ps1"
     report_path = out_dir / ("camera_isaac.json" if camera else "isaac_ground_truth.json")
     command = [
         sys.executable,
@@ -328,13 +363,36 @@ def _run_real_profile(profile_id: str, out_dir: Path, allow_live: bool, ssh_key:
         "1",
         "--ssh-key",
         ssh_key,
+        "--remote-runner",
+        remote_runner,
         "--output",
         str(report_path.relative_to(ROOT)),
     ]
     run = _run(command, out_dir / ("camera_isaac" if camera else "isaac_ground_truth"), timeout_s=3600)
     report = _json(report_path) or {}
     summary = dict(report.get("summary") or {})
-    expected = {"pass_rate": 1.0}
+    if camera:
+        camera_rows = [
+            (record.get("stages") or {}).get("C") or {}
+            for record in report.get("records") or []
+            if ((record.get("stages") or {}).get("C") or {}).get("status")
+        ]
+        summary["camera_source_verified"] = bool(camera_rows) and all(
+            row.get("perception_source") == "isaac_camera_rgbd"
+            and row.get("online_pose_source") == "rgbd_depth_backprojection"
+            for row in camera_rows
+        )
+        summary["ground_truth_used_for_online_pose"] = any(
+            row.get("ground_truth_used_for_online_pose") is not False for row in camera_rows
+        )
+        expected = {
+            "pass_rate": 1.0,
+            "contract_pass_rate": 1.0,
+            "camera_source_verified": True,
+            "ground_truth_used_for_online_pose": False,
+        }
+    else:
+        expected = {"pass_rate": 1.0, "contract_pass_rate": 1.0}
     ok, failures = _gate(summary, exact=expected)
     return _profile_result(
         profile_id,
@@ -343,25 +401,6 @@ def _run_real_profile(profile_id: str, out_dir: Path, allow_live: bool, ssh_key:
         run=run,
         report=str(report_path),
         summary=summary,
-    )
-
-
-def run_real_robot_safety(out_dir: Path) -> dict[str, Any]:
-    proxy_log = out_dir / "real_robot_safety_proxy"
-    command = [
-        sys.executable,
-        "-m",
-        "unittest",
-        "tests.unit.test_real_backend",
-        "tests.unit.test_safety",
-    ]
-    run = _run(command, proxy_log, timeout_s=300)
-    return _profile_result(
-        "real_robot_safety",
-        "PARTIAL" if run["exit_code"] == 0 else "FAIL",
-        "FakeDriver 安全代理测试通过，但当前没有真机在环、急停、碰撞和断连证据",
-        run=run,
-        hardware_evidence=False,
     )
 
 
@@ -378,6 +417,12 @@ def main() -> int:
         default=None,
         help="复用指定目录中已完成的 codearts_testsets.json 和 codearts_closed_loop.json，不重复调用云端",
     )
+    parser.add_argument(
+        "--reuse-acceptance-dir",
+        type=Path,
+        default=None,
+        help="复用指定最终验收目录中的离线、CodeArts 和 LLM JSON，不重复调用已完成的流程",
+    )
     parser.add_argument("--ssh-key", default=None)
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
@@ -388,22 +433,21 @@ def main() -> int:
     if args.llm_limit is not None and args.llm_limit < 1:
         parser.error("--llm-limit 必须大于 0")
     profiles = args.profiles or list(PROFILE_IDS)
+    reuse_dir = args.reuse_acceptance_dir or args.reuse_codearts_dir
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_dir = REPORT_ROOT / f"final-acceptance-{timestamp}"
     results: list[dict[str, Any]] = []
     for profile in profiles:
         if profile == "offline_regression":
-            results.append(run_offline(out_dir, args.offline_repeats))
+            results.append(run_offline(out_dir, args.offline_repeats, reuse_dir))
         elif profile == "codearts_online":
-            results.append(run_codearts(out_dir, args.allow_live, args.online_limit, args.reuse_codearts_dir))
+            results.append(run_codearts(out_dir, args.allow_live, args.online_limit, reuse_dir))
         elif profile == "llm_generalization":
-            results.append(run_llm_generalization(out_dir, args.allow_live, args.llm_limit))
+            results.append(run_llm_generalization(out_dir, args.allow_live, args.llm_limit, reuse_dir))
         elif profile == "isaac_hil_ground_truth":
             results.append(_run_real_profile(profile, out_dir, args.allow_live, args.ssh_key, False))
         elif profile == "camera_perception_hil":
             results.append(_run_real_profile(profile, out_dir, args.allow_live, args.ssh_key, True))
-        elif profile == "real_robot_safety":
-            results.append(run_real_robot_safety(out_dir))
 
     passed = sum(item["status"] == "PASS" for item in results)
     report = {

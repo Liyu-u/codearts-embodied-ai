@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from modules.executor.geometry import dimension_axis
+
 
 DURATIONS_MS = {
     "detect_object": 10,
@@ -161,8 +163,8 @@ class MockBackend:
         held_pose = held.get("pose") or {}
         destination_dimensions = destination.get("dimensions") or {}
         held_dimensions = held.get("dimensions") or {}
-        destination_height = float(destination_dimensions.get("z", 0.0) or 0.0)
-        held_height = float(held_dimensions.get("z", 0.0) or 0.0)
+        destination_height = dimension_axis(destination_dimensions, "z")
+        held_height = dimension_axis(held_dimensions, "z")
         return {
             "x": float(destination_pose.get("x", held_pose.get("x", 0.0))),
             "y": float(destination_pose.get("y", held_pose.get("y", 0.0))),

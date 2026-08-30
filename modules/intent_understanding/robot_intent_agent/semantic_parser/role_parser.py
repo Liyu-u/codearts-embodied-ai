@@ -548,9 +548,9 @@ def parse_roles(instruction: str, actions: List[str]) -> tuple[List[SemanticEnti
     # to the theme merely because it appears earlier in the sentence.
     if "theme" not in role_refs:
         direct_theme = re.search(
-            r"(?:把|将|请将)\s*(?P<theme>[^，。；,;]+?)\s*"
+            r"(?:请帮我)?(?:把|将|请将)\s*(?P<theme>[^，。；,;]+?)\s*"
             r"(?=(?:送到|送至|运到|移到|搬到|转移到|转运到|放到|放在|放入|"
-            r"拿起|拿住|抓住|抓取|夹住|控住|提起|取回|带回|带到|纳入|顶开|滑过|滑过去|滑动到|递给|交给|推开|倾倒|倾空|放置|归位到|归位于|归位进|"
+            r"拿起|拿住|抓住|抓取|夹住|控住|提起|取回|带回|带到|纳入|顶开|滑过|滑过去|滑动到|递给|交给|推开|倾倒|倾空|放置|放好|归位到|归位于|归位进|"
             r"叠合|叠放|摞到|堆到|$))",
             text,
         )
@@ -747,12 +747,12 @@ def parse_roles(instruction: str, actions: List[str]) -> tuple[List[SemanticEnti
     # lexicon has no category alias (e.g. “镜片盒”, “电源箱”).
     if "theme" not in role_refs:
         nominal_placement = re.search(
-            r"(?:帮我)?(?:完成|进行|执行)\s*(?P<theme>[^，。；,;]+?)(?:的)?放置",
+            r"(?:帮我)?(?:完成|进行|执行)\s*(?P<theme>[^，。；,;]+?)(?:的)?(?:放置|放好)",
             text,
         )
         if nominal_placement:
             add("theme", _find_mention(text, after=nominal_placement.start("theme")))
-        open_theme = re.search(r"(?:把|将|请将|快把)\s*([^，。；,;]+?)\s*(?:拿过来|取过来|抓过来|拿起|抓取|放到|放入|放置|归位到|归位于|归位进|移到)", text)
+        open_theme = re.search(r"(?:请帮我)?(?:把|将|请将|快把)\s*([^，。；,;]+?)\s*(?:拿过来|取过来|抓过来|拿起|抓取|放到|放入|放置|放好|归位到|归位于|归位进|移到)", text)
         if open_theme:
             mention = open_theme.group(1).strip()
             local_ref = f"entity-{len(entities) + 1}"

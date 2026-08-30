@@ -20,8 +20,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import sys
 import time
+import uuid
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -34,7 +37,13 @@ def log(result_dir: Path, step: str, status: str, detail: str = "") -> None:
         handle.flush()
 
 
-def _spawn_objects(*, include_dynamic: bool = True) -> list[tuple[object, tuple[float, float, float]]]:
+def _spawn_objects(
+    *,
+    include_dynamic: bool = True,
+    cube_position: tuple[float, float, float] = (0.50, 0.0, 0.0258),
+    red_position: tuple[float, float, float] = (0.65, -0.20, 0.0258),
+    target_position: tuple[float, float, float] = (0.45, 0.10, 0.02575),
+) -> list[tuple[object, tuple[float, float, float]]]:
     """在 /World 下创建与 perception object_id 一致的方块 prim。
 
     对象 id 必须与 perception 场景一致（red_cube / green_cube / zone_unstack_target），
@@ -50,12 +59,12 @@ def _spawn_objects(*, include_dynamic: bool = True) -> list[tuple[object, tuple[
         # (id, 中心位姿, 尺寸, 颜色)
         # 采用官方 FrankaPickPlace 已验证的可达工作区，避免把靠近
         # 机器人基座边界的夹具坐标误判为 IK/物理失败。
-        ("red_cube", (0.65, -0.20, 0.0258), (0.04, 0.04, 0.04), "red"),
+        ("red_cube", red_position, (0.04, 0.04, 0.04), "red"),
         # Keep the dynamic cube identical to the official FrankaPickPlace
         # example (51.5 mm).  The controller's grasp/lift clearance is tuned
         # against this geometry.
-        ("green_cube", (0.50, 0.0, 0.0258), (0.0515, 0.0515, 0.0515), "green"),
-        ("zone_unstack_target", (0.45, 0.10, 0.02575), (0.10, 0.10, 0.02), "gray"),
+        ("green_cube", cube_position, (0.0515, 0.0515, 0.0515), "green"),
+        ("zone_unstack_target", target_position, (0.10, 0.10, 0.02), "gray"),
     ]
     dynamic_objects = []
 

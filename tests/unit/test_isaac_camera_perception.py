@@ -63,6 +63,8 @@ class IsaacCameraPerceptionTests(unittest.TestCase):
         self.assertEqual(scene["objects"][0]["category"], "绿色方块")
         self.assertEqual(scene["objects"][0]["attributes"]["color"], "green")
         self.assertEqual(scene["execution_context"]["backend"], "external_observation")
+        self.assertEqual(scene["quality"]["status"], "READY")
+        self.assertEqual(scene["execution_context"]["camera_quality"]["status"], "READY")
 
     def test_unknown_segmentation_label_is_not_invented(self):
         provider = _provider()
@@ -90,6 +92,32 @@ class IsaacCameraPerceptionTests(unittest.TestCase):
         debug = provider.last_metrics["objects"]["green_cube"]
         self.assertEqual(debug["geometry_source"], "geometry_prior")
         self.assertIn("width", debug["rejected_spans"])
+
+    def test_frame_quality_is_reported_without_inventing_objects(self):
+        provider = _provider()
+        provider.sensor.depth[1:3, 1:3] = 0.0
+
+        observation = provider.observe()
+
+        self.assertEqual(observation["objects"], [])
+        self.assertEqual(provider.health()["status"], "degraded")
+        self.assertIn("LOW_DEPTH_VALID_RATIO", provider.last_metrics["quality_reasons"])
+
+    def test_rgbd_shapes_are_checked_before_segmentation_matching(self):
+        provider = _provider()
+        provider.sensor.depth = np.ones((3, 4), dtype=np.float32)
+
+        with self.assertRaisesRegex(ValueError, "rgb/depth shape mismatch"):
+            provider.observe()
+
+    def test_camera_timestamp_must_increase_for_tracking_evidence(self):
+        timestamps = iter((1_000_000_000, 1_000_000_000))
+        provider = _provider()
+        provider.clock = lambda: next(timestamps)
+        provider.observe()
+
+        with self.assertRaisesRegex(ValueError, "timestamp must increase"):
+            provider.observe()
 
 
 if __name__ == "__main__":

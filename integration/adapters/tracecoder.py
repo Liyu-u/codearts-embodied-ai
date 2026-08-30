@@ -713,6 +713,7 @@ def _build_diagnosis(
     score = final_eval.get("score") or {}
     structured = {
         # final_passed 必须反映真实 execution.v1，而不是内部仿真结果。
+        "verification_status": "EXECUTION_EVIDENCE_ANALYZED",
         "final_passed": final_passed,
         "execution_status": execution.get("status"),
         "execution_passed": _execution_passed(execution),
@@ -789,6 +790,7 @@ def _build_skipped_feedback(
     final_passed = _execution_passed(execution)
     structured = {
         "status": "TRACE_CODER_SKIPPED",
+        "verification_status": "SKIPPED_HEALTHY_SUCCESS",
         "routing_mode": _adaptive_routing_mode(),
         "skip_reason": reasons,
         "tracecoder_invoked": False,
@@ -830,6 +832,7 @@ def _build_skipped_feedback(
             "skip_reason": reasons,
             "validation": {"passed": True, "errors": []},
             "patch_validation": {"passed": True, "errors": []},
+            "verification_status": "SKIPPED_HEALTHY_SUCCESS",
         },
     }
 
@@ -928,6 +931,7 @@ def _build_feedback(
         "safety_events": safety_reasons,
         "validation": patch_validation,
         "patch_validation": patch_validation,
+        "verification_status": "EXECUTION_EVIDENCE_ANALYZED",
     }
     return {
         "schema_version": "feedback.v1",

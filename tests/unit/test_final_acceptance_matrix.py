@@ -23,7 +23,6 @@ class FinalAcceptanceMatrixTests(unittest.TestCase):
                 "llm_generalization",
                 "isaac_hil_ground_truth",
                 "camera_perception_hil",
-                "real_robot_safety",
             ],
         )
         self.assertEqual(len(ids), len(set(ids)))

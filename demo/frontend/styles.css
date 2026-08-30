@@ -168,6 +168,22 @@ body{overflow:hidden}
   .events p b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .scene .placeholder small{display:none}
 }
+
+/* Isaac Sim HLS livestream: keep the existing SVG fallback visible until a
+   real stream has produced its first frame. */
+.isaac-video{display:none;position:absolute;z-index:2;inset:0;width:100%;height:100%;background:#020912;object-fit:contain}
+.scene.stream-active .isaac-video{display:block}
+.scene.stream-active>svg,.scene.stream-active>.placeholder{display:none}
+.stream-overlay{position:absolute;z-index:5;top:50%;left:50%;display:grid;min-width:220px;gap:8px;padding:16px;transform:translate(-50%,-50%);border:1px solid rgba(93,170,231,.3);border-radius:8px;background:rgba(3,13,23,.9);box-shadow:0 14px 34px rgba(0,0,0,.35);text-align:center}
+.stream-overlay[hidden]{display:none}
+.stream-overlay strong{color:#eaf5ff;font-size:12px}
+.stream-status{color:#8fa8c0;font-size:10px;line-height:1.5}
+.stream-status.error{color:#ff9ca5}
+.stream-status.loading{color:#9edbff}
+.stream-overlay button{min-height:36px;padding:7px 12px;color:#fff;border:1px solid rgba(43,134,255,.7);border-radius:5px;background:linear-gradient(135deg,#1e76ef,#2364dc);font-size:10px}
+.stream-overlay button:hover{filter:brightness(1.12)}
+.stream-overlay button:focus-visible{outline:2px solid var(--c);outline-offset:2px}
+@media(max-width:780px){.stream-overlay{min-width:min(280px,calc(100% - 28px))}.stream-overlay button{min-height:44px;font-size:12px}}
 /* Navigation unit pages */
 .page-view[hidden]{display:none!important}
 .home-view{display:flex;flex:1 1 auto;min-height:0;flex-direction:column}

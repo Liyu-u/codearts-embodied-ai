@@ -142,7 +142,17 @@ def _run_remote(
     (out_dir / "remote_runner.stderr.log").write_text(LINE_END.join(stderr_parts), encoding="utf-8")
     if remote_dir.is_dir():
         shutil.copytree(remote_dir, local_copy)
-    return _json(remote_dir / "execution.json"), remote_run_id, _json(remote_dir / "remote_run.json")
+    remote_run = _json(remote_dir / "remote_run.json")
+    if completed.returncode != 0 and remote_run is None:
+        remote_run = {
+            "schema_version": "remote-isaac-run.v1",
+            "run_id": remote_run_id,
+            "status": "FAILED",
+            "failure_class": "runner",
+            "message": f"远程运行器退出码 {completed.returncode}",
+        }
+        _write(local_copy / "remote_run.json", remote_run)
+    return _json(remote_dir / "execution.json"), remote_run_id, remote_run
 
 
 def _feedback(ab: dict[str, Any], perception: dict[str, Any], execution: dict[str, Any], out_dir: Path) -> dict[str, Any]:
@@ -180,10 +190,16 @@ def _make_status(
             diagnosis = json.loads(feedback["diagnosis"])
         except json.JSONDecodeError:
             diagnosis = {}
-    ids_match = bool(execution and task.get("task_id") == strategy.get("task_id") == execution.get("task_id"))
-    if feedback:
+    ids_match = None
+    if execution:
+        ids_match = bool(task.get("task_id") == strategy.get("task_id") == execution.get("task_id"))
+    if feedback and ids_match is not None:
         ids_match = ids_match and feedback.get("task_id") == task.get("task_id")
-    execution_steps_ok = bool(execution) and all(str(step.get("status", "")).upper() == "SUCCESS" for step in execution.get("steps") or [])
+    execution_steps_ok = (
+        all(str(step.get("status", "")).upper() == "SUCCESS" for step in execution.get("steps") or [])
+        if execution
+        else None
+    )
     if expected == "SUCCEEDED":
         accepted = actual == "SUCCEEDED" and execution_steps_ok and ids_match and bool(feedback and feedback.get("final_passed") is True)
     elif expected in {"BLOCKED", "NEEDS_CLARIFICATION", "SAFE_STOP", "FAILED"}:
@@ -204,10 +220,10 @@ def _make_status(
         "stages": {
             "A": {"status": task.get("status"), "latency_ms": ab.get("latency_ms", {}).get("intent"), "requested_engine": task.get("diagnostics", {}).get("requested_engine"), "actual_engine": task.get("diagnostics", {}).get("actual_engine")},
             "B": {"status": "SUCCEEDED" if strategy.get("success") and not strategy.get("blocked") else "BLOCKED", "latency_ms": ab.get("latency_ms", {}).get("strategy"), "provider": strategy.get("provenance", {}).get("provider"), "fallback": strategy.get("provenance", {}).get("fallback")},
-            "C": {"status": execution.get("status") if execution else None, "steps": len(execution.get("steps") or []) if execution else 0, "all_steps_success": execution_steps_ok, "cube_moved_m": execution.get("cube_moved_m") if execution else None, "wall_ms": execution.get("wall_ms") if execution else None, "perception_source": execution.get("provenance", {}).get("perception_backend") if execution else None},
+            "C": {"status": execution.get("status") if execution else None, "steps": len(execution.get("steps") or []) if execution else 0, "all_steps_success": execution_steps_ok, "cube_moved_m": execution.get("cube_moved_m") if execution else None, "wall_ms": execution.get("wall_ms") if execution else None, "perception_source": execution.get("provenance", {}).get("perception_backend") if execution else None, "online_pose_source": execution.get("provenance", {}).get("online_pose_source") if execution else None, "ground_truth_used_for_online_pose": execution.get("provenance", {}).get("ground_truth_used_for_online_pose") if execution else None},
             "feedback": {"status": diagnosis.get("status") if diagnosis else None, "final_passed": feedback.get("final_passed") if feedback else None, "tracecoder_invoked": diagnosis.get("tracecoder_invoked") if diagnosis else None},
         },
-        "contract_checks": {"task_strategy_execution_feedback_task_id_match": ids_match, "all_execution_steps_success": execution_steps_ok if execution else None},
+        "contract_checks": ({"task_strategy_execution_feedback_task_id_match": ids_match, "all_execution_steps_success": execution_steps_ok} if execution else {}),
         "remote_run_id": remote_run_id,
         "remote_run": remote_run,
         "evidence_dir": str(out_dir),

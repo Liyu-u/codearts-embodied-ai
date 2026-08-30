@@ -25,6 +25,19 @@ def run(provider: IsaacCameraObservationProvider) -> dict:
 
     observation = observe(provider)
     scene = normalize_observation(observation)
+    metrics = provider.last_metrics or {}
+    quality = {
+        "status": metrics.get("quality_status", "DEGRADED"),
+        "reasons": list(metrics.get("quality_reasons") or []),
+        "depth_valid_ratio": metrics.get("depth_valid_ratio"),
+        "visible_objects": metrics.get("visible_objects", 0),
+        "observation_id": metrics.get("observation_id", observation.get("observation_id")),
+    }
+    # perception.v1 allows additional top-level evidence.  Keep the quality
+    # gate visible to A and D without changing the strict external camera
+    # wire contract.
+    scene["quality"] = quality
+    scene.setdefault("execution_context", {})["camera_quality"] = dict(quality)
     assert_contract(scene, "perception.v1")
     return scene
 

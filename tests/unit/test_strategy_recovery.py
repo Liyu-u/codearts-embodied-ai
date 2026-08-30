@@ -71,6 +71,29 @@ class StrategyRecoveryTests(unittest.TestCase):
         self.assertEqual(recovery[0]["action"], "grasp")
         self.assertEqual(recovery[0]["status"], "SUCCESS")
 
+    def test_recovery_attempts_counts_retries_not_recovery_actions(self):
+        value = strategy()
+        value["steps"][2]["on_failure"]["steps"] = [
+            {
+                "step_id": "recover_detect",
+                "action": "detect_object",
+                "arguments": {"object_id": "green_cube"},
+            },
+            {
+                "step_id": "recover_approach",
+                "action": "move_to_object",
+                "arguments": {"object_id": "green_cube"},
+            },
+            {
+                "step_id": "recover_grasp",
+                "action": "grasp",
+                "arguments": {"object_id": "green_cube"},
+            },
+        ]
+        output = interpreter(failures={"grasp": 1}).run(value)
+        self.assertEqual(output["status"], "SUCCEEDED")
+        self.assertEqual(output["recovery_attempts"], 1)
+
     def test_persistent_grasp_failure_safe_stops(self):
         output = interpreter(failures={"grasp": 10}).run(strategy())
         self.assertEqual(output["status"], "SAFE_STOP")

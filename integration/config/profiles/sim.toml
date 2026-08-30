@@ -1,4 +1,4 @@
-# sim 环境：校内服务器 Isaac Sim 6.0.0 容器，GPU 0，离线，网络关闭。
+# sim 环境：校内服务器 Isaac Sim 6.0.0 容器；宿主 GPU1 映射为容器内 cuda:0；离线，网络关闭。
 
 [profile]
 name = "sim"
@@ -16,10 +16,11 @@ z_max = 0.6
 max_linear_velocity_m_s = 0.30
 max_angular_velocity_rad_s = 1.0
 max_force_n = 10.0
-# The official Franka controller runs at ~0.45 s/frame on the school server;
-# its first approach phase can take about 120 s after CUDA/IK initialization.
-# Keep the safety deadline finite, but above that measured cold-start bound.
-action_timeout_s = 180.0
+# The official Franka controller can spend more than 180 s in the first
+# approach on the school server when CUDA/IK kernels are cold.  The runner
+# performs one deterministic warm-up forward and resets the scene before the
+# measured task.  Keep the same finite deadline for every Isaac variant.
+action_timeout_s = 300.0
 default_linear_speed_m_s = 0.20
 grasp_verify_force_n = 0.5
 

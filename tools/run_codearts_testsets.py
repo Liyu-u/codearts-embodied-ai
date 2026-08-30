@@ -9,14 +9,15 @@ Examples::
     python tools/run_codearts_testsets.py --set normal_quality
     python tools/run_codearts_testsets.py --set normal_quality --live \
         --policy quality --limit 2 --pure
-    python tools/run_codearts_testsets.py --set stability_repeat --live \
-        --policy planner --repeats 3 --pure
+    python tools/run_codearts_testsets.py --live --policy quality \
+        --repeats 3 --transport-retries 2 --resume --pure
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -30,14 +31,24 @@ TESTSET_ROOT = ROOT / "testdata" / "codearts"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from integration.config.local_env import load_codearts_env  # noqa: E402
+from integration.config.local_env import temporary_local_env  # noqa: E402
 
-load_codearts_env()
 from integration.adapters import strategy as strategy_adapter  # noqa: E402
 from modules.strategy_generation.codearts_agent import validate_strategy  # noqa: E402
 
 
 POLICY_CRITIC_PASSES = {"planner": 0, "quality": 1, "max": 2}
+
+# The online acceptance contract is intentionally limited to the four normal
+# scale sets.  Legacy/offline sets remain available through ``--set`` and are
+# still included by the offline default.
+LIVE_SCALE_TESTSETS = (
+    "normal_scale_functional",
+    "normal_scale_semantic",
+    "normal_scale_safety",
+    "normal_scale_stability",
+    "normal_scale_resilience",
+)
 
 
 @contextmanager
@@ -53,6 +64,18 @@ def _temporary_environment(values: dict[str, str]) -> Iterator[None]:
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+@contextmanager
+def _provider_environment(values: dict[str, str], *, live: bool) -> Iterator[None]:
+    """Keep live CodeArts credentials scoped to one testset case."""
+    if live:
+        with temporary_local_env("codearts.env"):
+            with _temporary_environment(values):
+                yield
+        return
+    with _temporary_environment(values):
+        yield
 
 
 def load_testset(name: str) -> dict[str, Any]:
@@ -154,6 +177,84 @@ def _signature(output: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _provider_error_text(output: dict[str, Any]) -> str:
+    provenance = output.get("provenance") or {}
+    return " ".join(
+        str(value)
+        for value in (
+            output.get("provider_error"),
+            output.get("error"),
+            *(output.get("blocking_reasons") or []),
+            provenance.get("error"),
+        )
+        if value
+    ).lower()
+
+
+def _is_transient_provider_error(output: dict[str, Any]) -> bool:
+    """Return whether a failed live provider call is safe to retry.
+
+    Semantic validation failures and expected safety blocks are deliberately
+    excluded.  Only transport/quota/temporary-service signals are retried;
+    this keeps the batch runner from hiding a genuine contract regression.
+    """
+    if output.get("success"):
+        return False
+    text = _provider_error_text(output)
+    return bool(text) and any(
+        token in text
+        for token in (
+            "timeout",
+            "timed out",
+            "connection",
+            "econn",
+            "429",
+            "rate limit",
+            "temporarily unavailable",
+            "service unavailable",
+            "server busy",
+            " 500",
+            " 502",
+            " 503",
+            " 504",
+        )
+    )
+
+
+def _percentile(values: list[float], percentile: float) -> float | None:
+    rows = sorted(float(value) for value in values if math.isfinite(float(value)))
+    if not rows:
+        return None
+    index = max(0, math.ceil(percentile * len(rows)) - 1)
+    return round(rows[index], 1)
+
+
+def _partial_path(output: Path | None) -> Path | None:
+    return Path(f"{output}.partial.jsonl") if output is not None else None
+
+
+def _load_partial(path: Path | None) -> dict[tuple[str, str], dict[str, Any]]:
+    if path is None or not path.is_file():
+        return {}
+    completed: dict[tuple[str, str], dict[str, Any]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and value.get("testset") and value.get("id"):
+            completed[(str(value["testset"]), str(value["id"]))] = value
+    return completed
+
+
+def _append_partial(path: Path | None, result: dict[str, Any]) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(result, ensure_ascii=False) + "\n")
+
+
 def _run_case(
     case: dict[str, Any],
     *,
@@ -163,6 +264,8 @@ def _run_case(
     model: str | None,
     timeout_s: int | None,
     pure: bool,
+    transport_retries: int,
+    retry_backoff_s: float,
 ) -> dict[str, Any]:
     task = case["task"]
     expect = case["expect"]
@@ -183,14 +286,43 @@ def _run_case(
         "integration.adapters.strategy.CodeArtsStrategyClient"
     ) if case.get("fault") else None
     provider_context = provider_patch if provider_patch else _null_context()
-    with _temporary_environment(values):
+    with _provider_environment(values, live=live):
         with provider_context as client_class:
             if client_class is not None:
                 _fault_setup(case, task, client_class)
             for repeat in range(1, repeats + 1):
-                started = time.perf_counter()
-                output = strategy_adapter.run(task)
-                elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+                attempt = 0
+                while True:
+                    attempt += 1
+                    started = time.perf_counter()
+                    try:
+                        output = strategy_adapter.run(task)
+                    except Exception as exc:  # noqa: BLE001 - classify before retrying
+                        failure = {
+                            "success": False,
+                            "blocked": True,
+                            "code": None,
+                            "mode": "codearts_blocked",
+                            "steps": [],
+                            "critics": [],
+                            "provider_error": f"{type(exc).__name__}: {exc}",
+                            "blocking_reasons": [],
+                            "provenance": {"provider": "huaweicloud-codearts-agent"},
+                        }
+                        if not _is_transient_provider_error(failure):
+                            raise
+                        output = failure
+                    elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+                    if (
+                        not live
+                        or case.get("fault")
+                        or not _is_transient_provider_error(output)
+                        or attempt > transport_retries
+                    ):
+                        break
+                    delay = retry_backoff_s * (2 ** (attempt - 1))
+                    if delay > 0:
+                        time.sleep(min(delay, 30.0))
                 provider = (output.get("provenance") or {}).get("provider")
                 contract_errors = (
                     validate_strategy(output, task)
@@ -263,12 +395,15 @@ def _run_case(
                 observations.append(
                     {
                         "repeat": repeat,
+                        "attempts": attempt,
+                        "transport_retries": max(0, attempt - 1),
                         "elapsed_ms": elapsed_ms,
                         "success": bool(output.get("success")),
                         "blocked": bool(output.get("blocked")),
                         "mode": output.get("mode"),
                         "strategy_policy": output.get("strategy_policy"),
                         "provider": provider,
+                        "provider_attempts": attempt if provider == "huaweicloud-codearts-agent" else 0,
                         "provider_mocked": bool(case.get("fault")),
                         "critic_passes": critic_passes,
                         "actions": actual_actions,
@@ -284,12 +419,32 @@ def _run_case(
 
     all_checks_pass = all(all(item["checks"].values()) for item in observations)
     signatures = [item["signature"] for item in observations]
+    expected_provider_blocks = sum(
+        1
+        for item in observations
+        if _is_transient_provider_error(item)
+        and bool(expect["blocked"])
+        and bool(item.get("blocked"))
+        and not bool(item.get("success"))
+    )
     return {
         "id": case["id"],
         "task_id": task.get("task_id"),
         "passed": all_checks_pass,
         "stable": len(set(signatures)) <= 1,
         "observations": observations,
+        "transport_retries": sum(item["transport_retries"] for item in observations),
+        "provider_failures": sum(
+            1
+            for item in observations
+            if _is_transient_provider_error(item)
+            and not (
+                bool(expect["blocked"])
+                and bool(item.get("blocked"))
+                and not bool(item.get("success"))
+            )
+        ),
+        "expected_provider_blocks": expected_provider_blocks,
     }
 
 
@@ -308,9 +463,26 @@ def run_testsets(
     model: str | None = None,
     timeout_s: int | None = None,
     pure: bool = False,
+    transport_retries: int = 2,
+    retry_backoff_s: float = 2.0,
+    output: Path | None = None,
+    resume: bool = False,
 ) -> dict[str, Any]:
     if repeats is not None and repeats < 1:
         raise ValueError("repeats 必须大于 0")
+    if transport_retries < 0 or transport_retries > 5:
+        raise ValueError("transport_retries 必须在 0..5 之间")
+    if retry_backoff_s < 0:
+        raise ValueError("retry_backoff_s 不能小于 0")
+    if resume and output is None:
+        raise ValueError("resume 需要 output")
+    partial = _partial_path(output)
+    if partial is not None and not resume:
+        try:
+            partial.unlink()
+        except FileNotFoundError:
+            pass
+    resumed = _load_partial(partial) if resume else {}
     results = []
     for name in names:
         document = load_testset(name)
@@ -319,18 +491,38 @@ def run_testsets(
         if case_repeats < 1:
             raise ValueError(f"{name} 的 default_repeats 必须大于 0")
         cases = document["cases"][:limit] if limit else document["cases"]
-        case_results = [
-            _run_case(
-                case,
-                live=live,
-                policy=chosen_policy,
-                repeats=case_repeats,
-                model=model,
-                timeout_s=timeout_s,
-                pure=pure,
-            )
-            for case in cases
-        ]
+        config = {
+            "live": live,
+            "policy": chosen_policy,
+            "repeats": case_repeats,
+            "limit": limit,
+            "model": model,
+            "timeout_s": timeout_s,
+            "pure": pure,
+            "transport_retries": transport_retries,
+        }
+        case_results = []
+        for case in cases:
+            key = (name, str(case["id"]))
+            previous = resumed.get(key)
+            if previous and previous.get("run_config") == config:
+                case_result = previous
+            else:
+                case_result = _run_case(
+                    case,
+                    live=live,
+                    policy=chosen_policy,
+                    repeats=case_repeats,
+                    model=model,
+                    timeout_s=timeout_s,
+                    pure=pure,
+                    transport_retries=transport_retries,
+                    retry_backoff_s=retry_backoff_s,
+                )
+                case_result["testset"] = name
+                case_result["run_config"] = config
+                _append_partial(partial, case_result)
+            case_results.append(case_result)
         observations = [item for result in case_results for item in result["observations"]]
         provider_calls = sum(
             1
@@ -338,9 +530,8 @@ def run_testsets(
             if item["provider"] == "huaweicloud-codearts-agent"
             and not item["provider_mocked"]
         )
-        provider_attempts = sum(
-            1 for item in observations if item["provider"] == "huaweicloud-codearts-agent"
-        )
+        provider_attempts = sum(int(item.get("provider_attempts", 0)) for item in observations)
+        latency_ms = [float(item["elapsed_ms"]) for item in observations]
         results.append(
             {
                 "name": name,
@@ -352,6 +543,17 @@ def run_testsets(
                 "stable_cases": sum(1 for item in case_results if item["stable"]),
                 "provider_calls": provider_calls,
                 "provider_attempts": provider_attempts,
+                "transport_retries": sum(
+                    int(item.get("transport_retries", 0)) for item in observations
+                ),
+                "provider_failures": sum(
+                    int(item.get("provider_failures", 0)) for item in case_results
+                ),
+                "expected_provider_blocks": sum(
+                    int(item.get("expected_provider_blocks", 0)) for item in case_results
+                ),
+                "latency_ms_p50": _percentile(latency_ms, 0.50),
+                "latency_ms_p95": _percentile(latency_ms, 0.95),
                 "contract_failures": sum(
                     1 for item in observations if item["contract_errors"]
                 ),
@@ -372,6 +574,29 @@ def run_testsets(
             "pass_rate": round(passed_cases / total_cases, 4) if total_cases else 0.0,
             "provider_calls": sum(item["provider_calls"] for item in results),
             "provider_attempts": sum(item["provider_attempts"] for item in results),
+            "transport_retries": sum(item["transport_retries"] for item in results),
+            "provider_failures": sum(item["provider_failures"] for item in results),
+            "expected_provider_blocks": sum(
+                item["expected_provider_blocks"] for item in results
+            ),
+            "latency_ms_p50": _percentile(
+                [
+                    float(observation["elapsed_ms"])
+                    for result in results
+                    for case in result["case_results"]
+                    for observation in case["observations"]
+                ],
+                0.50,
+            ),
+            "latency_ms_p95": _percentile(
+                [
+                    float(observation["elapsed_ms"])
+                    for result in results
+                    for case in result["case_results"]
+                    for observation in case["observations"]
+                ],
+                0.95,
+            ),
             "contract_failures": sum(item["contract_failures"] for item in results),
             "all_passed": bool(total_cases) and passed_cases == total_cases,
             "all_stable": all(
@@ -392,6 +617,9 @@ def main() -> int:
     parser.add_argument("--model", default=None)
     parser.add_argument("--timeout-s", type=int, default=180)
     parser.add_argument("--pure", action="store_true")
+    parser.add_argument("--transport-retries", type=int, default=2)
+    parser.add_argument("--retry-backoff-s", type=float, default=2.0)
+    parser.add_argument("--resume", action="store_true", help="从 output.partial.jsonl 继续未完成的 case")
     parser.add_argument(
         "--output",
         type=Path,
@@ -401,7 +629,11 @@ def main() -> int:
     if args.list:
         print("\n".join(list_testsets()))
         return 0
-    names = args.testset or list_testsets()
+    names = args.testset or (list(LIVE_SCALE_TESTSETS) if args.live else list_testsets())
+    if args.transport_retries < 0 or args.transport_retries > 5:
+        parser.error("--transport-retries 必须在 0..5 之间")
+    if args.retry_backoff_s < 0:
+        parser.error("--retry-backoff-s 不能小于 0")
     report = run_testsets(
         names,
         live=args.live,
@@ -411,9 +643,19 @@ def main() -> int:
         model=args.model,
         timeout_s=args.timeout_s,
         pure=args.pure,
+        transport_retries=args.transport_retries,
+        retry_backoff_s=args.retry_backoff_s,
+        output=args.output,
+        resume=args.resume,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    partial = _partial_path(args.output)
+    if partial is not None:
+        try:
+            partial.unlink()
+        except FileNotFoundError:
+            pass
     print(json.dumps({"output": str(args.output), "summary": report["summary"]}, ensure_ascii=False, indent=2))
     return 0 if report["summary"]["all_passed"] else 2
 

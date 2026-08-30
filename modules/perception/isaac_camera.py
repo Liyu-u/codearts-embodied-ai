@@ -218,6 +218,8 @@ class IsaacCameraObservationProvider:
         segmentation_annotator: str = "instance_id_segmentation",
         depth_annotator: str = "distance_to_image_plane",
         clock: Any = time.time_ns,
+        min_depth_valid_ratio: float | None = None,
+        min_visible_objects: int | None = None,
     ) -> None:
         self.sensor = sensor
         self.camera_model = deepcopy(camera_model)
@@ -226,10 +228,33 @@ class IsaacCameraObservationProvider:
         self.segmentation_annotator = segmentation_annotator
         self.depth_annotator = depth_annotator
         self.clock = clock
+        configured_depth_ratio = (
+            self.camera_model.get("min_depth_valid_ratio", 0.80)
+            if min_depth_valid_ratio is None else min_depth_valid_ratio
+        )
+        try:
+            configured_depth_ratio = float(configured_depth_ratio)
+        except (TypeError, ValueError):
+            raise ValueError("min_depth_valid_ratio must be a number between 0 and 1")
+        if not math.isfinite(configured_depth_ratio) or not 0.0 <= configured_depth_ratio <= 1.0:
+            raise ValueError("min_depth_valid_ratio must be a number between 0 and 1")
+        configured_visible = (
+            self.camera_model.get("min_visible_objects", 1)
+            if min_visible_objects is None else min_visible_objects
+        )
+        try:
+            configured_visible = int(configured_visible)
+        except (TypeError, ValueError):
+            raise ValueError("min_visible_objects must be a non-negative integer")
+        if configured_visible < 0:
+            raise ValueError("min_visible_objects must be a non-negative integer")
+        self.min_depth_valid_ratio = configured_depth_ratio
+        self.min_visible_objects = configured_visible
         self.manifest = tuple(deepcopy(manifest or DEFAULT_CAMERA_MANIFEST))
         self._tracks: dict[str, tuple[dict[str, float], int, int]] = {}
         self.last_metrics: dict[str, Any] = {}
         self.last_observation: dict[str, Any] | None = None
+        self._last_timestamp: int | None = None
         self._validate_manifest()
 
     def _validate_manifest(self) -> None:
@@ -337,7 +362,33 @@ class IsaacCameraObservationProvider:
             },
         }
 
-    def observe(self) -> dict[str, Any]:
+    @staticmethod
+    def _validate_frame(rgb: Any, depth: Any, segmentation: Any) -> Any:
+        """Fail early on shape/type errors before any object can be emitted."""
+        np = _numpy()
+        if rgb.ndim != 3 or rgb.shape[2] < 3 or rgb.shape[0] <= 0 or rgb.shape[1] <= 0:
+            raise ValueError(f"camera rgb must be HxWx3+, got shape {rgb.shape}")
+        if not np.issubdtype(rgb.dtype, np.number):
+            raise ValueError("camera rgb must contain numeric values")
+        if segmentation.ndim != 2:
+            raise ValueError(f"camera segmentation must be 2D, got shape {segmentation.shape}")
+        depth_values = depth[..., 0] if depth.ndim == 3 else depth
+        if depth_values.ndim != 2:
+            raise ValueError(f"camera depth must be HxW or HxWx1, got shape {depth.shape}")
+        if not np.issubdtype(depth_values.dtype, np.number):
+            raise ValueError("camera depth must contain numeric values")
+        image_shape = rgb.shape[:2]
+        if depth_values.shape != image_shape:
+            raise ValueError(
+                f"camera rgb/depth shape mismatch: {image_shape} vs {depth_values.shape}"
+            )
+        if segmentation.shape != image_shape:
+            raise ValueError(
+                f"camera rgb/segmentation shape mismatch: {image_shape} vs {segmentation.shape}"
+            )
+        return depth_values
+
+    def observe(self, *, allow_timestamp_reuse: bool = False) -> dict[str, Any]:
         np = _numpy()
         rgb_raw, _ = _read_sensor(self.sensor, "rgb")
         depth_raw, _ = _read_sensor(self.sensor, self.depth_annotator)
@@ -347,10 +398,20 @@ class IsaacCameraObservationProvider:
         segmentation = _normalize_segmentation(segmentation_raw)
         if rgb is None or depth is None or segmentation is None:
             raise RuntimeError("camera frame is incomplete: rgb, depth, and segmentation are required")
-        if segmentation.ndim != 2:
-            raise ValueError(f"camera segmentation must be 2D, got shape {segmentation.shape}")
+        depth_values = self._validate_frame(rgb, depth, segmentation)
         label_map = _segmentation_label_map(segmentation_info)
-        timestamp = int(self.clock())
+        raw_timestamp = self.clock()
+        if not _finite(raw_timestamp) or float(raw_timestamp) < 0:
+            raise ValueError("camera timestamp must be a finite non-negative number")
+        timestamp = int(raw_timestamp)
+        if (
+            self._last_timestamp is not None
+            and timestamp <= self._last_timestamp
+            and not allow_timestamp_reuse
+        ):
+            raise ValueError(
+                f"camera timestamp must increase: {timestamp} <= {self._last_timestamp}"
+            )
         objects: list[dict[str, Any]] = []
         debug: dict[str, Any] = {}
         for item in self.manifest:
@@ -364,7 +425,6 @@ class IsaacCameraObservationProvider:
             debug[item["object_id"]] = output.pop("_camera_debug")
             objects.append(output)
 
-        depth_values = depth[..., 0] if depth.ndim == 3 else depth
         valid_depth = np.isfinite(depth_values) & (depth_values > 0.0)
         observation_id = f"{self.sensor_id}-{timestamp}"
         observation = {
@@ -384,21 +444,39 @@ class IsaacCameraObservationProvider:
             "simulation_metadata": {"evaluation_only": True, "ground_truth_objects": []},
         }
         assert_contract(observation, "perception_observation.1.0.0")
+        depth_valid_ratio = float(np.mean(valid_depth))
+        quality_reasons: list[str] = []
+        if depth_valid_ratio < self.min_depth_valid_ratio:
+            quality_reasons.append("LOW_DEPTH_VALID_RATIO")
+        if len(objects) < self.min_visible_objects:
+            quality_reasons.append("INSUFFICIENT_VISIBLE_OBJECTS")
+        quality_status = "READY" if not quality_reasons else "DEGRADED"
         self.last_observation = deepcopy(observation)
+        self._last_timestamp = timestamp
         self.last_metrics = {
             "observation_id": observation_id,
             "rgb_shape": list(rgb.shape),
             "depth_shape": list(depth_values.shape),
-            "depth_valid_ratio": float(np.mean(valid_depth)),
+            "depth_valid_ratio": depth_valid_ratio,
             "segmentation_unique_values": int(len(np.unique(segmentation))),
             "visible_objects": len(objects),
+            "quality_status": quality_status,
+            "quality_reasons": quality_reasons,
+            "min_depth_valid_ratio": self.min_depth_valid_ratio,
+            "min_visible_objects": self.min_visible_objects,
             "objects": debug,
         }
         return observation
 
     def health(self) -> dict[str, Any]:
+        if not self.last_metrics:
+            status = "not_ready"
+        elif self.last_metrics.get("quality_status") == "DEGRADED":
+            status = "degraded"
+        else:
+            status = "ok"
         return {
-            "status": "ok" if self.last_metrics else "not_ready",
+            "status": status,
             "backend": self.backend,
             "scene_id": self.scene_id,
             "sensor_id": self.sensor_id,

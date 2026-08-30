@@ -281,12 +281,19 @@ def health() -> dict:
                 else (
                     "CodeArts CLI 不可用；required 模式将阻断策略生成"
                     if mode == "required"
-                    else "CodeArts CLI 不可用；auto 模式将使用本地安全回退"
+                    else (
+                        "CodeArts 已关闭；使用本地安全策略"
+                        if mode == "off"
+                        else "CodeArts CLI 不可用；auto 模式将使用本地安全回退"
+                    )
                 )
             ),
             "codearts_mode": mode,
             "codearts_policy": policy,
             "codearts": availability,
+            # Resolving the CLI is a control-plane check only; balance and
+            # model generation are intentionally not probed by health().
+            "business_probe": "not_run",
         }
     except Exception as e:
         return {
@@ -304,8 +311,8 @@ def health() -> dict:
 
 
 def _codearts_mode() -> str:
-    """Return off/auto/required; invalid values fail safe to auto."""
-    value = os.environ.get("CODEARTS_STRATEGY_MODE", "auto").strip().lower()
+    """Return off/auto/required; no explicit setting stays offline."""
+    value = os.environ.get("CODEARTS_STRATEGY_MODE", "off").strip().lower()
     return value if value in {"off", "auto", "required"} else "auto"
 
 

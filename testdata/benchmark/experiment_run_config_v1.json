@@ -1,0 +1,61 @@
+{
+  "schema_version": "experiment-run-config.v1",
+  "protocol_id": "embodied-task-experiment-v1",
+  "protocol_version": "1.0.0",
+  "purpose": "正式测试前冻结运行口径；不保存任何密钥",
+  "experiment_id": "exp-20260828-01",
+  "dataset": {
+    "id": "comparison",
+    "manifest": "testdata/benchmark/closed_loop_cases.json",
+    "case_count": 30,
+    "repeats": 5,
+    "same_case_order": true
+  },
+  "execution": {
+    "comparison_backend": "mock",
+    "timeout_seconds": 180,
+    "transport_retries": 2,
+    "policy": "quality",
+    "max_pipeline_retries": 2,
+    "manual_intervention_allowed": false
+  },
+  "variants": [
+    {
+      "id": "V0_RULE_BASELINE",
+      "mode": "baseline",
+      "d_enabled": false,
+      "provider": "local_rules",
+      "online_call": false
+    },
+    {
+      "id": "V2_FULL_NO_D",
+      "mode": "intelligent",
+      "d_enabled": false,
+      "provider": "CodeArts",
+      "online_call": true
+    },
+    {
+      "id": "V4_FULL",
+      "mode": "intelligent",
+      "d_enabled": true,
+      "provider": "CodeArts + TraceCoder",
+      "online_call": true
+    }
+  ],
+  "evidence_lanes": {
+    "offline_baseline": "V0_RULE_BASELINE",
+    "online_system_and_ablation": ["V2_FULL_NO_D", "V4_FULL"],
+    "online_results_must_be_reported_separately": true,
+    "isaac_sim_results_must_be_reported_separately": true
+  },
+  "before_run_checks": [
+    "协议预检通过",
+    "核心题集 case_id、目标绑定和 expected_world_state 已冻结",
+    "所有变体使用同一个 experiment_id",
+    "确认 CodeArts 和 TraceCoder 凭证可用，但不把密钥写入报告",
+    "确认代码、模型、策略档位和题集版本不再修改",
+    "先跑 representative，再跑 30 条正式测试",
+    "正式测试禁止人工中途改 Prompt、规则、阈值和重试次数"
+  ],
+  "completion_rule": "只有原始报告、协议预检报告和失败案例证据均保存后，结果才可进入PPT"
+}

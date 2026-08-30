@@ -106,6 +106,16 @@ def run(input_json: dict) -> dict:
             ["不支持的 perception schema_version"],
             {"task_id_note": task_id_note},
         )
+    quality_errors = _perception_quality_errors(perception)
+    if quality_errors:
+        return _blocked(
+            task_id,
+            quality_errors,
+            {
+                "perception_quality": deepcopy(perception.get("quality")),
+                "task_id_note": task_id_note,
+            },
+        )
 
     try:
         scene = _build_scene(perception)
@@ -150,10 +160,21 @@ def run(input_json: dict) -> dict:
             task_id_note=task_id_note,
         )
     except Exception as exc:
+        failure_code, failure_class = _classify_intent_failure(exc)
+        provider_trace = {}
+        planner = locals().get("llm_planner")
+        if planner is not None:
+            provider_trace = dict(getattr(planner, "last_call_metadata", {}) or {})
         return _blocked(
             task_id,
-            [f"INTENT_PIPELINE_ERROR:{type(exc).__name__}"],
-            diagnostics={"message": str(exc), "task_id_note": task_id_note},
+            [failure_code],
+            diagnostics={
+                "message": str(exc),
+                "failure_class": failure_class,
+                "engine": locals().get("engine"),
+                "provider_trace": provider_trace,
+                "task_id_note": task_id_note,
+            },
         )
 
 
@@ -346,6 +367,57 @@ def _finite_number(value: Any, default: float) -> float:
         return number if math.isfinite(number) else default
     except (TypeError, ValueError):
         return default
+
+
+def _classify_intent_failure(exc: BaseException) -> tuple[str, str]:
+    """Map provider/runtime failures to stable A diagnostics.
+
+    A provider outage must not look like a semantic ``CUSTOM`` decision in
+    acceptance statistics.  The public task remains BLOCKED, while this
+    narrow classification lets the caller separate balance/auth/transport
+    failures from actual language-understanding regressions.
+    """
+    text = str(exc or "").lower()
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        response = getattr(exc, "response", None)
+        status = getattr(response, "status_code", None) if response is not None else None
+    try:
+        status = int(status) if status is not None else None
+    except (TypeError, ValueError):
+        status = None
+    if status == 402 or "insufficient balance" in text or "余额不足" in text:
+        return "INTENT_PROVIDER_BALANCE", "provider_balance"
+    if status in {401, 403} or any(token in text for token in ("api key", "authentication", "unauthorized", "forbidden")):
+        return "INTENT_PROVIDER_AUTH", "provider_auth"
+    if status == 429 or "rate limit" in text or "too many requests" in text:
+        return "INTENT_PROVIDER_RATE_LIMIT", "provider_rate_limit"
+    if status is not None and status >= 500:
+        return "INTENT_PROVIDER_SERVER", "provider_server"
+    if any(token in text for token in ("timeout", "timed out", "connection", "network")):
+        return "INTENT_PROVIDER_TRANSPORT", "provider_transport"
+    if "llm_required_failed" in text or "deepseek api" in text or "provider" in text:
+        return "INTENT_PROVIDER_ERROR", "provider_error"
+    return f"INTENT_PIPELINE_ERROR:{type(exc).__name__}", "pipeline_error"
+
+
+def _perception_quality_errors(perception: dict) -> list[str]:
+    """Fail closed when an explicit camera quality assessment is degraded."""
+    quality = perception.get("quality")
+    if quality is None:
+        return []
+    if not isinstance(quality, dict):
+        return ["PERCEPTION_QUALITY_INVALID"]
+    status = str(quality.get("status") or "").strip().upper()
+    if status in {"READY", "OK"}:
+        return []
+    reasons = [
+        str(item).strip()
+        for item in quality.get("reasons", [])
+        if str(item).strip()
+    ]
+    detail = ":" + ",".join(reasons[:4]) if reasons else ""
+    return [f"PERCEPTION_QUALITY_DEGRADED{detail}"]
 
 
 def _first_target_name(scene: Any) -> str:

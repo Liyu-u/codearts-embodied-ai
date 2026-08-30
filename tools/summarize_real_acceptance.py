@@ -50,6 +50,15 @@ def classify(record: dict[str, Any]) -> str:
     # flag, because no business contract was actually exercised in that case.
     if any(token in message for token in ("permission denied", "publickey", "connecttimeout", "timed out", "connection", "scp", "ssh")):
         return "transport_auth"
+    # A successful A/B plan with no C artifact means the remote runner did
+    # not produce an execution result.  It is not evidence of a task-id
+    # contract mismatch; keep this distinction stable even for older reports
+    # that stored a derived false contract flag.
+    if (
+        str(record.get("expected_status") or "").upper() == "SUCCEEDED"
+        and not remote_stage.get("status")
+    ):
+        return "runner"
     explicit = str(record.get("failure_class") or "").strip()
     if explicit:
         return explicit
@@ -91,9 +100,17 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     contract_rows = [
         record
         for record in records
-        if record.get("contract_checks") and classify(record) not in {"transport_auth", "runner"}
+        if any(isinstance(value, bool) for value in (record.get("contract_checks") or {}).values())
+        and classify(record) not in {"transport_auth", "runner"}
     ]
-    contract_passed = sum(all((record.get("contract_checks") or {}).values()) for record in contract_rows)
+    contract_passed = sum(
+        all(
+            value
+            for value in (record.get("contract_checks") or {}).values()
+            if isinstance(value, bool)
+        )
+        for record in contract_rows
+    )
     c_stages = [(record.get("stages") or {}).get("C") or {} for record in records]
     feedback_stages = [(record.get("stages") or {}).get("feedback") or {} for record in records]
     wall_ms = [stage.get("wall_ms") for stage in c_stages]

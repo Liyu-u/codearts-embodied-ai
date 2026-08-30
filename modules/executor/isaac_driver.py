@@ -371,6 +371,38 @@ class FrankaPickPlaceDriver:
         self._controller.reset()
         self._phase_history = []
 
+    def warmup_for_control(self, *, forward_steps: int = 1) -> dict:
+        """Compile the first controller path, then restore the task boundary.
+
+        Isaac Sim 6 may compile CUDA/IK kernels during the first controller
+        ``forward`` call.  If that cost is charged to ``move_to_object``, a
+        valid task can be incorrectly classified as an action timeout.  The
+        warm-up is deliberately bounded to one forward step and is followed
+        by a controller reset, so every variant starts the measured task from
+        the same initial state.
+        """
+        import time
+
+        self._ensure_started()
+        steps = max(1, int(forward_steps))
+        started = time.monotonic()
+        self._controller.reset()
+        event_before = int(self._controller._event)
+        for _ in range(steps):
+            self._controller.forward(self.IK_METHOD)
+            self._app.update()
+        event_after = int(self._controller._event)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        self._controller.reset()
+        self._phase_history = []
+        return {
+            "forward_steps": steps,
+            "event_before": event_before,
+            "event_after": event_after,
+            "elapsed_ms": elapsed_ms,
+            "reset_after_warmup": True,
+        }
+
     def _ensure_started(self) -> None:
         if not self._connected or self._controller is None:
             raise DriverError("FrankaPickPlaceDriver not connected")
@@ -410,9 +442,22 @@ class FrankaPickPlaceDriver:
             self._app.update()
             frames += 1
             if time.monotonic() - start >= float(timeout_s):
+                wall_ms = int((time.monotonic() - start) * 1000)
+                self._phase_history.append({
+                    "event_before": initial_event,
+                    "event_after": int(self._controller._event),
+                    "frames": frames,
+                    "wall_ms": wall_ms,
+                    "timed_out": True,
+                    "timeout_s": float(timeout_s),
+                })
                 return motion_result(
-                    "FAILED", "ACTION_TIMEOUT", int((time.monotonic() - start) * 1000),
-                    timed_out=True, trajectory=trajectory,
+                    "FAILED", "ACTION_TIMEOUT", wall_ms,
+                    timed_out=True,
+                    trajectory=trajectory,
+                    frames=frames,
+                    event_before=initial_event,
+                    event_after=int(self._controller._event),
                 )
         wall_ms = int((time.monotonic() - start) * 1000)
         pose = self._controller_pose()

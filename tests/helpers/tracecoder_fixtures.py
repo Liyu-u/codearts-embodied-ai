@@ -92,6 +92,7 @@ def mock_executor_run(strategy_v1: dict, task_v1: dict) -> dict:
         "task_id": task_v1["task_id"],
         "status": "SUCCEEDED" if evaluation.get("passed") else "FAILED",
         "steps": steps,
+        "final_state": exec_result["final_state"],
         "trajectory_points": exec_result["trajectory_points"],
         "total_duration_ms": exec_result["total_duration_ms"],
         "safety_events": [

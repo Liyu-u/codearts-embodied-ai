@@ -1593,15 +1593,24 @@ class LLMPlanner(TaskPlannerInterface):
 
     def _call_api(self, user_message: str) -> Dict[str, Any]:
         """调用 DeepSeek API，带重试和超时处理"""
-        self._ensure_client()
         self._last_call_metadata.update({
             "network_call": True,
             "model": self._model,
             "thinking": self._thinking,
             "reasoning_effort": self._reasoning_effort if self._thinking == "enabled" else None,
+            "attempt_count": 0,
+            "error_class": None,
+            "status_code": None,
+            "retryable": False,
         })
+        try:
+            self._ensure_client()
+        except Exception as exc:
+            self._record_api_failure(exc, retryable=False)
+            raise
 
         for attempt in range(self._max_retries + 1):
+            self._last_call_metadata["attempt_count"] = attempt + 1
             try:
                 logger.info(
                     f"DeepSeek API call (attempt {attempt+1}/{self._max_retries+1}) "
@@ -1634,18 +1643,66 @@ class LLMPlanner(TaskPlannerInterface):
 
             except json.JSONDecodeError as e:
                 logger.warning(f"DeepSeek returned invalid JSON (attempt {attempt+1}): {e}")
+                self._last_call_metadata.update({
+                    "error_class": "provider_response_format",
+                    "retryable": False,
+                })
                 raise LLMPlannerError(f"DeepSeek 返回了非法的 JSON: {e}")
 
             except (ValueError, TypeError) as e:
                 logger.warning(f"DeepSeek JSON structure error (attempt {attempt+1}): {e}")
+                self._last_call_metadata.update({
+                    "error_class": "provider_response_format",
+                    "retryable": False,
+                })
                 raise LLMPlannerError(f"DeepSeek 返回的 JSON 结构异常: {e}")
 
             except Exception as e:
                 logger.warning(f"DeepSeek API error (attempt {attempt+1}): {e}")
-                if attempt >= self._max_retries or not self._is_retryable_api_error(e):
+                retryable = self._is_retryable_api_error(e)
+                self._record_api_failure(e, retryable=retryable)
+                if attempt >= self._max_retries or not retryable:
                     raise LLMPlannerError(f"DeepSeek API 调用失败: {e}")
 
         raise LLMPlannerError("DeepSeek API 调用失败：已达最大重试次数")
+
+    def _record_api_failure(self, error: BaseException, *, retryable: bool) -> None:
+        """Store bounded, non-secret provider failure telemetry."""
+        status = self._status_code(error)
+        self._last_call_metadata.update({
+            "error_class": self._api_error_class(error, status),
+            "status_code": status,
+            "retryable": bool(retryable),
+            "error": " ".join(str(error).split())[:300],
+        })
+
+    @staticmethod
+    def _status_code(error: BaseException) -> int | None:
+        status = getattr(error, "status_code", None)
+        if status is None:
+            response = getattr(error, "response", None)
+            status = getattr(response, "status_code", None) if response is not None else None
+        try:
+            return int(status) if status is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _api_error_class(error: BaseException, status: int | None = None) -> str:
+        text = str(error or "").lower()
+        if status == 402 or "insufficient balance" in text or "余额不足" in text:
+            return "provider_balance"
+        if status in {401, 403} or any(token in text for token in ("api key", "authentication", "unauthorized", "forbidden")):
+            return "provider_auth"
+        if status == 429 or "rate limit" in text or "too many requests" in text:
+            return "provider_rate_limit"
+        if status is not None and status >= 500:
+            return "provider_server"
+        if any(token in text for token in ("timeout", "timed out", "connection", "network")):
+            return "provider_transport"
+        if isinstance(error, (ValueError, TypeError, json.JSONDecodeError)):
+            return "provider_response_format"
+        return "provider_error"
 
     @staticmethod
     def _is_retryable_api_error(error: Exception) -> bool:

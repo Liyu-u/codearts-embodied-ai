@@ -79,3 +79,14 @@ powershell -ExecutionPolicy Bypass -File demo/start_demo.ps1 `
 ## 与真实系统的边界
 
 Demo 默认保持 `CODEARTS_STRATEGY_MODE=off` 以保证离线可复现；通过上面的 `-CodeArtsMode required` 可切换到真实 CodeArts 策略生成。TraceCoder 使用离线规则/HLLM 经验逻辑；C 使用当前仓库的 `MockBackend`。`tracecoder_repair` 专用场景会隔离每次请求的经验库，并故意移除 B 的动作级恢复，以确保演示的是 D→C 的真实修复闭环，而不是 C 在单次执行内自恢复。未来接入真实前端时，只需把 `POST /api/run` 换成网关接口，页面的协议展示和状态组件可以复用。生产环境仍应保留人工确认、权限校验和真机急停，不应把此 Demo 当作控制台。
+
+## Isaac Sim HLS 直播
+
+如果 MediaMTX 已经发布 `isaac` 路径，可以在启动 Demo 前配置播放地址：
+
+```powershell
+$env:LIVESTREAM_HLS_URL = "https://<PUBLIC_DOMAIN>/live/isaac/index.m3u8"
+.\demo\start_demo.ps1
+```
+
+首页数字孪生视图会优先播放 HLS；未配置或连接失败时继续显示原有模拟视图，并提供重试提示。推流密码只配置在 OBS/MediaMTX，不要写入前端代码。

@@ -58,7 +58,7 @@ try {
     Write-Host "[1/6] 检查 SSH、Docker、GPU..." -ForegroundColor Cyan
     Invoke-SshChecked "set -eu; hostname; docker --version; nvidia-smi --query-gpu=name --format=csv,noheader"
     Write-Host "[2/6] 打包摄像头 C 入口..." -ForegroundColor Cyan
-    & tar --exclude='__pycache__' --exclude='*.pyc' -czf $bundle -C $repoRoot contracts integration modules tools/run_executor_acceptance.py tools/run_isaac_camera_perception.py tools/run_camera_executor_acceptance.py tools/run_camera_executor_acceptance_v2.py
+    & tar --exclude='__pycache__' --exclude='*.pyc' -czf $bundle -C $repoRoot contracts integration modules tools/run_executor_acceptance.py tools/run_isaac_camera_perception.py tools/run_camera_executor_acceptance.py tools/run_camera_executor_acceptance_v2.py tools/run_camera_executor_acceptance_v3.py tools/run_camera_executor_acceptance_v4.py tools/run_camera_executor_acceptance_v5.py tools/run_camera_executor_acceptance_v6.py
     if ($LASTEXITCODE -ne 0) { throw "本地打包失败，退出码 $LASTEXITCODE" }
     Invoke-SshChecked "mkdir -p '$remoteRoot/results' && chmod 777 '$remoteRoot' '$remoteRoot/results'"
     Copy-ToRemote $bundle "$remoteRoot/codearts-camera-bundle.tar.gz"
@@ -74,7 +74,7 @@ try {
         "container_name='__CONTAINER_NAME__'",
         'cleanup() { timeout 30 docker rm -f "$container_name" >/dev/null 2>&1 || true; }',
         'trap cleanup EXIT INT TERM',
-        'rm -f "$remote_root/results/perception.json" "$remote_root/results/execution.json" "$remote_root/results/progress.jsonl" "$remote_root/results/container.log"',
+        'rm -f "$remote_root/results"/*',
     'tar -xzf "$remote_root/codearts-camera-bundle.tar.gz" -C "$remote_root"',
     'chmod 777 "$remote_root" "$remote_root/results"',
         'timeout 30 docker rm -f "$container_name" >/dev/null 2>&1 || true',
@@ -84,7 +84,7 @@ try {
     'timeout "$timeout_seconds" docker run --name "$container_name" --rm --entrypoint /isaac-sim/python.sh "${gpu_args[@]}" --network none -u 1234:1234 \',
     '  -e ACCEPT_EULA=Y -e PRIVACY_CONSENT=N -e ISAACSIM_ASSET_ROOT=/isaacsim_assets/Assets/Isaac/6.0 \',
     '  -v "$remote_root:/workspace" -v /data/stu_01/isaac_assets:/isaacsim_assets:ro nvcr.io/nvidia/isaac-sim:6.0.0 \',
-    '  /workspace/tools/run_camera_executor_acceptance_v2.py --device "$device" --result-dir /workspace/results --strategy-file /workspace/live_chain_ab.json --frames 60 > "$remote_root/results/container.log" 2>&1 || docker_rc=$?',
+    '  /workspace/tools/run_camera_executor_acceptance_v6.py --device "$device" --result-dir /workspace/results --strategy-file /workspace/live_chain_ab.json --frames 60 > "$remote_root/results/container.log" 2>&1 || docker_rc=$?',
     'echo "CONTAINER_RC=$docker_rc"',
     'echo "RUNNER_STATUS=$docker_rc" >> "$remote_root/results/container.log"',
     'test -s "$remote_root/results/progress.jsonl"',

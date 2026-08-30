@@ -1,0 +1,16 @@
+{
+  "variant_id": "V0_RULE_BASELINE",
+  "task_id": "smoke-green-cube-place-20260829",
+  "strategy": {
+    "schema_version": "strategy.v1",
+    "task_id": "smoke-green-cube-place-20260829",
+    "code": null,
+    "steps": [
+      {"step_id": "detect", "action": "detect_object", "arguments": {"object_id": "green_cube"}},
+      {"step_id": "approach", "action": "move_to_object", "arguments": {"object_id": "green_cube"}},
+      {"step_id": "grasp", "action": "grasp", "arguments": {"object_id": "green_cube"}},
+      {"step_id": "target", "action": "move_to_target", "arguments": {"destination_id": "zone_unstack_target"}},
+      {"step_id": "release", "action": "release", "arguments": {}}
+    ]
+  }
+}

@@ -429,6 +429,7 @@ def _ensure_bounded_grasp_recovery(candidate: dict[str, Any]) -> dict[str, Any]:
 
 
 def _failure(error: str, trace: dict[str, Any]) -> dict[str, Any]:
+    trace["error_class"] = classify_codearts_error(error)
     validation = trace.get("validation")
     if not isinstance(validation, dict) or not validation.get("errors"):
         trace["validation"] = {"passed": False, "errors": [error]}
@@ -437,6 +438,7 @@ def _failure(error: str, trace: dict[str, Any]) -> dict[str, Any]:
 
 
 def _review_failure(error: str, trace: dict[str, Any]) -> dict[str, Any]:
+    trace["error_class"] = classify_codearts_error(error)
     validation = trace.get("validation")
     if not isinstance(validation, dict) or not validation.get("errors"):
         trace["validation"] = {"passed": False, "errors": [error]}
@@ -448,6 +450,28 @@ def _finalize_trace(trace: dict[str, Any]) -> None:
     started = trace.pop("_started_monotonic", None)
     if isinstance(started, (int, float)):
         trace["latency_ms"] = round(max(0.0, (time.monotonic() - started) * 1000), 3)
+
+
+def classify_codearts_error(error: Any) -> str:
+    """Return a stable B failure class for acceptance and retry decisions."""
+    text = str(error or "").lower()
+    if "insufficient balance" in text or "余额不足" in text:
+        return "provider_balance"
+    if any(token in text for token in ("api key", "authentication", "unauthorized", "forbidden")):
+        return "provider_auth"
+    if any(token in text for token in ("timeout", "timed out")):
+        return "transport_timeout"
+    if any(token in text for token in ("connection", "temporarily unavailable", "econn", "network")):
+        return "transport_network"
+    if any(token in text for token in ("429", "rate limit", "too many requests")):
+        return "provider_rate_limit"
+    if any(token in text for token in ("500", "502", "503", "504", "server error")):
+        return "provider_server"
+    if any(token in text for token in ("strategy_rejected", "review_rejected", "output_missing", "missing_strategy")):
+        return "provider_contract"
+    if "not_found" in text or "start_failed" in text:
+        return "configuration"
+    return "provider_error"
 
 
 def _has_explicit_task_id(strategy: dict[str, Any]) -> bool:

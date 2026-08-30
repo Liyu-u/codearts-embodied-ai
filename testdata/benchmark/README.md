@@ -2,6 +2,15 @@
 
 这套题集面向参赛作品的量化评测，不替代原有的单元、契约和协议验收。
 
+统一实验协议见：[统一实验协议 v1.0](../../docs/统一实验协议_v1.md)、[最终测试前检查清单 v1](../../docs/最终测试前检查清单_v1.md)、[experiment_protocol_v1.json](experiment_protocol_v1.json) 和 [experiment_run_config_v1.json](experiment_run_config_v1.json)。核心对比集使用本目录的 `closed_loop_cases.json`（30 个案例）；`abcd_closed_loop_v1.json`（64 个案例）作为完整回归集，不能与核心对比集的横向结果混用。
+
+实验开始前先做协议预检，确认测试集数量、分类和文件指纹没有变化：
+
+```powershell
+python tools/validate_experiment_protocol.py `
+  --output reports/experiment_protocol_preflight.json
+```
+
 面向 A/B/C/D 全链路联调的自研 v1 题集见：[ABCD联调测试集说明](ABCD联调测试集说明.md) 和 [abcd_closed_loop_v1.json](abcd_closed_loop_v1.json)。它在本 README 所述基准的基础上增加了公开具身智能基准中的语言落地、对话澄清、多任务组合和失败恢复测试思想，并通过 `--manifest` 参数独立运行。
 
 ## 题集结构
@@ -25,6 +34,8 @@
 - 策略动作、`strategy.v1`契约结果和`code=null`结果；
 - 执行状态、步骤数、安全事件、重试次数和停止原因；
 - 可用于回放的 task、strategy、execution、feedback 原始对象。
+- 实验批次、协议版本、变体编号、Git SHA、固定 seed 和 manifest 指纹；
+- 合法任务成功率、语义目标精确匹配率、危险任务误执行率、可恢复故障恢复率、假成功率和轨迹完整率。
 
 ## 离线基线
 
@@ -60,6 +71,19 @@ python tools/run_closed_loop_benchmark.py `
   --output reports/closed_loop_benchmark_codearts.json
 ```
 
+## 消融：去掉 D
+
+在与完整方案相同的题集、场景和故障注入下，只关闭 TraceCoder 的诊断/修复/重试：
+
+```powershell
+python tools/run_closed_loop_benchmark.py `
+  --mode intelligent `
+  --variant V2_FULL_NO_D `
+  --repeats 5 `
+  --policy quality `
+  --output reports/closed_loop_benchmark_v2_no_d.json
+```
+
 基线与CodeArts对照运行会主动调用真实CodeArts，为避免误触发，必须显式确认：
 
 ```powershell
@@ -82,5 +106,24 @@ python tools/run_closed_loop_benchmark.py `
 - `execution_success_rate`：真正进入执行器的任务中成功的比例；
 - `repair_success_rate`：明确标记 `requires_d_repair=true` 的失败任务中，最终成功且发生重试的比例；动作级自恢复单独保留在 `recoverable_failure` 类别中，不冒充 D 修复。
 - `safe_stop_correct_rate`：预期安全停止的题目实际进入`SAFE_STOP`的比例。
+- `valid_task_success_rate`：预期应成功的合法任务最终成功比例；
+- `unsafe_false_execution_rate`：预期阻断/澄清但实际进入执行器的比例；
+- `recoverable_failure_recovery_rate`：可恢复故障最终恢复成功比例；
+- `false_success_rate`：有明确世界状态证据时，声称成功但验证失败的比例；没有世界状态字段时报告为缺失，不默认为 0。
+
+## 跨变体汇总
+
+分别跑完 V0/V1/V2/V4 后，用下面的命令生成对比表和提升幅度。工具会先检查协议版本、manifest、后端和 case_id 是否一致，不一致就拒绝算提升：
+
+正式对比时，四次运行要传同一个 `--experiment-id`；自动生成的编号只适合单独冒烟。
+
+```powershell
+python tools/compare_experiment_reports.py `
+  reports/experiment_v0_rule_baseline.json `
+  reports/experiment_v1_codearts_online.json `
+  reports/experiment_v2_full_no_d.json `
+  reports/experiment_v4_full.json `
+  --output reports/experiment_comparison.json
+```
 
 当前运行器默认使用Mock后端。Isaac Sim批量验收应复用相同的case_id和strategy.v1，并将远程`execution.json`合并到同一套报告中；不能把Mock结果冒充Isaac结果。

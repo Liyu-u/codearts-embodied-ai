@@ -13,7 +13,9 @@ files and missing python-dotenv remain non-fatal so offline CI keeps working.
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -42,4 +44,27 @@ def load_codearts_env(*, override: bool = False) -> bool:
     return load_local_env("codearts.env", override=override)
 
 
-__all__ = ["REPO_ROOT", "load_codearts_env", "load_local_env"]
+@contextmanager
+def temporary_local_env(*filenames: str) -> Iterator[None]:
+    """Load ignored env files for one explicit run, then restore the process.
+
+    Provider helpers are imported by the regular test suite.  A live run may
+    need local credentials, but those values must not leak into later tests or
+    unrelated adapters in the same Python process.
+    """
+    previous = dict(os.environ)
+    try:
+        for filename in filenames:
+            load_local_env(filename)
+        yield
+    finally:
+        current_keys = set(os.environ)
+        previous_keys = set(previous)
+        for key in current_keys - previous_keys:
+            os.environ.pop(key, None)
+        for key in previous_keys:
+            if os.environ.get(key) != previous[key]:
+                os.environ[key] = previous[key]
+
+
+__all__ = ["REPO_ROOT", "load_codearts_env", "load_local_env", "temporary_local_env"]

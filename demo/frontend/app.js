@@ -4,14 +4,100 @@
 var $=function(s,r){return(r||document).querySelector(s)}, $$=function(s,r){return[].slice.call((r||document).querySelectorAll(s))};
 var names={home:"总览",tasks:"任务管理",twin:"数字孪生",robots:"机器人管理",scenes:"场景管理",data:"数据管理",models:"模型管理","model-config":"模型配置",logs:"日志与审计",settings:"系统设置"};
 var state={scenario:null,page:"home"};
+var livestream={video:null,hls:null,url:"",scene:null,badge:null,overlay:null,status:null};
+var apiBase=(typeof window!=="undefined"&&window.DEMO_API_BASE)||"";
+if(!apiBase&&typeof window!=="undefined"&&window.location){
+  var location=window.location;
+  if(location.protocol==="file:"||location.port!=="8765")apiBase="http://127.0.0.1:8765";
+}
 var esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
 var text=function(v){return({READY:"就绪",IDLE:"空闲",MAINTENANCE:"维护中",ONLINE:"在线",DEPLOYED:"已部署",CANARY:"灰度中",STAGING:"测试中",PROCESSING:"处理中",REVIEW:"待复核",SUCCEEDED:"成功",RUNNING:"执行中",BLOCKED:"受阻",QUEUED:"排队中"}[v]||v||"—")};
-var api=function(p,o){o=o||{};return fetch(p,Object.assign({headers:Object.assign({"Content-Type":"application/json"},o.headers||{})},o)).then(function(r){return r.json().catch(function(){return{}}).then(function(d){if(!r.ok)throw Error(d.error||("接口请求失败 "+r.status));return d})})};
+var api=function(p,o){
+  o=Object.assign({},o||{});
+  var headers=Object.assign({},o.headers||{});
+  if(o.body)headers["Content-Type"]="application/json";else delete headers["Content-Type"];
+  o.headers=headers;
+  return fetch(apiBase+p,o).then(function(r){return r.json().catch(function(){return{}}).then(function(d){if(!r.ok)throw Error(d.error||("接口请求失败 "+r.status));return d})}).catch(function(e){
+    if(e&&e.message&&e.message.indexOf("接口请求失败")===0)throw e;
+    throw Error("无法连接演示服务（"+apiBase+"），请确认 8765 端口服务已启动");
+  });
+};
 var post=function(p,b){return api(p,{method:"POST",body:JSON.stringify(b)})}, put=function(p,b){return api(p,{method:"PUT",body:JSON.stringify(b)})};
 var toast=function(m,c){var n=$("#toast");if(!n)return;n.textContent=m;n.className="toast show "+(c||"");clearTimeout(toast.t);toast.t=setTimeout(function(){n.className="toast"},2500)};
 var pill=function(v){return'<span class="unit-pill '+String(v||"").toLowerCase()+'">'+esc(text(v))+"</span>"};
 var stat=function(a,b,c,t){return'<article class="unit-stat '+(t||"")+'"><small>'+a+"</small><b>"+b+"</b><span>"+c+"</span></article>"};
-function init(){nav();home();clock();setInterval(clock,1000);loadHome()}
+function streamStatus(message,kind){
+  if(livestream.status){livestream.status.textContent=message;livestream.status.className="stream-status "+(kind||"")}
+  if(livestream.overlay)livestream.overlay.hidden=!message;
+}
+function streamFallback(message){
+  if(livestream.hls){livestream.hls.destroy();livestream.hls=null}
+  if(livestream.video){livestream.video.pause();livestream.video.removeAttribute("src");livestream.video.load()}
+  if(livestream.scene)livestream.scene.classList.remove("stream-active");
+  if(livestream.badge)livestream.badge.textContent="● 模拟视图 · 直播不可用";
+  streamStatus(message,"error");
+}
+function streamReady(){
+  if(livestream.scene)livestream.scene.classList.add("stream-active");
+  if(livestream.badge)livestream.badge.textContent="● 实时仿真 · HLS";
+  if(livestream.status)livestream.status.textContent="实时画面已连接";
+  if(livestream.overlay)livestream.overlay.hidden=true;
+}
+function loadHlsScript(done){
+  if(window.Hls){done();return}
+  var script=document.createElement("script");
+  script.src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js";
+  script.onload=done;
+  script.onerror=function(){streamFallback("HLS 播放组件加载失败，请检查网络或改用 Safari")};
+  document.head.appendChild(script);
+}
+function attachLivestream(url){
+  if(!livestream.video||!url)return;
+  livestream.url=url;
+  streamStatus("正在连接实时画面…","loading");
+  var video=livestream.video;
+  video.onloadeddata=streamReady;
+  video.onerror=function(){streamFallback("视频流连接失败，请检查 RTSP、OBS 和 MediaMTX")};
+  if(video.canPlayType("application/vnd.apple.mpegurl")){
+    video.src=url;
+    video.play().catch(function(){});
+    return;
+  }
+  loadHlsScript(function(){
+    if(!window.Hls||!window.Hls.isSupported()){
+      streamFallback("当前浏览器不支持 HLS，请使用 Chrome/Edge 并确保 hls.js 可加载");
+      return;
+    }
+    livestream.hls=new window.Hls({enableWorker:true,lowLatencyMode:true});
+    livestream.hls.on(window.Hls.Events.MANIFEST_PARSED,function(){video.play().catch(function(){});});
+    livestream.hls.on(window.Hls.Events.ERROR,function(_,data){if(data&&data.fatal)streamFallback("HLS 播放发生致命错误，请点击重试")});
+    livestream.hls.loadSource(url);
+    livestream.hls.attachMedia(video);
+  });
+}
+function initLivestream(){
+  var scene=$("#scene");
+  if(!scene)return;
+  livestream.scene=scene;
+  livestream.badge=$("#streamBadge")||$(".live",scene);
+  var video=document.createElement("video");
+  video.className="isaac-video";
+  video.controls=true;video.autoplay=true;video.muted=true;video.playsInline=true;video.preload="none";
+  video.setAttribute("aria-label","Isaac Sim 实时仿真画面");
+  scene.insertBefore(video,scene.firstChild);
+  livestream.video=video;
+  var overlay=document.createElement("div");
+  overlay.className="stream-overlay";overlay.hidden=true;
+  overlay.innerHTML='<strong>实时仿真画面</strong><span class="stream-status" role="status" aria-live="polite"></span><button type="button" id="streamRetry">重新连接</button>';
+  scene.appendChild(overlay);
+  livestream.overlay=overlay;livestream.status=$(".stream-status",overlay);
+  $("#streamRetry",overlay).onclick=function(){if(livestream.url)attachLivestream(livestream.url)};
+  api("/api/livestream").then(function(config){
+    if(!config.enabled||!config.url){if(livestream.badge)livestream.badge.textContent="● 模拟视图 · 未配置直播";return}
+    attachLivestream(config.url);
+  }).catch(function(){if(livestream.badge)livestream.badge.textContent="● 模拟视图 · 直播状态未知"});
+}
+function init(){nav();home();clock();setInterval(clock,1000);loadHome();initLivestream()}
 function clock(){var n=$("#clock");if(n)n.textContent=new Date().toLocaleString("zh-CN",{hour12:false}).replaceAll("/","-")}
 function nav(){$$(".nav").forEach(function(b){b.onclick=function(){go(b.dataset.page)}})}
 function go(p){if(!names[p])return;state.page=p;$$(".nav").forEach(function(b){b.classList.toggle("active",b.dataset.page===p)});$("#homeView").hidden=p!=="home";$("#unitView").hidden=p==="home";$("#pageKicker").textContent=p==="home"?"工作台 / 总览":"平台单元 / "+names[p];$("#pageTitle").textContent=p==="home"?"任务执行中心":names[p];if(p!=="home")unit(p)}
