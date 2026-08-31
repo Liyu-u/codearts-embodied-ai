@@ -34,6 +34,7 @@ codearts.env
 .vscode/
 .DS_Store
 Thumbs.db
+.worktrees/
 
 # Runtime output
 *.log
