@@ -1,1 +1,2 @@
 -r modules/intent_understanding/requirements.txt
+cryptography>=42,<45
