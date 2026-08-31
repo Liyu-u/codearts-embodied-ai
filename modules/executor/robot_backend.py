@@ -43,6 +43,10 @@ def _succeeded(duration_ms: int = 0, **extra) -> dict:
 
 class BaseRobotBackend:
     mode = "robot"
+    # Sample the commanded straight-line TCP route before handing it to a
+    # real driver. Endpoint-only checks can miss a neighboring cube that the
+    # arm sweeps through on the way to an otherwise safe final pose.
+    COLLISION_PATH_SAMPLES = 5
 
     def __init__(
         self,
@@ -297,6 +301,20 @@ class BaseRobotBackend:
         close = self._driver.gripper_close(self.safety.motion.max_force_n, timeout)
         self._elapsed_ms += close.get("duration_ms", 0)
         self._extend_trajectory(close.get("trajectory", []))
+        injected_safety = close.get("safety_event")
+        if isinstance(injected_safety, dict) and injected_safety.get("type"):
+            event = self._record_safety_event(
+                injected_safety["type"],
+                injected_safety.get("severity", "error"),
+                injected_safety.get("step_id"),
+                injected_safety.get("message", "driver rejected unsafe gripper command"),
+            )
+            self._enter_fail_closed("grasp", [event])
+            return _failed(
+                str(close.get("reason") or injected_safety["type"]),
+                close.get("duration_ms", 0),
+                safety_events=[event],
+            )
         if close.get("timed_out"):
             return self._safety_failure(
                 "grasp", "ACTION_TIMEOUT", close.get("duration_ms", 0),
@@ -437,6 +455,30 @@ class BaseRobotBackend:
 
         released_id = self._held_id
         timeout = self.safety.motion.action_timeout_s
+
+        # Let a real physics driver settle the payload while the gripper is
+        # still closed. Opening first can inject a horizontal impulse before
+        # the placement pose is observed, which is especially visible for
+        # right-side targets. Keep the older hook as a compatibility fallback
+        # for injected drivers used by tests and integrations.
+        settle_fn = getattr(self._driver, "settle_before_release", None)
+        if not callable(settle_fn):
+            settle_fn = getattr(self._driver, "settle_after_release", None)
+        if callable(settle_fn):
+            settled = settle_fn(steps=5)
+            self._elapsed_ms += int((settled or {}).get("duration_ms", 0))
+            if not isinstance(settled, dict) or settled.get("status") != "SUCCESS":
+                return self._safety_failure(
+                    "release",
+                    (settled or {}).get("reason", "RELEASE_SETTLE_FAILED")
+                    if isinstance(settled, dict)
+                    else "RELEASE_SETTLE_FAILED",
+                    (settled or {}).get("duration_ms", 0)
+                    if isinstance(settled, dict)
+                    else 0,
+                    "payload did not reach a stable pre-release observation window",
+                )
+
         opened = self._driver.gripper_open(0.08, timeout)
         self._elapsed_ms += opened.get("duration_ms", 0)
         self._extend_trajectory(opened.get("trajectory", []))
@@ -449,6 +491,74 @@ class BaseRobotBackend:
             return _failed(opened.get("reason") or "RELEASE_FAILED",
                            opened.get("duration_ms", 0))
 
+        placement_pose = deepcopy(
+            self._placement_pose or self._objects[self._target_id]["pose"]
+        )
+        verifier = getattr(self._driver, "verify_release", None)
+        # Verify once while the end effector is still stationary.  If the
+        # object is already outside the target, fail closed before retreating
+        # can disturb it further; a second check below confirms the final
+        # post-retreat pose.
+        if callable(verifier):
+            try:
+                try:
+                    preverification = verifier(
+                        released_id, placement_pose, settle_steps=0
+                    )
+                except TypeError as exc:
+                    # Keep compatibility with lightweight injected drivers
+                    # whose verifier predates the optional settle_steps kwarg.
+                    if "settle_steps" not in str(exc):
+                        raise
+                    preverification = verifier(released_id, placement_pose)
+            except Exception as exc:  # noqa: BLE001
+                event = self._record_safety_event(
+                    "RELEASE_VERIFICATION_ERROR", "error", None, str(exc)
+                )
+                self._enter_fail_closed("release", [event])
+                return _failed("RELEASE_VERIFICATION_ERROR", 0, safety_events=[event])
+            if not isinstance(preverification, dict) or not preverification.get("verified", False):
+                # One bounded post-open observation retry is allowed while
+                # the TCP remains stationary. If it is still outside the
+                # target after this short PhysX window, fail closed instead
+                # of retreating or attempting an uncontrolled re-grasp.
+                retry_settle = getattr(self._driver, "settle_after_release", None)
+                if callable(retry_settle):
+                    settled = retry_settle(steps=5)
+                    self._elapsed_ms += int((settled or {}).get("duration_ms", 0))
+                    if isinstance(settled, dict) and settled.get("status") == "SUCCESS":
+                        try:
+                            try:
+                                preverification = verifier(
+                                    released_id, placement_pose, settle_steps=5
+                                )
+                            except TypeError as exc:
+                                if "settle_steps" not in str(exc):
+                                    raise
+                                preverification = verifier(released_id, placement_pose)
+                        except Exception as exc:  # noqa: BLE001
+                            event = self._record_safety_event(
+                                "RELEASE_VERIFICATION_ERROR", "error", None, str(exc)
+                            )
+                            self._enter_fail_closed("release", [event])
+                            return _failed(
+                                "RELEASE_VERIFICATION_ERROR", 0,
+                                safety_events=[event],
+                            )
+            if not isinstance(preverification, dict) or not preverification.get("verified", False):
+                event = self._record_safety_event(
+                    "RELEASE_UNVERIFIED", "error", None,
+                    (preverification or {}).get("reason", "object not at target")
+                    if isinstance(preverification, dict)
+                    else "driver returned invalid release verification",
+                )
+                self._enter_fail_closed("release", [event])
+                return _failed(
+                    "RELEASE_UNVERIFIED", 0,
+                    verification=preverification,
+                    safety_events=[event],
+                )
+
         # 撤离到安全高度。
         retreat = self._guarded_move_to(
             {"x": self._eef_pose["x"], "y": self._eef_pose["y"], "z": SAFE_LIFT_Z_M},
@@ -460,10 +570,6 @@ class BaseRobotBackend:
 
         # 真实驱动必须在释放后重新读取物体位姿，不能用计划位姿冒充物理结果。
         # Mock/Fake 驱动没有该可选能力时，保留原有确定性语义。
-        placement_pose = deepcopy(
-            self._placement_pose or self._objects[self._target_id]["pose"]
-        )
-        verifier = getattr(self._driver, "verify_release", None)
         if callable(verifier):
             try:
                 verification = verifier(released_id, placement_pose)
@@ -534,23 +640,39 @@ class BaseRobotBackend:
                     "no driver bound, cannot verify collision-free motion"))
                 self._enter_fail_closed(action, events)
                 return _failed("COLLISION_CHECK_UNAVAILABLE", 0, safety_events=events)
+            excluded_paths = tuple(
+                ["/World/robot"]
+                + [
+                    f"/World/{object_id}"
+                    for object_id in ignore_object_ids
+                    if object_id
+                ]
+            )
+            start_pose = self._eef_pose or pose
+            samples = []
+            count = max(1, int(self.COLLISION_PATH_SAMPLES))
+            for index in range(1, count):
+                fraction = index / count
+                samples.append({
+                    axis: float(start_pose.get(axis, pose.get(axis, 0.0)))
+                    + fraction * (
+                        float(pose.get(axis, 0.0))
+                        - float(start_pose.get(axis, pose.get(axis, 0.0)))
+                    )
+                    for axis in ("x", "y", "z")
+                })
+            samples.append(dict(pose))
             try:
-                excluded_paths = tuple(
-                    ["/World/robot"]
-                    + [
-                        f"/World/{object_id}"
-                        for object_id in ignore_object_ids
-                        if object_id
-                    ]
-                )
-                if not self._driver.collision_free(
-                    pose, COLLISION_RADIUS_M, excluded_paths=excluded_paths
-                ):
-                    events.append(self._record_safety_event(
-                        "COLLISION_DETECTED", "error", None,
-                        f"collision risk at {pose!r}"))
-                    self._enter_fail_closed(action, events)
-                    return _failed("COLLISION_DETECTED", 0, safety_events=events)
+                for sample in samples:
+                    if not self._driver.collision_free(
+                        sample, COLLISION_RADIUS_M, excluded_paths=excluded_paths
+                    ):
+                        events.append(self._record_safety_event(
+                            "COLLISION_DETECTED", "error", None,
+                            f"collision risk along route at {sample!r}"))
+                        self._enter_fail_closed(action, events)
+                        return _failed("COLLISION_DETECTED", 0,
+                                       safety_events=events)
             except Exception as exc:  # noqa: BLE001
                 if self.safety.fail_closed_on_error:
                     events.append(self._record_safety_event(
@@ -579,6 +701,13 @@ class BaseRobotBackend:
             self._enter_fail_closed(action, events)
             return _failed("ACTION_TIMEOUT", move.get("duration_ms", 0),
                            safety_events=events)
+        driver_reason = str(move.get("reason") or "")
+        if driver_reason in {"SPEED_LIMIT_EXCEEDED", "E_STOP_TRIGGERED"}:
+            events.append(self._record_safety_event(
+                driver_reason, "error", None,
+                f"{action}: driver rejected unsafe motion"))
+            self._enter_fail_closed(action, events)
+            return _failed(driver_reason, move.get("duration_ms", 0), safety_events=events)
         if move["status"] != "SUCCESS":
             return _failed(move.get("reason") or "MOTION_FAILED",
                            move.get("duration_ms", 0),

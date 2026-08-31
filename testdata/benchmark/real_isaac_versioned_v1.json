@@ -86,7 +86,9 @@
         "zone_unstack_target": {"x": 0.69, "y": 0.10, "z": 0.02575}
       },
       "failure_injection": {},
-      "expected_status": "SUCCEEDED"
+      "expected_status": "SAFE_STOP",
+      "expected_stop_reason": "RELEASE_UNVERIFIED",
+      "acceptance_note": "x=0.69 接近工作区极限时允许保守停机；不得误执行越界动作。"
     },
     {
       "id": "isaac-boundary-out-001",

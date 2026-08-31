@@ -43,6 +43,8 @@ def _spawn_objects(
     cube_position: tuple[float, float, float] = (0.50, 0.0, 0.0258),
     red_position: tuple[float, float, float] = (0.65, -0.20, 0.0258),
     target_position: tuple[float, float, float] = (0.45, 0.10, 0.02575),
+    dynamic_object_id: str = "green_cube",
+    object_positions: dict | None = None,
 ) -> list[tuple[object, tuple[float, float, float]]]:
     """在 /World 下创建与 perception object_id 一致的方块 prim。
 
@@ -55,17 +57,37 @@ def _spawn_objects(
     from pxr import Gf, Usd, UsdGeom
 
     stage = get_current_stage()
+    supplied_positions = dict(object_positions or {})
+
+    def position_for(object_id: str, fallback: tuple[float, float, float]) -> tuple[float, float, float]:
+        value = supplied_positions.get(object_id)
+        if isinstance(value, dict):
+            return (float(value["x"]), float(value["y"]), float(value["z"]))
+        if isinstance(value, (list, tuple)) and len(value) == 3:
+            return tuple(float(item) for item in value)
+        return tuple(float(item) for item in fallback)
+
     specs = [
         # (id, 中心位姿, 尺寸, 颜色)
         # 采用官方 FrankaPickPlace 已验证的可达工作区，避免把靠近
         # 机器人基座边界的夹具坐标误判为 IK/物理失败。
-        ("red_cube", red_position, (0.04, 0.04, 0.04), "red"),
+        ("red_cube", position_for("red_cube", red_position), (0.04, 0.04, 0.04), "red"),
         # Keep the dynamic cube identical to the official FrankaPickPlace
         # example (51.5 mm).  The controller's grasp/lift clearance is tuned
         # against this geometry.
-        ("green_cube", cube_position, (0.0515, 0.0515, 0.0515), "green"),
-        ("zone_unstack_target", target_position, (0.10, 0.10, 0.02), "gray"),
+        ("green_cube", position_for("green_cube", cube_position), (0.0515, 0.0515, 0.0515), "green"),
+        ("zone_unstack_target", position_for("zone_unstack_target", target_position), (0.10, 0.10, 0.02), "gray"),
     ]
+    known_ids = {item[0] for item in specs}
+    for object_id in supplied_positions:
+        if object_id in known_ids or object_id == "zone_unstack_target":
+            continue
+        text = str(object_id)
+        color = next((name for name in ("red", "green", "blue") if name in text), "green")
+        size = 0.04 if color == "red" else 0.0515
+        specs.append((text, position_for(text, cube_position), (size, size, size), color))
+    if dynamic_object_id not in {item[0] for item in specs}:
+        specs.append((dynamic_object_id, position_for(dynamic_object_id, cube_position), (0.0515, 0.0515, 0.0515), "green"))
     dynamic_objects = []
 
     def set_display_color(path: str, color: str) -> None:
@@ -77,6 +99,7 @@ def _spawn_objects(
         colors = {
             "red": Gf.Vec3f(1.0, 0.0, 0.0),
             "green": Gf.Vec3f(0.0, 1.0, 0.0),
+            "blue": Gf.Vec3f(0.0, 0.25, 1.0),
             "gray": Gf.Vec3f(0.45, 0.45, 0.45),
         }
         display_color = colors[color]
@@ -91,12 +114,12 @@ def _spawn_objects(
             attr.Set([display_color])
 
     for object_id, pos, scale, color in specs:
-        if object_id == "green_cube" and not include_dynamic:
+        if object_id == dynamic_object_id and not include_dynamic:
             if stage.GetPrimAtPath(f"/World/{object_id}"):
                 set_display_color(f"/World/{object_id}", color)
             continue
         path = f"/World/{object_id}"
-        if object_id == "green_cube":
+        if object_id == dynamic_object_id:
             cube = Cube(
                 paths=path,
                 positions=pos,

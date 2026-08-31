@@ -240,7 +240,7 @@ class MotionDriver(Protocol):
         self,
         object_id: str,
         target_pose: dict,
-        tolerance_m: float = 0.06,
+        tolerance_m: float = 0.075,
     ) -> dict: ...
 
     def collision_free(
@@ -266,15 +266,36 @@ class FrankaPickPlaceDriver:
     """
 
     IK_METHOD = "damped-least-squares"
-    RELEASE_TOLERANCE_M = 0.06
+    # Keep the official phase sequence, but shorten the transport phase.  The
+    # right-side dynamic-object cases showed that the last carry ticks can
+    # lose contact before the release phase begins; fewer transport ticks
+    # reduce that exposure without changing the grasp/release ordering.
+    CONTROLLER_EVENTS_DT = (60, 40, 20, 40, 60, 20, 20)
+    # The placement zone is 0.10 m wide and the dynamic cube is 0.0515 m
+    # wide.  A center error up to half-zone + half-cube (0.07575 m) still
+    # leaves the physical footprint inside the zone; keep a rounded 0.075 m
+    # bound instead of rejecting a valid edge placement by center distance.
+    RELEASE_TOLERANCE_M = 0.075
     # FrankaPickPlace.target_position is the end-effector command, not the
     # physical cube center.  Start from the measured tool offset and close
     # the remaining XY error during transport with a bounded PhysX feedback
     # correction; a fixed offset alone is not reliable across IK states.
     CONTROLLER_TARGET_XY_OFFSET_M = (0.05, 0.05)
     CONTROLLER_TARGET_Z_M = 0.03
-    TRANSPORT_FEEDBACK_GAIN = 0.40
-    TRANSPORT_FEEDBACK_MAX_CORRECTION_M = (0.03, 0.05)
+    # The first fixed-scene calibration was intentionally conservative.  The
+    # supplement includes targets approached from both sides of the table;
+    # retain a bounded correction but leave enough authority for the measured
+    # XY error to converge before release.
+    TRANSPORT_FEEDBACK_GAIN = 0.75
+    TRANSPORT_FEEDBACK_MAX_CORRECTION_M = (0.06, 0.08)
+
+    @classmethod
+    def bounded_transport_correction(cls, error_xy) -> tuple[float, float]:
+        """Return a bounded XY correction for a measured object-target error."""
+        return tuple(
+            max(-float(limit), min(float(limit), float(cls.TRANSPORT_FEEDBACK_GAIN) * float(error)))
+            for error, limit in zip(error_xy, cls.TRANSPORT_FEEDBACK_MAX_CORRECTION_M)
+        )
 
     def __init__(
         self,
@@ -284,19 +305,29 @@ class FrankaPickPlaceDriver:
         # This default is retained for the fixed acceptance scene.  The
         # backend calls set_target_pose() for camera-derived destinations.
         target_position=(0.40, 0.05, 0.03),
+        dynamic_object_id: str = "green_cube",
     ) -> None:
+        if not isinstance(dynamic_object_id, str) or not dynamic_object_id.strip():
+            raise ValueError("dynamic_object_id must be a non-empty string")
         self._app = app
         self._device = device
         self._cube_position = cube_position
         self._target_position = target_position
+        self._dynamic_object_id = dynamic_object_id.strip()
         self._controller = None
         self._connected = False
         self._started = False
         self._stopped = False
         self._phase_history: list[dict] = []
+        self._release_settle_history: list[dict] = []
         self._physical_target_pose: dict | None = None
         self._controller_target_nominal = None
         self._last_transport_feedback: dict | None = None
+
+    @property
+    def dynamic_object_id(self) -> str:
+        """The one PhysX body owned by the official pick/place controller."""
+        return self._dynamic_object_id
 
     def connect(self, *, defer_start: bool = False) -> None:
         if self._connected:
@@ -324,14 +355,14 @@ class FrankaPickPlaceDriver:
         # and make a real grasp less reliable, even though the end-effector
         # phase history still looks successful.
         self._controller = FrankaPickPlace(
-            events_dt=[60, 40, 20, 40, 80, 20, 20]
+            events_dt=list(self.CONTROLLER_EVENTS_DT)
         )
         self._controller.setup_scene(
             cube_initial_position=np.asarray(self._cube_position, dtype=float),
             cube_initial_orientation=np.asarray((1.0, 0.0, 0.0, 0.0), dtype=float),
             cube_size=np.asarray((0.0515, 0.0515, 0.0515), dtype=float),
             target_position=np.asarray(self._target_position, dtype=float),
-            cube_path="/World/green_cube",
+            cube_path=f"/World/{self._dynamic_object_id}",
         )
         self._connected = True
         self._started = False
@@ -370,6 +401,7 @@ class FrankaPickPlaceDriver:
         self._ensure_started()
         self._controller.reset()
         self._phase_history = []
+        self._release_settle_history = []
 
     def warmup_for_control(self, *, forward_steps: int = 1) -> dict:
         """Compile the first controller path, then restore the task boundary.
@@ -436,6 +468,10 @@ class FrankaPickPlaceDriver:
         initial_event = int(self._controller._event)
         frames = 0
         while int(self._controller._event) == initial_event and not self._controller.is_done():
+            # Apply the bounded live-pose correction during transport only.
+            # The controller's short descent phase has its own contact
+            # trajectory; changing its target mid-descent introduces more
+            # lateral impulse than it removes for the right-side cube.
             if initial_event == 4:
                 self._apply_transport_feedback()
             self._controller.forward(self.IK_METHOD)
@@ -492,6 +528,7 @@ class FrankaPickPlaceDriver:
         values = {
             "connected": bool(self._connected),
             "started": bool(self._started),
+            "dynamic_object_id": self._dynamic_object_id,
             "event": int(getattr(controller, "_event", -1)),
             "step": int(getattr(controller, "_step", -1)),
             "phase_history": list(self._phase_history),
@@ -502,6 +539,7 @@ class FrankaPickPlaceDriver:
                 else None
             ),
             "last_transport_feedback": self._last_transport_feedback,
+            "release_settle_history": list(self._release_settle_history),
         }
         for name in ("events_dt", "cube_position", "target_position"):
             value = getattr(controller, name, None)
@@ -582,8 +620,7 @@ class FrankaPickPlaceDriver:
             ],
             dtype=float,
         )
-        max_correction = np.asarray(self.TRANSPORT_FEEDBACK_MAX_CORRECTION_M, dtype=float)
-        correction = np.clip(self.TRANSPORT_FEEDBACK_GAIN * error, -max_correction, max_correction)
+        correction = np.asarray(self.bounded_transport_correction(error), dtype=float)
         target = np.asarray(self._controller_target_nominal, dtype=float).copy()
         target[:2] += correction
         self._controller.target_position = target
@@ -598,6 +635,34 @@ class FrankaPickPlaceDriver:
     def gripper_open(self, width: float, timeout_s: float) -> dict:
         return self._run_current_phase(timeout_s)
 
+    def settle_before_release(self, *, steps: int = 5) -> dict:
+        """Advance PhysX while the closed gripper and payload are stationary."""
+        import time
+
+        self._ensure_started()
+        count = max(1, min(int(steps), 30))
+        started = time.monotonic()
+        event_before = int(getattr(self._controller, "_event", -1))
+        for _ in range(count):
+            self._app.update()
+        self._release_settle_history.append({
+            "hook": "settle_before_release",
+            "event": event_before,
+            "steps": count,
+            "controller_cube_pose": self._controller_cube_pose(),
+        })
+        return motion_result(
+            "SUCCESS", "", int((time.monotonic() - started) * 1000),
+            settle_steps=count,
+            controller_cube_pose=self._controller_cube_pose(),
+        )
+
+    # Compatibility alias for callers written against the first release
+    # stabilization hook. New release flows call the pre-open hook so the
+    # payload is settled before the fingers are opened.
+    def settle_after_release(self, *, steps: int = 5) -> dict:
+        return self.settle_before_release(steps=steps)
+
     def gripper_close(self, force: float, timeout_s: float) -> dict:
         return self._run_current_phase(timeout_s)
 
@@ -609,7 +674,7 @@ class FrankaPickPlaceDriver:
         # spawn pose after a timeline stop).  Use the controller's dynamic
         # tensor for the moving object while the controller is active; keep
         # USD as the source for static scene objects.
-        if object_id == "green_cube":
+        if object_id == self._dynamic_object_id:
             controller_pose = self._controller_cube_pose()
             if controller_pose is not None:
                 return controller_pose
@@ -641,13 +706,21 @@ class FrankaPickPlaceDriver:
             "reason": "" if pose["z"] >= threshold else "OBJECT_DID_NOT_LIFT",
         }
 
-    def verify_release(self, object_id: str, target_pose: dict, tolerance_m: float = RELEASE_TOLERANCE_M) -> dict:
+    def verify_release(
+        self,
+        object_id: str,
+        target_pose: dict,
+        tolerance_m: float = RELEASE_TOLERANCE_M,
+        *,
+        settle_steps: int = 5,
+    ) -> dict:
         import math
 
-        # Opening the gripper and retreating happen on consecutive controller
-        # phases.  Let PhysX advance a few real frames so the released cube can
-        # settle on the target before measuring its final pose.
-        for _ in range(5):
+        # The pre-retreat check passes settle_steps=0 and therefore reads the
+        # body immediately after opening while the TCP is still stationary.
+        # The final post-retreat check keeps a short settling window so the
+        # reported pose represents the physically settled cube.
+        for _ in range(max(0, min(int(settle_steps), 30))):
             self._app.update()
         pose = self.read_object_pose(object_id)
         distance = math.sqrt(sum((pose[a] - float(target_pose[a])) ** 2 for a in ("x", "y", "z")))
@@ -748,7 +821,7 @@ class OmniDriver:
     POSITION_TOLERANCE_M = 0.01
     STEP_LIMIT_M = 0.01          # 防止实验版 IK 一帧跨越目标或穿透场景
     COLLISION_RADIUS_M = 0.05
-    RELEASE_TOLERANCE_M = 0.06
+    RELEASE_TOLERANCE_M = 0.075
     IK_METHOD = "damped-least-squares"
     DEFAULT_PHYSICS_DT_S = 1.0 / 60.0
 

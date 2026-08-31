@@ -79,7 +79,7 @@ try {
     Write-Host "[1/6] 检查 SSH、Docker、GPU$GpuIndex..." -ForegroundColor Cyan
     Invoke-SshChecked "set -eu; hostname; docker --version; nvidia-smi -i $GpuIndex --query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu --format=csv,noheader"
     Write-Host "[2/6] 打包最终 Ground Truth 入口..." -ForegroundColor Cyan
-    & tar -czf $bundle -C $repoRoot contracts integration modules $TaskConfig tools/run_executor_acceptance.py tools/real_isaac_experiment.py tools/run_ground_truth_executor_acceptance.py tools/run_ground_truth_executor_acceptance_v4.py
+    & tar -czf $bundle -C $repoRoot contracts integration modules $TaskConfig tools/run_executor_acceptance.py tools/real_isaac_experiment.py tools/live_intelligent_e2e.py tools/run_ground_truth_executor_acceptance.py tools/run_ground_truth_executor_acceptance_v4.py
     if ($LASTEXITCODE -ne 0) { throw "本地打包失败，退出码 $LASTEXITCODE" }
     Invoke-SshChecked "mkdir -p '$remoteRoot/results' && chmod 777 '$remoteRoot' '$remoteRoot/results'"
     Copy-ToRemote $bundle "$remoteRoot/codearts-bundle.tar.gz"
@@ -100,7 +100,7 @@ try {
         'cleanup() { timeout 30 docker rm -f "$container_name" >/dev/null 2>&1 || true; }',
         'save_logs() { timeout 30 docker logs "$container_id" > "$remote_root/results/container.log" 2>&1 || true; }',
         'trap cleanup EXIT INT TERM',
-        'rm -f "$remote_root/results/perception.json" "$remote_root/results/execution.json" "$remote_root/results/progress.jsonl" "$remote_root/results/container.log"',
+        'rm -f "$remote_root/results/perception.json" "$remote_root/results/execution.json" "$remote_root/results/final_pose.json" "$remote_root/results/progress.jsonl" "$remote_root/results/container.log"',
         'tar -xzf "$remote_root/codearts-bundle.tar.gz" -C "$remote_root"',
         'timeout 30 docker rm -f "$container_name" >/dev/null 2>&1 || true',
         'gpu_args=()',
@@ -121,7 +121,7 @@ try {
         'fi',
         'run_deadline=$(( $(date +%s) + timeout_seconds ))',
         'while [ "$(date +%s)" -lt "$run_deadline" ]; do',
-        '  if [ -s "$remote_root/results/perception.json" ] && [ -s "$remote_root/results/execution.json" ]; then',
+        '  if [ -s "$remote_root/results/perception.json" ] && [ -s "$remote_root/results/execution.json" ] && [ -s "$remote_root/results/final_pose.json" ]; then',
         '    save_logs',
         '    echo REPORT_READY',
         '    exit 0',
@@ -146,6 +146,7 @@ try {
     Copy-FromRemote "$remoteRoot/results/perception.json" (Join-Path $localResult "perception.json")
     Copy-FromRemote "$remoteRoot/results/execution.json" (Join-Path $localResult "execution.json")
     Copy-FromRemote "$remoteRoot/results/strategy.json" (Join-Path $localResult "strategy.json")
+    Copy-FromRemote "$remoteRoot/results/final_pose.json" (Join-Path $localResult "final_pose.json")
     Copy-FromRemote "$remoteRoot/results/progress.jsonl" (Join-Path $localResult "progress.jsonl")
     Copy-FromRemote "$remoteRoot/results/container.log" (Join-Path $localResult "container.log")
     $perception = Get-Content -LiteralPath (Join-Path $localResult "perception.json") -Raw | ConvertFrom-Json

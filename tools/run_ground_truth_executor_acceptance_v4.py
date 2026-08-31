@@ -15,8 +15,8 @@ import tools.run_ground_truth_executor_acceptance as base
 _BASE_MANIFEST = base._manifest
 
 
-def _corrected_manifest():
-    manifest = _BASE_MANIFEST()
+def _corrected_manifest(*args, **kwargs):
+    manifest = _BASE_MANIFEST(*args, **kwargs)
     for item in manifest:
         if item.get("id") == "zone_unstack_target":
             item["category"] = "桌子"

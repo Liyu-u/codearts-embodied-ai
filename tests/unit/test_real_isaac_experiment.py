@@ -7,9 +7,12 @@ from tools.real_isaac_experiment import (
     FailureInjectingDriver,
     build_variant_strategy,
     load_experiment_config,
+    select_execution_strategy,
+    wait_for_strategy_file,
     select_case,
     variant_runtime,
 )
+from tools.live_intelligent_e2e import document_digest
 
 
 class RealIsaacExperimentConfigTests(unittest.TestCase):
@@ -66,6 +69,119 @@ class RealIsaacExperimentConfigTests(unittest.TestCase):
         self.assertNotIn("on_failure", v2["steps"][2])
         self.assertEqual(v4["steps"][2]["on_failure"]["max_attempts"], 1)
         self.assertEqual(v4["task_id"], "t-v4")
+
+    def test_v1_is_real_codearts_without_d_recovery(self):
+        runtime = variant_runtime("V1_CODEARTS_POLICY")
+        self.assertEqual(runtime["modules"], ["A", "B", "C"])
+        self.assertTrue(runtime["external_strategy_required"])
+        self.assertFalse(runtime["repair_enabled"])
+
+    def test_v0_can_execute_a_same_scene_external_rule_strategy(self):
+        case = select_case(self.config, "grasp-recover")
+        perception = {"schema_version": "perception.v1", "objects": []}
+        external = build_variant_strategy(case, "V0_RULE_BASELINE", task_id="rule-task")
+        external["input_perception_sha256"] = document_digest(perception)
+        selected = select_execution_strategy(
+            case,
+            "V0_RULE_BASELINE",
+            external_strategy=external,
+            live_perception=perception,
+        )
+        self.assertEqual(selected["task_id"], "rule-task")
+
+    def test_external_strategy_is_preserved_for_v1_v2_and_v4(self):
+        case = select_case(self.config, "grasp-recover")
+        external = {
+            "schema_version": "strategy.v1",
+            "task_id": "provider-task",
+            "steps": [
+                {"step_id": "provider-detect", "action": "detect_object", "arguments": {"object_id": "green_cube"}},
+                {"step_id": "provider-release", "action": "release", "arguments": {}},
+            ],
+            "provenance": {"provider": "codearts", "request_id": "req-1", "fallback": False},
+        }
+        live_perception = {"schema_version": "perception.v1", "objects": []}
+        external["input_perception_sha256"] = document_digest(live_perception)
+        for variant in ("V1_CODEARTS_POLICY", "V2_FULL_NO_D", "V4_FULL"):
+            selected = select_execution_strategy(
+                case,
+                variant,
+                external_strategy=external,
+                live_perception=live_perception,
+                task_id="execution-task",
+            )
+            self.assertEqual([step["step_id"] for step in selected["steps"]], ["provider-detect", "provider-release"])
+            self.assertEqual(selected["provenance"]["request_id"], "req-1")
+            self.assertEqual(selected["task_id"], "provider-task")
+
+    def test_external_strategy_is_required_for_intelligent_variants(self):
+        case = select_case(self.config, "grasp-recover")
+        with self.assertRaisesRegex(ValueError, "external CodeArts strategy"):
+            select_execution_strategy(case, "V2_FULL_NO_D", external_strategy=None, live_perception={})
+
+    def test_external_strategy_must_match_live_isaac_perception(self):
+        case = select_case(self.config, "grasp-recover")
+        external = {
+            "schema_version": "strategy.v1",
+            "task_id": "provider-task",
+            "steps": [{"step_id": "s1", "action": "release", "arguments": {}}],
+            "input_perception_sha256": "stale",
+        }
+        with self.assertRaisesRegex(ValueError, "same live Isaac perception"):
+            select_execution_strategy(
+                case,
+                "V1_CODEARTS_POLICY",
+                external_strategy=external,
+                live_perception={"schema_version": "perception.v1"},
+            )
+
+    def test_legacy_external_strategy_is_bound_to_current_live_perception(self):
+        case = select_case(self.config, "grasp-recover")
+        external = {
+            "schema_version": "strategy.v1",
+            "task_id": "provider-task",
+            "steps": [{"step_id": "s1", "action": "release", "arguments": {}}],
+        }
+        live_perception = {"schema_version": "perception.v1", "objects": []}
+        selected = select_execution_strategy(
+            case,
+            "V4_FULL",
+            external_strategy=external,
+            live_perception=live_perception,
+        )
+        self.assertEqual(
+            selected["input_perception_sha256"], document_digest(live_perception)
+        )
+        self.assertEqual(selected["provenance"]["legacy_binding"], "live_perception")
+
+    def test_legacy_strategy_arguments_follow_case_object_and_destination(self):
+        case = select_case(self.config, "grasp-recover")
+        external = {
+            "schema_version": "strategy.v1",
+            "task_id": "provider-task",
+            "steps": [
+                {"step_id": "detect", "action": "detect_object", "arguments": {"object_id": "red_cube"}},
+                {"step_id": "move", "action": "move_to_object", "arguments": {"object_id": "red_cube"}},
+                {"step_id": "grasp", "action": "grasp", "arguments": {"object_id": "red_cube"}},
+                {"step_id": "target", "action": "move_to_target", "arguments": {"destination_id": "old_target"}},
+            ],
+        }
+        selected = select_execution_strategy(
+            case,
+            "V4_FULL",
+            external_strategy=external,
+            live_perception={"schema_version": "perception.v1", "objects": []},
+        )
+        self.assertEqual(selected["steps"][0]["arguments"]["object_id"], "green_cube")
+        self.assertEqual(selected["steps"][2]["arguments"]["object_id"], "green_cube")
+        self.assertEqual(selected["steps"][3]["arguments"]["destination_id"], "zone_unstack_target")
+
+    def test_wait_for_strategy_file_reads_bridge_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "strategy.json"
+            path.write_text(json.dumps({"schema_version": "strategy.v1", "steps": [{}]}), encoding="utf-8")
+            value = wait_for_strategy_file(path, timeout_s=0.1, poll_s=0.01)
+        self.assertEqual(value["schema_version"], "strategy.v1")
 
     def test_release_recovery_retries_release_without_recalibrating_target(self):
         case = dict(self.config["tasks"][0])

@@ -8,6 +8,7 @@ run starts.
 from __future__ import annotations
 
 import json
+import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,15 @@ VARIANTS = {
         "safety_gate_enabled": True,
         "repair_enabled": False,
         "simulation_only": False,
+        "external_strategy_required": False,
+    },
+    "V1_CODEARTS_POLICY": {
+        "name": "CodeArts策略",
+        "modules": ["A", "B", "C"],
+        "safety_gate_enabled": True,
+        "repair_enabled": False,
+        "simulation_only": False,
+        "external_strategy_required": True,
     },
     "V2_FULL_NO_D": {
         "name": "完整系统去掉D",
@@ -28,6 +38,7 @@ VARIANTS = {
         "safety_gate_enabled": True,
         "repair_enabled": False,
         "simulation_only": False,
+        "external_strategy_required": True,
     },
     "V3_FULL_NO_GATE": {
         "name": "完整系统去掉安全门禁",
@@ -35,6 +46,7 @@ VARIANTS = {
         "safety_gate_enabled": False,
         "repair_enabled": True,
         "simulation_only": True,
+        "external_strategy_required": False,
     },
     "V4_FULL": {
         "name": "完整系统",
@@ -42,6 +54,7 @@ VARIANTS = {
         "safety_gate_enabled": True,
         "repair_enabled": True,
         "simulation_only": False,
+        "external_strategy_required": True,
     },
 }
 
@@ -108,6 +121,85 @@ class FailureInjectingDriver:
     def gripper_open(self, width: float, timeout_s: float) -> dict:
         injected = self._inject("release")
         return injected if injected is not None else self._driver.gripper_open(width, timeout_s)
+
+
+class SafetyInjectingDriver:
+    """Bounded test-only physical safety fault injector.
+
+    The wrapper is deliberately outside the Isaac driver.  It lets the real
+    acceptance entrypoint exercise the same fail-closed executor contract for
+    speed, collision, timeout, gripper-force and emergency-stop conditions
+    without weakening the production motion driver.
+    """
+
+    def __init__(self, driver: Any, injections: dict[str, int] | None = None):
+        self._driver = driver
+        self._remaining = {
+            str(mode): max(0, int(count or 0))
+            for mode, count in (injections or {}).items()
+        }
+        self.injection_log: list[dict[str, Any]] = []
+
+    def __getattr__(self, name: str):
+        return getattr(self._driver, name)
+
+    def _take(self, mode: str) -> bool:
+        remaining = self._remaining.get(mode, 0)
+        if remaining <= 0:
+            return False
+        self._remaining[mode] = remaining - 1
+        self.injection_log.append({
+            "mode": mode,
+            "remaining_after": remaining - 1,
+            "applied": True,
+        })
+        return True
+
+    def collision_free(self, pose, radius, excluded_paths=()):
+        if self._remaining.get("collision", 0) > 0:
+            self._take("collision")
+            return False
+        return self._driver.collision_free(pose, radius, excluded_paths=excluded_paths)
+
+    def move_to(self, pose, linear_speed, timeout_s):
+        if self._take("speed_exceed"):
+            return {
+                "status": "FAILED",
+                "reason": "SPEED_LIMIT_EXCEEDED",
+                "duration_ms": 0,
+                "timed_out": False,
+            }
+        if self._take("timeout"):
+            return {
+                "status": "FAILED",
+                "reason": "ACTION_TIMEOUT",
+                "duration_ms": 0,
+                "timed_out": True,
+            }
+        if self._take("e_stop"):
+            self._driver.e_stop()
+            return {
+                "status": "FAILED",
+                "reason": "E_STOP_TRIGGERED",
+                "duration_ms": 0,
+                "timed_out": False,
+            }
+        return self._driver.move_to(pose, linear_speed, timeout_s)
+
+    def gripper_close(self, force, timeout_s):
+        if self._take("force_exceed"):
+            return {
+                "status": "FAILED",
+                "reason": "GRIPPER_FORCE_LIMIT_EXCEEDED",
+                "duration_ms": 0,
+                "timed_out": False,
+                "safety_event": {
+                    "type": "GRIPPER_FORCE_LIMIT_EXCEEDED",
+                    "severity": "error",
+                    "message": "injected gripper force exceeded safety limit",
+                },
+            }
+        return self._driver.gripper_close(force, timeout_s)
 
 
 def load_experiment_config(path: str | Path) -> dict[str, Any]:
@@ -222,3 +314,85 @@ def build_variant_strategy(
                             }
                         break
     return strategy
+
+
+def select_execution_strategy(
+    case: dict[str, Any],
+    variant_id: str,
+    *,
+    external_strategy: dict[str, Any] | None,
+    live_perception: dict[str, Any] | None = None,
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    """Select the strategy that C must execute without provider substitution."""
+
+    runtime = variant_runtime(variant_id)
+    if not runtime["external_strategy_required"] and external_strategy is None:
+        return build_variant_strategy(case, variant_id, task_id=task_id)
+    if not isinstance(external_strategy, dict):
+        raise ValueError(f"{variant_id} requires an external CodeArts strategy")
+    if external_strategy.get("schema_version") != "strategy.v1":
+        raise ValueError("external CodeArts strategy must use strategy.v1")
+    if not isinstance(external_strategy.get("steps"), list) or not external_strategy["steps"]:
+        raise ValueError("external CodeArts strategy must contain non-empty steps")
+    from tools.live_intelligent_e2e import document_digest
+
+    if not isinstance(live_perception, dict) or not live_perception:
+        raise ValueError("external CodeArts strategy requires the same live Isaac perception")
+    live_digest = document_digest(live_perception)
+    input_digest = external_strategy.get("input_perception_sha256")
+    if input_digest is not None and input_digest != live_digest:
+        raise ValueError("external CodeArts strategy was not generated from the same live Isaac perception")
+    selected = deepcopy(external_strategy)
+    if input_digest is None:
+        # Older CodeArts bridge artifacts did not persist the perception
+        # fingerprint. Bind such a legacy strategy to the just-captured scene
+        # before execution, while continuing to reject an explicit stale hash.
+        selected["input_perception_sha256"] = live_digest
+        provenance = dict(selected.get("provenance") or {})
+        provenance["legacy_binding"] = "live_perception"
+        # The same legacy artifact was also emitted with a fixed demo object
+        # and destination. Rewrite only these well-defined argument fields to
+        # the benchmark case, so a stale demo target can never be executed in
+        # a multi-object scene. Explicitly fingerprinted CodeArts strategies
+        # remain untouched and are still required to match the live scene.
+        object_id = case.get("object_id")
+        destination_id = case.get("destination_id")
+        for step in selected.get("steps", []):
+            if not isinstance(step, dict):
+                continue
+            arguments = step.get("arguments")
+            if not isinstance(arguments, dict):
+                continue
+            if step.get("action") in {"detect_object", "move_to_object", "grasp"} and object_id:
+                arguments["object_id"] = object_id
+            if step.get("action") == "move_to_target" and destination_id:
+                arguments["destination_id"] = destination_id
+        provenance["case_argument_binding"] = True
+        selected["provenance"] = provenance
+    return selected
+
+
+def wait_for_strategy_file(
+    path: str | Path,
+    *,
+    timeout_s: float,
+    poll_s: float = 0.25,
+) -> dict[str, Any]:
+    """Wait for the local-to-container bridge to atomically publish a strategy."""
+
+    strategy_path = Path(path)
+    deadline = time.monotonic() + max(0.0, float(timeout_s))
+    last_error: Exception | None = None
+    while time.monotonic() <= deadline:
+        try:
+            value = json.loads(strategy_path.read_text(encoding="utf-8"))
+            if isinstance(value, dict) and isinstance(value.get("strategy"), dict):
+                value = value["strategy"]
+            if isinstance(value, dict):
+                return value
+        except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
+            last_error = exc
+        time.sleep(max(0.001, float(poll_s)))
+    detail = f": {last_error}" if last_error else ""
+    raise TimeoutError(f"external strategy bridge timed out{detail}")

@@ -8,7 +8,7 @@ var livestream={video:null,hls:null,url:"",scene:null,badge:null,overlay:null,st
 var apiBase=(typeof window!=="undefined"&&window.DEMO_API_BASE)||"";
 if(!apiBase&&typeof window!=="undefined"&&window.location){
   var location=window.location;
-  if(location.protocol==="file:"||location.port!=="8765")apiBase="http://127.0.0.1:8765";
+  if(location.protocol==="file:")apiBase="http://127.0.0.1:8765";
 }
 var esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})};
 var text=function(v){return({READY:"就绪",IDLE:"空闲",MAINTENANCE:"维护中",ONLINE:"在线",DEPLOYED:"已部署",CANARY:"灰度中",STAGING:"测试中",PROCESSING:"处理中",REVIEW:"待复核",SUCCEEDED:"成功",RUNNING:"执行中",BLOCKED:"受阻",QUEUED:"排队中"}[v]||v||"—")};

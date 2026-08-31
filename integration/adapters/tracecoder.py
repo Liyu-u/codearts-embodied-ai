@@ -240,6 +240,11 @@ def _select_tracecoder_budget(input_json: dict, llm_mode: str) -> tuple[TraceCod
         reasons.append("low_confidence")
     if input_json.get("repair_required") or task.get("repair_required"):
         reasons.append("repair_required")
+    # Live acceptance explicitly exercises the D provider even when C reports
+    # a clean success, so the end-to-end evidence proves the configured
+    # DeepSeek feedback path rather than taking the healthy-success bypass.
+    if input_json.get("live_acceptance"):
+        reasons.append("live_acceptance")
 
     requested = str(
         input_json.get("tracecoder_profile")

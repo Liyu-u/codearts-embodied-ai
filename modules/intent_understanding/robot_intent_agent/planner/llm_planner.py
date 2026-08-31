@@ -1637,7 +1637,12 @@ class LLMPlanner(TaskPlannerInterface):
 
                 raw_text = response.choices[0].message.content.strip()
                 logger.info(f"DeepSeek response: {len(raw_text)} chars")
-                self._last_call_metadata["transport_succeeded"] = True
+                provider_request_id = str(getattr(response, "id", "") or "").strip()
+                self._last_call_metadata.update({
+                    "transport_succeeded": True,
+                    "request_id": provider_request_id or None,
+                    "request_id_source": "provider_response" if provider_request_id else None,
+                })
 
                 return self._safe_parse_llm_json(raw_text)
 

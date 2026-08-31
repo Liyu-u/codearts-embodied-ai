@@ -138,6 +138,8 @@ class SemanticCompiler:
                 "llm_attempt_count": int(provider_trace.get("attempt_count", 0) or 0),
                 "llm_error_class": provider_trace.get("error_class"),
                 "llm_status_code": provider_trace.get("status_code"),
+                "llm_request_id": provider_trace.get("request_id"),
+                "llm_request_id_source": provider_trace.get("request_id_source"),
             })
         elif should_call_llm:
             engine_trace["fallback_used"] = True
@@ -1296,6 +1298,52 @@ class SemanticCompiler:
             return
         scene_objects = list(scene.objects)
         aliases: Dict[str, str] = {}
+        # Some providers emit a role reference (e1/e2) but omit the matching
+        # entity atom entirely.  The event still carries the provider's
+        # semantic decision; recover only the corresponding role from the
+        # deterministic, scene-grounded rule event at the same sequence
+        # position.  This keeps provider output from inventing a physical ID
+        # while preventing a formatting omission from forcing a full
+        # fallback.
+        rule_events = sorted(rule_graph.events, key=lambda item: item.sequence_index)
+        candidate_events = sorted(llm_graph.events, key=lambda item: item.sequence_index)
+        for incoming in candidate_events:
+            rule_event = next((item for item in rule_events
+                               if item.sequence_index == incoming.sequence_index), None)
+            if rule_event is None and rule_events:
+                # Providers may split one grounded operation into GRASP then
+                # PLACE events.  Reconcile those fragments against the
+                # single evidenced rule event instead of rejecting an
+                # otherwise recoverable candidate for an omitted entity atom.
+                rule_event = next((item for item in rule_events
+                                   if normalize_action(item.action) == normalize_action(incoming.action)), None)
+                rule_event = rule_event or rule_events[0]
+            if rule_event is None:
+                continue
+            # Preserve the deterministic action contract when a provider
+            # collapses a placement sentence into GRASP/FETCH.  The provider
+            # still contributes target semantics, while action/destination
+            # requirements remain anchored to the evidenced rule parse.
+            if (normalize_action(incoming.action) != normalize_action(rule_event.action)
+                    and normalize_action(rule_event.action) != "CUSTOM"):
+                incoming.action = rule_event.action
+            for role in ("theme", "destination", "source", "recipient"):
+                incoming_ref = getattr(incoming, f"{role}_ref", None)
+                rule_ref = getattr(rule_event, f"{role}_ref", None)
+                incoming_entity = llm_graph.entity(incoming_ref) if incoming_ref else None
+                placeholder = bool(incoming_entity and
+                                   (incoming_entity.attributes or {}).get("_llm_placeholder"))
+                if incoming_ref and (incoming_entity is None or placeholder) and rule_ref:
+                    aliases[str(incoming_ref)] = rule_ref
+                    if llm_graph.entity(rule_ref) is None:
+                        rule_entity = rule_graph.entity(rule_ref)
+                        if rule_entity is not None:
+                            # Copy only the semantic descriptor.  Preserve an
+                            # unresolved entity_id as None; final grounding
+                            # remains owned by the deterministic scene graph.
+                            descriptor = rule_entity.model_copy(deep=True)
+                            descriptor.entity_id = None
+                            llm_graph.entities.append(descriptor)
         # Complete only the semantic category for a provider entity that uses
         # a read-only scene alias.  Never copy scene attributes into an LLM
         # atom: doing so turns the provider's physical hint into a hidden
@@ -1336,6 +1384,29 @@ class SemanticCompiler:
             event.source_ref = resolve(event.source_ref)
             event.recipient_ref = resolve(event.recipient_ref)
             event.obstacle_refs = [resolve(item) or item for item in event.obstacle_refs]
+
+        # Collapse provider fragments that now describe the same grounded
+        # action.  Prefer the fragment carrying the most role information
+        # (typically the PLACE event with a destination) and preserve its
+        # evidence/parameters.
+        deduped: list[Any] = []
+        for event in sorted(llm_graph.events, key=lambda item: item.sequence_index):
+            signature = (
+                normalize_action(event.action), event.theme_ref,
+                event.destination_ref, event.source_ref, event.recipient_ref,
+            )
+            existing = next((item for item in deduped if (
+                normalize_action(item.action), item.theme_ref,
+                item.destination_ref, item.source_ref, item.recipient_ref,
+            ) == signature), None)
+            if existing is None:
+                deduped.append(event)
+            else:
+                score = lambda item: sum(bool(getattr(item, field, None))
+                                         for field in ("theme_ref", "destination_ref", "source_ref", "recipient_ref"))
+                if score(event) > score(existing):
+                    deduped[deduped.index(existing)] = event
+        llm_graph.events = deduped
 
         # Providers frequently serialize event references as event-1,
         # event-place-1, evt-stack-1, or a numeric index.  First normalize

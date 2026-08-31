@@ -52,6 +52,62 @@ class TargetSettingDriver(ReleaseVerifyingDriver):
         self.target_poses.append(target_pose)
 
 
+class SettlingReleaseDriver(ReleaseVerifyingDriver):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.release_events = []
+        self._opened = False
+        self.verify_calls = 0
+
+    def gripper_open(self, width, timeout_s):
+        self.release_events.append("open")
+        self._opened = True
+        return super().gripper_open(width, timeout_s)
+
+    def settle_before_release(self, steps=5):
+        self.release_events.append(("settle", steps))
+        return {"status": "SUCCESS", "duration_ms": int(steps)}
+
+    def move_to(self, pose, linear_speed, timeout_s):
+        result = super().move_to(pose, linear_speed, timeout_s)
+        if self._opened and pose.get("z", 0) >= 0.2:
+            self.release_events.append("retreat")
+        return result
+
+    def verify_release(self, object_id, target_pose, tolerance_m=0.06):
+        self.verify_calls += 1
+        return super().verify_release(object_id, target_pose, tolerance_m)
+
+
+class SweptPathCollisionDriver(FakeDriver):
+    """Reports an obstacle only at an intermediate waypoint."""
+
+    def collision_free(self, pose, radius, excluded_paths=()):
+        x = float(pose.get("x", 0.0))
+        return not (0.08 < x < 0.18)
+
+
+class ReleaseRetryDriver(SettlingReleaseDriver):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._release_verifications = 0
+
+    def settle_after_release(self, steps=5):
+        self.release_events.append(("settle_after", steps))
+        return {"status": "SUCCESS", "duration_ms": int(steps)}
+
+    def verify_release(self, object_id, target_pose, tolerance_m=0.06):
+        self._release_verifications += 1
+        if self._release_verifications == 1:
+            return {
+                "verified": False,
+                "object_pose": self.objects[object_id]["pose"],
+                "distance_m": 0.061,
+                "reason": "OBJECT_NOT_AT_TARGET",
+            }
+        return super().verify_release(object_id, target_pose, tolerance_m)
+
+
 class IsaacSimBackendTests(unittest.TestCase):
     def test_complete_pick_and_place_updates_object_position(self):
         backend, _ = make_backend()
@@ -105,6 +161,15 @@ class IsaacSimBackendTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAILED")
         self.assertEqual(result["reason"], "COLLISION_DETECTED")
         self.assertTrue(backend.snapshot()["safe_stopped"])
+
+    def test_swept_path_collision_is_checked_before_motion(self):
+        scene, objects = scene_objects()
+        driver = SweptPathCollisionDriver(objects=objects)
+        backend = IsaacSimBackend.from_perception(scene, safety=SafetyPolicy(), driver=driver)
+        result = backend.execute("move_to_object", {"object_id": "green_cube"})
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["reason"], "COLLISION_DETECTED")
+        self.assertEqual(driver.move_calls, [])
 
     def test_collision_query_error_is_fail_closed_not_fail_open(self):
         # 关键回归：查询异常绝不能“假设安全”。
@@ -170,6 +235,42 @@ class IsaacSimBackendTests(unittest.TestCase):
         ]:
             self.assertEqual(backend.execute(action, args)["status"], "SUCCESS")
         self.assertEqual(backend.execute("release", {})["status"], "SUCCESS")
+
+    def test_release_settles_before_open_and_retreat(self):
+        scene, objects = scene_objects()
+        driver = SettlingReleaseDriver(objects=objects, release_verified=True)
+        backend = IsaacSimBackend.from_perception(scene, safety=SafetyPolicy(), driver=driver)
+        for action, args in [
+            ("detect_object", {"object_id": "green_cube"}),
+            ("move_to_object", {"object_id": "green_cube"}),
+            ("grasp", {"object_id": "green_cube"}),
+            ("move_to_target", {"destination_id": "zone_unstack_target"}),
+        ]:
+            self.assertEqual(backend.execute(action, args)["status"], "SUCCESS")
+        self.assertEqual(backend.execute("release", {})["status"], "SUCCESS")
+        self.assertEqual(
+            [item[0] if isinstance(item, tuple) else item for item in driver.release_events],
+            ["settle", "open", "retreat"],
+        )
+        self.assertEqual(driver.verify_calls, 2)
+
+    def test_release_rechecks_once_after_post_open_settle(self):
+        scene, objects = scene_objects()
+        driver = ReleaseRetryDriver(objects=objects, release_verified=True)
+        backend = IsaacSimBackend.from_perception(scene, safety=SafetyPolicy(), driver=driver)
+        for action, args in [
+            ("detect_object", {"object_id": "green_cube"}),
+            ("move_to_object", {"object_id": "green_cube"}),
+            ("grasp", {"object_id": "green_cube"}),
+            ("move_to_target", {"destination_id": "zone_unstack_target"}),
+        ]:
+            self.assertEqual(backend.execute(action, args)["status"], "SUCCESS")
+        self.assertEqual(backend.execute("release", {})["status"], "SUCCESS")
+        self.assertEqual(
+            [item[0] if isinstance(item, tuple) else item for item in driver.release_events],
+            ["settle", "open", "settle_after", "retreat"],
+        )
+        self.assertEqual(driver._release_verifications, 3)
 
     def test_real_driver_receives_measured_target_before_motion(self):
         scene, objects = scene_objects()

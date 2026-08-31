@@ -33,31 +33,59 @@ def _log(result_dir: Path, step: str, status: str, detail: str = "") -> None:
         handle.flush()
 
 
-def _manifest() -> list[dict]:
-    """Semantic manifest; poses are always read from the live driver."""
-    return [
-        {
-            "id": "red_cube",
-            "category": "红色方块",
-            "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
-            "attributes": {"display_name": "红色方块", "color": "red"},
-            "execution": {"movable": True, "graspable": True, "stackable_destination": True, "valid_destination": True},
-        },
-        {
-            "id": "green_cube",
-            "category": "绿色方块",
-            "dimensions": {"x": 0.0515, "y": 0.0515, "z": 0.0515},
-            "attributes": {"display_name": "绿色方块", "color": "green"},
-            "execution": {"movable": True, "graspable": True},
-        },
-        {
-            "id": "zone_unstack_target",
+def build_ground_truth_manifest(
+    object_ids: tuple[str, ...] = ("red_cube", "green_cube"),
+    destination_ids: tuple[str, ...] = ("zone_unstack_target",),
+) -> list[dict]:
+    """Build a semantic manifest for the live objects in one Isaac scene.
+
+    The pose is deliberately not included here: ``IsaacGroundTruthProvider``
+    reads every pose from USD/PhysX.  Keeping this helper pure makes it
+    possible to validate multi-object manifests before starting Isaac Sim.
+    """
+    manifest: list[dict] = []
+    seen: set[str] = set()
+    color_names = {"red": "红色", "green": "绿色", "blue": "蓝色"}
+    for object_id in object_ids:
+        object_id = str(object_id)
+        if not object_id or object_id in seen:
+            continue
+        seen.add(object_id)
+        color = next((key for key in color_names if key in object_id), "green")
+        size = 0.04 if color == "red" else 0.0515
+        display = f"{color_names[color]}方块"
+        manifest.append({
+            "id": object_id,
+            "category": display,
+            "dimensions": {"x": size, "y": size, "z": size},
+            "attributes": {"display_name": display, "color": color},
+            "execution": {
+                "movable": True,
+                "graspable": True,
+                **({"stackable_destination": True, "valid_destination": True} if color == "red" else {}),
+            },
+        })
+    for destination_id in destination_ids:
+        destination_id = str(destination_id)
+        if not destination_id or destination_id in seen:
+            continue
+        seen.add(destination_id)
+        manifest.append({
+            "id": destination_id,
             "category": "放置区域",
             "dimensions": {"x": 0.10, "y": 0.10, "z": 0.02},
             "attributes": {"display_name": "放置区域", "purpose": "safe_placement"},
             "execution": {"movable": False, "graspable": False, "valid_destination": True},
-        },
-    ]
+        })
+    return manifest
+
+
+def _manifest(
+    object_ids: tuple[str, ...] = ("red_cube", "green_cube"),
+    destination_ids: tuple[str, ...] = ("zone_unstack_target",),
+) -> list[dict]:
+    """Semantic manifest; poses are always read from the live driver."""
+    return build_ground_truth_manifest(object_ids, destination_ids)
 
 
 def _load_strategy(path: str | None, placement_mode: str) -> dict:
@@ -124,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--result-dir", required=True)
     parser.add_argument("--strategy-file")
+    parser.add_argument("--strategy-wait-s", type=float, default=0.0)
     parser.add_argument("--task-config")
     parser.add_argument("--placement-mode", default="direct", choices=["direct", "stack_on"])
     parser.add_argument("--device", default=os.environ.get("ISAAC_SIM_DEVICE", "cpu"), choices=["cpu", "cuda", "cuda:0"])
@@ -140,10 +169,12 @@ def main(argv: list[str] | None = None) -> int:
 
     from tools.real_isaac_experiment import (
         FailureInjectingDriver,
-        build_variant_strategy,
+        SafetyInjectingDriver,
         load_experiment_config,
+        select_execution_strategy,
         select_case,
         variant_runtime,
+        wait_for_strategy_file,
     )
 
     experiment_config = None
@@ -183,10 +214,12 @@ def main(argv: list[str] | None = None) -> int:
         global_config = (experiment_config or {}).get("global", {})
         initial_poses = dict(global_config.get("initial_scene_poses") or {})
         initial_poses.update((experiment_case or {}).get("initial_scene_poses") or {})
-        cube_pose = initial_poses.get("green_cube") or {
+        active_object_id = str((experiment_case or {}).get("object_id") or "green_cube")
+        destination_id = str((experiment_case or {}).get("destination_id") or "zone_unstack_target")
+        cube_pose = initial_poses.get(active_object_id) or initial_poses.get("green_cube") or {
             "x": 0.50, "y": 0.0, "z": 0.0258
         }
-        target_pose = initial_poses.get("zone_unstack_target") or {
+        target_pose = initial_poses.get(destination_id) or initial_poses.get("zone_unstack_target") or {
             "x": 0.45, "y": 0.10, "z": 0.02575
         }
         cube_position = (
@@ -202,12 +235,15 @@ def main(argv: list[str] | None = None) -> int:
             device=args.device,
             cube_position=cube_position,
             target_position=target_position,
+            dynamic_object_id=active_object_id,
         )
         driver.connect(defer_start=True)
         _log(result_dir, "connect", "done", f"FrankaPickPlaceDriver ({args.device})")
         _spawn_objects(
             include_dynamic=False,
             cube_position=cube_position,
+            dynamic_object_id=active_object_id,
+            object_positions=initial_poses,
             target_position=(
                 float(target_pose["x"]),
                 float(target_pose["y"]),
@@ -217,7 +253,18 @@ def main(argv: list[str] | None = None) -> int:
         driver.start()
         _log(result_dir, "scene", "done", "Isaac scene spawned and started")
 
-        provider = IsaacGroundTruthProvider(driver, scene_id="stacking_cubes", manifest=_manifest())
+        object_ids = tuple(
+            object_id for object_id in initial_poses
+            if object_id != destination_id
+        )
+        if active_object_id not in object_ids:
+            object_ids = (*object_ids, active_object_id)
+        destination_ids = (destination_id,)
+        provider = IsaacGroundTruthProvider(
+            driver,
+            scene_id=str(global_config.get("scene_id") or (experiment_case or {}).get("scene_id") or "stacking_cubes"),
+            manifest=_manifest(object_ids=object_ids, destination_ids=destination_ids),
+        )
         scene = isaac_perception.run(provider)
         _write(result_dir / "perception.json", scene)
         _log(result_dir, "perception", "done", "live USD/PhysX ground truth captured")
@@ -247,23 +294,36 @@ def main(argv: list[str] | None = None) -> int:
                     fail_closed_on_error=False,
                 ),
             )
-        execution_driver = FailureInjectingDriver(
+        failure_driver = FailureInjectingDriver(
             driver,
             (experiment_case or {}).get("failure_injection") or {},
+        )
+        execution_driver = SafetyInjectingDriver(
+            failure_driver,
+            (experiment_case or {}).get("safety_injection") or {},
         )
         backend = build_backend(profile, scene, driver=execution_driver)
         adapter = ExecutorAdapter(backend)
         if experiment_case is not None:
-            strategy = build_variant_strategy(
+            external_strategy = None
+            if args.strategy_file:
+                external_strategy = (
+                    wait_for_strategy_file(args.strategy_file, timeout_s=args.strategy_wait_s)
+                    if args.strategy_wait_s > 0
+                    else _load_strategy(args.strategy_file, args.placement_mode)
+                )
+            strategy = select_execution_strategy(
                 experiment_case,
                 args.variant_id,
+                external_strategy=external_strategy,
+                live_perception=scene,
                 task_id=task_id,
             )
         else:
             strategy = _load_strategy(args.strategy_file, args.placement_mode)
             strategy["task_id"] = task_id
         _write(result_dir / "strategy.json", strategy)
-        before = driver.read_object_pose("green_cube")
+        before = driver.read_object_pose(active_object_id)
         started = time.monotonic()
         if (experiment_case or {}).get("execution_mode") == "gate_only":
             execution = {
@@ -287,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
             execution = adapter.run(strategy)
         elapsed_ms = int((time.monotonic() - started) * 1000)
         try:
-            after = driver.read_object_pose("green_cube")
+            after = driver.read_object_pose(active_object_id)
             physical_pose_error = None
         except Exception as exc:  # noqa: BLE001
             # A fail-closed execution intentionally stops the driver before
@@ -296,6 +356,12 @@ def main(argv: list[str] | None = None) -> int:
             # exception and losing the report entirely.
             after = None
             physical_pose_error = f"{type(exc).__name__}: {exc}"
+        execution["object_id"] = active_object_id
+        execution["object_before"] = before
+        execution["object_after"] = after
+        # Retain the historical fields for consumers of the v1 reports; for
+        # a red/multi-object case these aliases still point to the selected
+        # dynamic object and are accompanied by object_id above.
         execution["cube_before"] = before
         execution["cube_after"] = after
         if after is not None:
@@ -317,6 +383,10 @@ def main(argv: list[str] | None = None) -> int:
         execution["driver_diagnostics"] = driver.diagnostics()
         execution["failure_injection"] = {
             "requested": (experiment_case or {}).get("failure_injection") or {},
+            "applied": list(failure_driver.injection_log),
+        }
+        execution["safety_injection"] = {
+            "requested": (experiment_case or {}).get("safety_injection") or {},
             "applied": list(execution_driver.injection_log),
         }
         execution.setdefault("provenance", {})["perception_backend"] = "isaac_ground_truth"
@@ -355,11 +425,18 @@ def main(argv: list[str] | None = None) -> int:
             },
         }
         execution["variant_id"] = args.variant_id
+        from tools.live_intelligent_e2e import strategy_digest
+
+        execution["input_strategy_sha256"] = strategy_digest(strategy)
         execution["case_id"] = args.case_id
         execution["category"] = effective_category
         execution["expected_status"] = effective_expected_status
         execution["case_outcome_correct"] = execution.get("status") == effective_expected_status
         execution["formal_metrics"] = _formal_metrics(execution)
+        _write(
+            result_dir / "final_pose.json",
+            {"object_id": active_object_id, "pose": after, "source": "isaac_ground_truth"},
+        )
         _write(result_dir / "execution.json", execution)
         _log(
             result_dir,

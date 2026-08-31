@@ -212,8 +212,10 @@ def _merge_model_config(payload: dict, current: dict) -> dict:
 
 
 _MODEL_CONFIG = _load_model_config()
+_CLOUD_SERVICE = configure_cloud_service()
 
 
+from demo.cloud.service import configure_cloud_service, get_cloud_service  # noqa: E402
 from demo.scenarios import get_scenario, list_scenarios  # noqa: E402
 from integration.adapters import intent, strategy, tracecoder  # noqa: E402
 from integration.adapters import perception as perception_adapter  # noqa: E402
@@ -533,25 +535,28 @@ class DemoHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"roles": [{"id": "admin", "name": "平台管理员", "permissions": 18}, {"id": "operator", "name": "任务操作员", "permissions": 11}, {"id": "viewer", "name": "只读用户", "permissions": 5}]})
             return
         if parsed.path == "/api/scenarios":
-            self._send_json(200, {"scenarios": list_scenarios()})
+            self._send_json(200, {"scenarios": get_cloud_service().scenarios()})
             return
         if parsed.path == "/api/health":
-            modules = {
-                "perception": _safe_health(perception_adapter),
-                "intent": _safe_health(intent),
-                "strategy": _safe_health(strategy),
-                "tracecoder": _safe_health(tracecoder),
-            }
-            healthy = all(_is_healthy(value) for value in modules.values())
-            self._send_json(
-                200,
-                {
-                    "status": "ok" if healthy else "degraded",
-                    "healthy": healthy,
-                    "mode": "real-adapters-with-mock-executor",
-                    "modules": modules,
-                },
-            )
+            self._send_json(200, get_cloud_service().health())
+            return
+        if parsed.path == "/api/runs":
+            runs = [get_cloud_service().get_run(row["run_id"]) for row in get_cloud_service().store.list_runs()]
+            self._send_json(200, {"runs": runs})
+            return
+        if parsed.path.startswith("/api/runs/") and parsed.path.endswith("/events"):
+            run_id = parsed.path.split("/")[3]
+            try:
+                self._send_json(200, {"events": get_cloud_service().get_events(run_id)})
+            except KeyError:
+                self._send_json(404, {"ok": False, "error": "run not found"})
+            return
+        if parsed.path.startswith("/api/runs/"):
+            run_id = parsed.path.split("/")[3]
+            try:
+                self._send_json(200, {"run": get_cloud_service().get_run(run_id)})
+            except KeyError:
+                self._send_json(404, {"ok": False, "error": "run not found"})
             return
         self._serve_static(parsed.path)
 
@@ -585,20 +590,21 @@ class DemoHandler(BaseHTTPRequestHandler):
             scene_id = str(payload.get("id") or f"scene-{uuid4().hex[:8]}")
             self._send_json(201, {"ok": True, "scene": {"id": scene_id, "name": payload.get("name", "新建场景"), "status": "DRAFT", "objects": 0, "revision": "1"}})
             return
-        if parsed.path != "/api/run":
-            self._send_json(404, {"ok": False, "error": "not found"})
+        if parsed.path == "/api/runs":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                run = get_cloud_service().create_run(str(payload.get("scene_id") or ""), str(payload.get("instruction") or ""))
+                self._send_json(202, {"ok": True, "run": run})
+            except ValueError as exc:
+                self._send_json(400, {"ok": False, "error": str(exc)})
+            except Exception as exc:
+                self._send_json(500, {"ok": False, "error": f"cloud run error: {exc}"})
             return
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-            payload = json.loads(self.rfile.read(length) or b"{}")
-            response = _run_demo(payload)
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            self._send_json(400, {"ok": False, "error": str(exc)})
+        if parsed.path == "/api/run":
+            self._send_json(410, {"ok": False, "error": "legacy /api/run is retired; use POST /api/runs"})
             return
-        except Exception as exc:  # pragma: no cover - surfaced as UI error
-            self._send_json(500, {"ok": False, "error": f"demo pipeline error: {exc}"})
-            return
-        self._send_json(200, response)
+        self._send_json(404, {"ok": False, "error": "not found"})
 
     def do_PUT(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
