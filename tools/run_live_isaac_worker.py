@@ -230,11 +230,11 @@ class PersistentIsaacSession:
         from modules.perception.isaac_ground_truth import IsaacGroundTruthProvider
 
         driver = OmniDriver(app, device=config.device)
-        # Reuse the streaming app's default stage/camera: recreating the stage
-        # destroys the WebRTC render target (NVST_R_BUSY / black client). The
-        # verified Franka path works on this stage too (confirmed in the run
-        # that only failed later on a runtime-directory permission).
-        driver.connect(defer_start=True, create_stage=False)
+        # A fresh stage is the configuration that VERIFIED frames flow to the
+        # WebRTC client on the live server (2026-09-01 16:14 run: picture
+        # visible after 'app ready').  The stream camera is added explicitly
+        # by _ensure_stream_camera() afterwards, so WebRTC has a render target.
+        driver.connect(defer_start=True, create_stage=True)
         scene = IsaacDynamicScene.create(app)
         _ensure_stream_camera(app)
         driver.start()
@@ -371,8 +371,11 @@ def run_worker_loop(
     *,
     max_iterations: int | None = None,
     idle_sleep_s: float = 0.05,
+    stream_ready_after_s: float = 210.0,
 ) -> int:
     iterations = 0
+    started_at = time.monotonic()
+    stream_ready_announced = False
     while app.is_running() and (
         max_iterations is None or iterations < max_iterations
     ):
@@ -387,6 +390,17 @@ def run_worker_loop(
         except Exception as exc:  # noqa: BLE001
             print(f"[worker] step error (continuing): {exc}", flush=True)
         iterations += 1
+        if not stream_ready_announced and (
+            time.monotonic() - started_at >= stream_ready_after_s
+        ):
+            # The full streaming experience needs ~3.5 min to load; opening
+            # the WebRTC client before that shows black + NVST_R_BUSY.
+            stream_ready_announced = True
+            print(
+                "[worker] STREAM_READY: open the WebRTC client now "
+                "(refresh the page once if it is still black)",
+                flush=True,
+            )
         if outcome.get("status") == "IDLE" and idle_sleep_s > 0:
             time.sleep(idle_sleep_s)
     return iterations
@@ -417,8 +431,9 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
     print(
-        "[worker] wait for 'app ready' (~3.5 min) before opening the "
-        "WebRTC client; NVST_R_BUSY before that is expected",
+        "[worker] the streaming app loads for ~3.5 min; wait for the "
+        "STREAM_READY marker before opening the WebRTC client "
+        "(NVST_R_BUSY before that is expected)",
         flush=True,
     )
     try:
@@ -427,6 +442,7 @@ def main(argv: list[str] | None = None) -> int:
             built.world,
             built.runtime_worker,
             idle_sleep_s=args.idle_sleep_s,
+            stream_ready_after_s=210.0,
         )
     finally:
         built.world.shutdown()
