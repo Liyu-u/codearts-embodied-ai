@@ -840,7 +840,7 @@ class OmniDriver:
     # ------------------------------------------------------------------
     # 生命周期
     # ------------------------------------------------------------------
-    def connect(self, *, defer_start: bool = False) -> None:
+    def connect(self, *, defer_start: bool = False, create_stage: bool = True) -> None:
         if self._connected:
             if not defer_start:
                 self.start()
@@ -860,7 +860,10 @@ class OmniDriver:
         SimulationManager.set_physics_sim_device(self._device)
         self._app.update()
 
-        stage_utils.create_new_stage()
+        # 直播 Worker 复用 streaming 应用的默认 stage（保留默认相机/渲染目标，
+        # 否则 WebRTC 无帧可推、Client 黑屏）；批处理模式仍重建独立 stage。
+        if create_stage:
+            stage_utils.create_new_stage()
         stage = stage_utils.get_current_stage()
         # Keep the same creation order as NVIDIA's FrankaPickPlace example:
         # articulation first, then ground/light, then dynamic objects.

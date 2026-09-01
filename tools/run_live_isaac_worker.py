@@ -153,6 +153,35 @@ class IsaacDynamicScene:
         )
 
 
+def _ensure_stream_camera(app: Any) -> None:
+    """Point the WebRTC stream at the workspace via an explicit camera.
+
+    Falls back to the streaming app's default camera when the viewport API
+    is unavailable, so a failure here never aborts the worker.
+    """
+    try:
+        import omni.kit.app  # noqa: F401  (ensures omni modules are importable)
+        from isaacsim.core.utils.stage import get_current_stage
+        from omni.kit.viewport.utility import get_active_viewport
+        from pxr import Gf, UsdGeom
+
+        stage = get_current_stage()
+        camera_path = "/World/Camera"
+        if not stage.GetPrimAtPath(camera_path):
+            camera = UsdGeom.Camera.Define(stage, camera_path)
+            camera.GetFocalLengthAttr().Set(24.0)
+            xformable = UsdGeom.Xformable(camera)
+            xformable.ClearXformOpOrder()
+            xformable.AddTranslateOp().Set(Gf.Vec3d(1.4, -1.8, 1.1))
+            xformable.AddRotateXYZOp().Set(Gf.Vec3d(0.0, -35.0, 0.0))
+        viewport = get_active_viewport()
+        viewport.camera_path = camera_path
+        app.update()
+        print("[worker] stream camera ready", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[worker] camera setup skipped, using default viewport: {exc}", flush=True)
+
+
 class PersistentIsaacSession:
     def __init__(
         self,
@@ -179,8 +208,9 @@ class PersistentIsaacSession:
         from modules.perception.isaac_ground_truth import IsaacGroundTruthProvider
 
         driver = OmniDriver(app, device=config.device)
-        driver.connect(defer_start=True)
+        driver.connect(defer_start=True, create_stage=False)
         scene = IsaacDynamicScene.create(app)
+        _ensure_stream_camera(app)
         driver.start()
         profile = load_profile("sim")
         return cls(
@@ -309,8 +339,16 @@ def run_worker_loop(
     while app.is_running() and (
         max_iterations is None or iterations < max_iterations
     ):
-        outcome = runtime_worker.process_once()
-        world.step(render=True)
+        try:
+            outcome = runtime_worker.process_once()
+        except Exception as exc:  # noqa: BLE001
+            # A transient job error must never tear down the streaming app.
+            print(f"[worker] process_once error (continuing): {exc}", flush=True)
+            outcome = {"status": "IDLE"}
+        try:
+            world.step(render=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[worker] step error (continuing): {exc}", flush=True)
         iterations += 1
         if outcome.get("status") == "IDLE" and idle_sleep_s > 0:
             time.sleep(idle_sleep_s)
