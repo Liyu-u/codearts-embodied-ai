@@ -240,6 +240,88 @@ class LiveIsaacEntrypointTests(unittest.TestCase):
         self.assertGreaterEqual(app.updates, 1)
         self.assertEqual(timeline.play_calls, 1)
 
+    def test_persistent_session_never_rebuilds_the_streaming_stage(self) -> None:
+        """Regression: the live worker must keep the streaming app's
+        SimulationApp / USD context / Hydra renderer / WebRTC session as ONE
+        instance.  It must call driver.connect(create_stage=False) — never
+        stage_utils.create_new_stage() — and must not touch the custom stream
+        camera by default (round 1 isolation)."""
+        app = FakeApp()
+        connect_calls = []
+        start_calls = []
+
+        class FakeOmniDriver:
+            def __init__(self, *args, **kwargs):
+                self.args = args
+                self.kwargs = kwargs
+
+            def connect(self, *, defer_start, create_stage):
+                connect_calls.append({"defer_start": defer_start, "create_stage": create_stage})
+
+            def start(self):
+                start_calls.append(True)
+
+            def shutdown(self):
+                pass
+
+        class FakeScene:
+            @staticmethod
+            def create(received_app):
+                self.assertIs(received_app, app)
+                return object()
+
+        camera_calls = []
+        with (
+            patch("modules.executor.isaac_driver.OmniDriver", FakeOmniDriver),
+            patch("integration.config.loader.load_profile", return_value=object()),
+            patch("tools.run_live_isaac_worker.IsaacDynamicScene", FakeScene),
+            patch(
+                "tools.run_live_isaac_worker._ensure_stream_camera",
+                side_effect=lambda a: camera_calls.append(a),
+            ),
+        ):
+            PersistentIsaacSession.create(app, LiveWorldConfig())
+
+        self.assertEqual(len(connect_calls), 1)
+        self.assertIs(connect_calls[0]["defer_start"], True)
+        self.assertIs(connect_calls[0]["create_stage"], False)
+        self.assertEqual(len(start_calls), 1)
+        # Round 1 isolation: the custom stream camera is OFF by default.
+        self.assertEqual(camera_calls, [])
+
+    def test_stream_camera_switch_is_off_by_default_and_validated(self) -> None:
+        self.assertIs(LiveWorldConfig().stream_camera, False)
+        self.assertIs(LiveWorldConfig(stream_camera=True).stream_camera, True)
+        with self.assertRaises(ValueError):
+            LiveWorldConfig(stream_camera="yes")
+
+    def test_loop_prints_warmup_elapsed_only_never_stream_ready(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        app = FakeApp()
+        session = FakeSession()
+        worker = FakeRuntimeWorker()
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            iterations = run_worker_loop(
+                app,
+                session,
+                worker,
+                max_iterations=3,
+                idle_sleep_s=0,
+                warmup_marker_after_s=0.0,
+                warmup_marker_every_s=1e9,
+            )
+        output = buffer.getvalue()
+        self.assertEqual(iterations, 3)
+        self.assertEqual(worker.calls, 3)
+        self.assertEqual(session.steps, 3)
+        # Honest semantics: elapsed time only, never a readiness claim.
+        self.assertIn("STREAM_WARMUP_ELAPSED", output)
+        self.assertNotIn("STREAM_READY", output)
+        self.assertNotIn("WORKER_READY", output)
+
     def test_runtime_root_cannot_be_redirected_to_an_arbitrary_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):

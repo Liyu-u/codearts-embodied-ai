@@ -30,6 +30,10 @@ class LiveWorldConfig:
     streaming_experience: str = STREAMING_EXPERIENCE
     device: str = "cuda"
     idle_sleep_s: float = 0.05
+    # Round 1 isolation: prove the default streaming stage streams with the
+    # default camera BEFORE touching /World/Camera.  Enabled explicitly with
+    # --stream-camera only after the base streaming path passes.
+    stream_camera: bool = False
 
     def __post_init__(self) -> None:
         if Path(self.runtime_root) != DEFAULT_RUNTIME_ROOT:
@@ -40,6 +44,8 @@ class LiveWorldConfig:
             raise ValueError("device must be cpu, cuda or cuda:0")
         if self.idle_sleep_s < 0:
             raise ValueError("idle_sleep_s must not be negative")
+        if not isinstance(self.stream_camera, bool):
+            raise ValueError("stream_camera must be a bool")
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,13 +236,18 @@ class PersistentIsaacSession:
         from modules.perception.isaac_ground_truth import IsaacGroundTruthProvider
 
         driver = OmniDriver(app, device=config.device)
-        # A fresh stage is the configuration that VERIFIED frames flow to the
-        # WebRTC client on the live server (2026-09-01 16:14 run: picture
-        # visible after 'app ready').  The stream camera is added explicitly
-        # by _ensure_stream_camera() afterwards, so WebRTC has a render target.
-        driver.connect(defer_start=True, create_stage=True)
+        # STAGE LIFECYCLE INVARIANT (live worker):
+        # The streaming Kit created this SimulationApp / USD context / Hydra
+        # renderer / WebRTC session.  They must stay the SAME instance for the
+        # whole worker lifetime, so NEVER call stage_utils.create_new_stage()
+        # here (create_stage=False).  Rebuilding the stage closes the streaming
+        # stage (World0 -> World1) and breaks the Hydra/RTX renderer, which
+        # shows up as 'HydraEngine rtx failed creating scene renderer' and
+        # NVST_R_BUSY / black WebRTC.  Only the batch runner rebuilds stages.
+        driver.connect(defer_start=True, create_stage=False)
         scene = IsaacDynamicScene.create(app)
-        _ensure_stream_camera(app)
+        if config.stream_camera:
+            _ensure_stream_camera(app)
         driver.start()
         profile = load_profile("sim")
         return cls(
@@ -371,11 +382,13 @@ def run_worker_loop(
     *,
     max_iterations: int | None = None,
     idle_sleep_s: float = 0.05,
-    stream_ready_after_s: float = 210.0,
+    warmup_marker_after_s: float = 180.0,
+    warmup_marker_every_s: float = 60.0,
 ) -> int:
     iterations = 0
     started_at = time.monotonic()
-    stream_ready_announced = False
+    next_marker_at = warmup_marker_after_s
+    note_printed = False
     while app.is_running() and (
         max_iterations is None or iterations < max_iterations
     ):
@@ -390,17 +403,26 @@ def run_worker_loop(
         except Exception as exc:  # noqa: BLE001
             print(f"[worker] step error (continuing): {exc}", flush=True)
         iterations += 1
-        if not stream_ready_announced and (
-            time.monotonic() - started_at >= stream_ready_after_s
-        ):
-            # The full streaming experience needs ~3.5 min to load; opening
-            # the WebRTC client before that shows black + NVST_R_BUSY.
-            stream_ready_announced = True
+        elapsed = time.monotonic() - started_at
+        if elapsed >= next_marker_at:
+            if not note_printed:
+                # Honest semantics: this is ELAPSED TIME ONLY, never a
+                # readiness claim.  Stream readiness is judged by the
+                # operator seeing real media in the WebRTC client.
+                note_printed = True
+                print(
+                    "[worker] STREAM_WARMUP note: markers report elapsed time "
+                    "only, NOT stream readiness; open the WebRTC client and "
+                    "check for real media. A single NVST_R_BUSY during app "
+                    "load is expected and is not a failure (one client at a "
+                    "time; do not spam reconnect)",
+                    flush=True,
+                )
             print(
-                "[worker] STREAM_READY: open the WebRTC client now "
-                "(refresh the page once if it is still black)",
+                f"[worker] STREAM_WARMUP_ELAPSED {elapsed:.0f}s",
                 flush=True,
             )
+            next_marker_at += warmup_marker_every_s
         if outcome.get("status") == "IDLE" and idle_sleep_s > 0:
             time.sleep(idle_sleep_s)
     return iterations
@@ -410,18 +432,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", choices=("cpu", "cuda", "cuda:0"), default="cuda")
     parser.add_argument("--idle-sleep-s", type=float, default=0.05)
+    parser.add_argument(
+        "--stream-camera",
+        action="store_true",
+        help="add /World/Camera and point the stream at the workspace "
+        "(round 2; default off to isolate stage/stream behavior first)",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args, _kit_args = build_parser().parse_known_args(argv)
     built = build_live_world(
-        LiveWorldConfig(device=args.device, idle_sleep_s=args.idle_sleep_s)
+        LiveWorldConfig(
+            device=args.device,
+            idle_sleep_s=args.idle_sleep_s,
+            stream_camera=args.stream_camera,
+        )
     )
     print(
         json.dumps(
             {
-                "status": "READY",
+                # WORKER_READY means the job loop / runtime is up.  It is NOT
+                # a streaming readiness claim; the stream is judged separately
+                # by real media in the WebRTC client.
+                "status": "WORKER_READY",
                 "kit_instance_id": built.kit_instance_id,
                 "world_id": built.world_id,
                 "runtime_root": str(built.runtime_root),
@@ -431,9 +466,9 @@ def main(argv: list[str] | None = None) -> int:
         flush=True,
     )
     print(
-        "[worker] the streaming app loads for ~3.5 min; wait for the "
-        "STREAM_READY marker before opening the WebRTC client "
-        "(NVST_R_BUSY before that is expected)",
+        "[worker] job loop is up; the streaming app is still loading "
+        "(~3 min). STREAM_WARMUP markers will be printed; open the WebRTC "
+        "client and check for real media (never rely on elapsed time alone)",
         flush=True,
     )
     try:
@@ -442,7 +477,8 @@ def main(argv: list[str] | None = None) -> int:
             built.world,
             built.runtime_worker,
             idle_sleep_s=args.idle_sleep_s,
-            stream_ready_after_s=210.0,
+            warmup_marker_after_s=180.0,
+            warmup_marker_every_s=60.0,
         )
     finally:
         built.world.shutdown()
