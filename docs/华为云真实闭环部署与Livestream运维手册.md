@@ -113,64 +113,167 @@ SSH 优先 alias `school`（`stu_01@10.16.0.40:5122`），仅允许 BatchMode/SS
 
 ## 5. 校园服务器 Persistent Live Isaac Worker
 
+### 唯一推荐启动命令（后台运行）
+
 ```bash
-# 服务器（10.16.0.40:5122，Isaac Sim 6.0 容器 + GPU 0 + CPU 物理）
+# 服务器（10.16.0.40:5122，Isaac Sim 6.0 容器 + GPU physical 0 + CPU 物理）
 ssh school
 
-docker rm -f live-isaac-worker 2>/dev/null
-docker run --rm --name live-isaac-worker --entrypoint bash \
-  --gpus '"device=0"' --network=host --ipc=host \
-  -v /data/stu_01/docker/isaac-sim/cache/kit:/isaac-sim/kit/cache:rw \
-  -v /data/stu_01/docker/isaac-sim/cache/ov:/root/.cache/ov:rw \
-  -v /data/stu_01/docker/isaac-sim/cache/pip:/root/.cache/pip:rw \
-  -v /data/stu_01/docker/isaac-sim/cache/glcache:/root/.cache/nvidia/GLCache:rw \
-  -v /data/stu_01/docker/isaac-sim/cache/computecache:/root/.cache/nvidia/compute_cache:rw \
-  -v /data/stu_01/docker/isaac-sim/cache/hf:/root/.cache/huggingface:rw \
+# 只有确认旧 live-isaac-worker 是本项目 Worker 后，才 scoped 删除它：
+docker rm -f live-isaac-worker 2>/dev/null || true
+
+docker run -d --name live-isaac-worker \
+  --no-healthcheck \
+  --entrypoint bash \
+  --gpus '"device=0"' \
+  --network=host \
+  --ipc=host \
+  -e ACCEPT_EULA=Y \
+  -e PRIVACY_CONSENT=N \
+  -e NVIDIA_DRIVER_CAPABILITIES=all \
+  -e ISAACSIM_ASSET_ROOT=/isaacsim_assets/Assets/Isaac/6.0 \
+  -v /data/stu_01/docker/isaac-sim/cache/main/ov:/home/isaac/.cache/ov:rw \
+  -v /data/stu_01/docker/isaac-sim/cache/main/warp:/home/isaac/.cache/warp:rw \
+  -v /data/stu_01/docker/isaac-sim/cache/computecache:/home/isaac/.cache/computecache:rw \
+  -v /data/stu_01/docker/isaac-sim/config:/home/isaac/.config/omniverse:rw \
+  -v /data/stu_01/docker/isaac-sim/data/documents:/home/isaac/Documents:rw \
+  -v /data/stu_01/docker/isaac-sim/data/Kit:/home/isaac/.local/share/ov/data/Kit:rw \
+  -v /data/stu_01/docker/isaac-sim/logs:/home/isaac/.nvidia-omniverse/logs:rw \
+  -v /data/stu_01/docker/isaac-sim/pkg:/home/isaac/.local/share/ov/pkg:rw \
   -v /data/stu_01/isaac_assets:/isaacsim_assets:ro \
   -v /data/stu_01/workspace/final-live-cloud-closed-loop:/workspace:rw \
   -v /data/stu_01/workspace/live-runtime:/data/stu_01/workspace/live-runtime:rw \
-  -e NVIDIA_DRIVER_CAPABILITIES=all \
   nvcr.io/nvidia/isaac-sim:6.0.0 \
-  -lc 'cd /isaac-sim && ./python.sh /workspace/tools/run_live_isaac_worker.py --device cpu --idle-sleep-s 0.05 --/app/headless=true --/persistent/isaac/asset_root/default=/isaacsim_assets/Assets/Isaac/6.0'
+  -lc 'cd /isaac-sim && ./python.sh /workspace/tools/run_live_isaac_worker.py --device cpu --idle-sleep-s 0.05 --stream-view-mode auto --/app/headless=true --/persistent/isaac/asset_root/default=/isaacsim_assets/Assets/Isaac/6.0'
 ```
 
-- **Stage 生命周期不变量（禁止违反）**：streaming Kit 创建的 SimulationApp / USD
-  Context / Hydra Renderer / WebRTC session 必须跨 worker 整个生命周期保持**同一实例**。
-  `PersistentIsaacSession.create` 固定 `driver.connect(defer_start=True, create_stage=False)`，
-  绝不在 live worker 里调用 `stage_utils.create_new_stage()`（重建 stage 会关闭
-  streaming stage World0 → World1，破坏 Hydra/RTX renderer，表现为
-  `HydraEngine rtx failed creating scene renderer` + `NVST_R_BUSY` + 黑屏）。
-  只有批处理 runner 才重建 stage。
-- **第一轮（单变量）**：不加自定义相机（`--stream-camera` 默认关闭），先证明
-  full.streaming.kit + 默认 stage + Franka/cubes + `app.update()` 能稳定出画面；
-  通过后才单独加 `/World/Camera`（再单独验证相机 transform / viewport binding）。
-- **READY 语义**：stdout `{"status": "WORKER_READY", ...}` 只表示 job loop / runtime
-  就绪；`STREAM_WARMUP_ELAPSED <s>` 只是**已耗时**，不是流就绪声明。
-  流是否就绪以 WebRTC Client 中看到真实媒体为准。
-- **NVST_R_BUSY 处理**：app 加载期 / client 连接切换期可能出现，属正常，不判失败；
-  若黑屏/无媒体流则不能忽略。每个 Isaac 实例**只允许一个 WebRTC client**：
-  不要同时开 native client 和 browser viewer，不要连续 spam Reload/Connect；
-  OBS 是 Window Capture，不算第二个 client。
+- `-d` 后台运行；`--no-healthcheck` 避免镜像默认 AppReady healthcheck 误导；
+  GPU physical 0；`--network=host`（WebRTC 49100/47998 必需）；`--ipc=host`；
+  assets 只读；runtime 与 project workspace 可写；不新增公网端口。
+- 缓存挂载使用实际验证过的 `/home/isaac/...` 布局（镜像默认用户 isaac），
+  不使用 `/root/.cache/...`。
+
+### Stage 生命周期不变量（禁止违反）
+
+streaming Kit 创建的 **SimulationApp / USD Context / Hydra Renderer / WebRTC session**
+必须跨 worker 整个生命周期保持**同一实例**。`PersistentIsaacSession.create` 固定：
+
+```python
+driver.connect(defer_start=True, create_stage=False)
+```
+
+绝不在 live worker 里调用 `stage_utils.create_new_stage()`（重建 stage 会关闭
+streaming stage World0 → World1，破坏 Hydra/RTX renderer，表现为
+`HydraEngine rtx failed creating scene renderer` + `NVST_R_BUSY` + 黑屏）。
+只有批处理 runner（batch 模式）才 `create_stage=True`。任务间只 `reset_for_task()`，
+不 `app.close()`、不重启 SimulationApp、不重启 WebRTC、不换 Streaming Experience、
+不关 Timeline。
+
+### Streaming View 配置层（stream_view_mode）
+
+生产默认 **`--stream-view-mode auto`**（native 优先，usd-camera 兜底）：
+
+| mode | 行为 |
+|---|---|
+| `auto`（默认） | 先尝试 Isaac 原生 Perspective View API（`isaacsim.core.rendering_manager.ViewportManager`，相机 `/OmniverseKit_Persp`，eye=[1.30,-1.55,0.95] → target=[0.35,0,0.25]）；API 不存在或失败 → fallback 到 `/World/Camera` + look-at transform + active viewport 绑定 |
+| `viewport` | 只用 native API，失败即 `STREAM_VIEW_FAILED` |
+| `usd-camera` | 只用 `/World/Camera` 兜底（`--stream-camera` 是它的废弃别名） |
+| `off` | 完全不改 Camera/View（诊断隔离用，非生产） |
+
+fallback 与 native 都遵守 Stage 不变量：不建新 Stage、不重建 SimulationApp、
+不重启 WebRTC、不改 Experience、不关 Timeline。两者都失败 → 输出
+`[worker] STREAM_VIEW_FAILED reason=...`，worker **继续运行**，
+`stream_view_configured=false`，绝不伪装成功。
+`STREAM_VIEW_READY` 前先检查场景 prim：`/World/robot`、至少一个 cube
+（`/World/red_cube` 等）、`/World/zone_unstack_target` 都必须存在。
+
+### 运行时与证据（同一 World 不变量）
+
 - 运行时目录：`/data/stu_01/workspace/live-runtime/`（inbox/active/events/results）。
-- 证据 `perception.json`、`execution.json`、`final_pose.json`、`progress.jsonl` 全部带
-  `kit_instance_id` / `world_id`，与直播 World 同源。
+- 证据 `perception.json`、`execution.json`、`final_pose.json`、`progress.jsonl`
+  全部带 `kit_instance_id` / `world_id`，与直播 World 同源 ——
+  CONTROL 中执行 strategy 的 World 必须就是 VIDEO 中 WebRTC 显示的 World。
 - 一次只执行一个任务；worker crash 后重启可恢复 active job，不重复执行。
 
-### 第一轮真实验收标准（仅 Persistent Worker，不跑 Cloud E2E）
+### READY 语义（严格区分，禁止混淆）
 
-1. 只有一个 Isaac container（`docker ps`）。
-2. `full.streaming.kit` 正常加载。
-3. 没有 `HydraEngine rtx failed creating scene renderer`，或 renderer 后续明确恢复并出视频。
-4. TCP 49100（信令）正常 LISTEN。
-5. WebRTC Client **只连接一次**（先完全关闭旧 client，再启动单个）。
-6. Client 持续显示真实 Isaac 场景（Franka/cubes），不是黑屏。
-7. 无持续性 `NVST_R_BUSY`。
-8. worker 一直运行，不关闭 SimulationApp。
-9. `app.update()` 一直驱动同一个 App。
-10. 无需启动第二个 Isaac。
+```
+WORKER_READY        != STREAM_VIEW_READY != WEBRTC MEDIA READY
+WORKER_READY        stdout {"status":"WORKER_READY",...}：job loop / runtime 就绪。
+STREAM_VIEW_READY   [worker] STREAM_VIEW_READY mode=... camera=...：Camera/View 配置成功。
+WEBRTC MEDIA READY  只能由真实 WebRTC Client 视频 + media session + 服务器日志共同验收。
+```
 
-以上全部 PASS 后，才加入自定义 Camera（`--stream-camera`）；Camera PASS 后，
-才进行 Huawei → CodeArts → Relay → strategy → 同一 live Worker 的最终 E2E。
+`STREAM_WARMUP_ELAPSED <s>` 只是**已耗时**，不是任何就绪声明。没有固定
+"180s/210s 后即 ready" 的说法。
+
+### NVST_R_BUSY 处理
+
+app 加载期 / client 连接切换期偶发 `NVST_R_BUSY` 属正常，不判失败；但
+**持续 BUSY + WebRTC 黑屏 = 失败**。一个 Isaac 实例只允许一个 WebRTC client：
+只开 Windows Native WebRTC Client ×1（OBS 是 Window Capture，不算第二个 client）；
+不要同时开 browser viewer、不要连续 spam Reload/Connect。
+
+### 第一轮真实验收流程（只测 School → WebRTC Client，先关 OBS/不启动）
+
+```text
+STEP 1  Windows：完全退出所有 Isaac Sim WebRTC Streaming Client（只留一个）。
+        OBS 暂不启动或停止 Streaming。
+STEP 2  同步最新 tools/run_live_isaac_worker.py 到
+        /data/stu_01/workspace/final-live-cloud-closed-loop/tools/
+STEP 3  学校：docker ps —— 只有一个本项目 live Isaac。
+STEP 4  scoped：docker rm -f live-isaac-worker
+STEP 5  用上面的"唯一推荐启动命令"启动。
+STEP 6  docker logs -f live-isaac-worker
+        必须出现 WORKER_READY 与 STREAM_VIEW_READY mode=...
+        若出现 STREAM_VIEW_FAILED → 停止 WebRTC 验收并分析。
+STEP 7  docker ps --filter 'name=^/live-isaac-worker$' \
+        --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+STEP 8  ss -ltnp | grep ':49100' || true
+STEP 9  只启动一个 Windows Native WebRTC Client，连接 10.16.0.40
+        （不要写 10.16.0.40:49100）。
+STEP 10 连接成功后：ss -lunp | grep ':47998' || true
+STEP 11 docker logs --since 5m live-isaac-worker 2>&1 \
+        | grep -Ei 'WORKER_READY|STREAM_VIEW|HydraEngine|renderer|webrtc|NVST|49100|47998|fatal|failed'
+```
+
+### 第一轮真正 PASS 标准（必须同时满足）
+
+```text
+A. 只有一个 Isaac container。
+B. Simulation App Startup Complete。
+C. WORKER_READY。
+D. STREAM_VIEW_READY。
+E. TCP 49100 正常。
+F. 只连接一个 WebRTC Client。
+G. Windows WebRTC Client 能看到 Franka / cube / target（不是纯黑、空地、极近 ground close-up）。
+H. 视频持续更新，不是冻结的一帧。
+I. 连接后媒体正常，必要时看到 UDP 47998。
+J. 没有持续性的 NVST_R_BUSY。
+K. 没有导致黑屏的 HydraEngine rtx failed creating scene renderer
+   （启动早期有 warning 但之后真实画面稳定 → 记录 warning，不误判）。
+L. Worker 一直 Up。
+M. SimulationApp 没 shutdown。
+N. 没有第二个 Isaac。
+==> LIVE WORKER STREAM PASS
+```
+
+### DOF mismatch 追踪（TODO，不在本轮 Camera 修复里处理）
+
+当前日志有 `DOF types mismatch`（USD 对 gripper 第 9 DOF 为 Invalid、Physics tensor
+为 Translation）。本轮不改 Driver。**Streaming PASS 后**，C 真执行验收必须单独验证：
+gripper DOF 7/8、grasp、release、reset、final_pose 没有因该 warning 产生假成功。
+
+### 第一轮 PASS 之后
+
+1. 恢复 OBS：Window Capture = Isaac Sim WebRTC Streaming Client → 开始直播；
+2. Windows：`curl.exe -sS -L -o NUL -w "%{http_code}`n" "http://113.44.1.44/live/isaac/index.m3u8"` 必须 200；
+3. `curl.exe -sS -L "http://113.44.1.44/live/isaac/index.m3u8"` 必须含 `#EXTM3U`；
+4. 之后才进行最终 Cloud E2E（Browser → POST /api/runs → A → B → strategy.v1 →
+   Huawei Job Queue → Windows Relay → School live-runtime → PersistentIsaacSession →
+   adapter.run(strategy)），WebRTC Client 中必须亲眼看到 Franka 运动，
+   且 `execution.json` 的 `provenance.backend=="isaac"`、world_id / kit_instance_id
+   与 livestream worker 一致。
 
 ---
 

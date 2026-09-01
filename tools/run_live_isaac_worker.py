@@ -22,6 +22,15 @@ from tools.relay.runtime_protocol import RuntimeLayout
 
 DEFAULT_RUNTIME_ROOT = Path("/data/stu_01/workspace/live-runtime")
 STREAMING_EXPERIENCE = "/isaac-sim/apps/isaacsim.exp.full.streaming.kit"
+# How to configure the streaming Perspective View:
+#   auto      -> native viewport API first, usd-camera fallback (production)
+#   viewport  -> native viewport API only
+#   usd-camera-> /World/Camera + look-at + viewport binding only
+#   off       -> never touch camera/view (round-1 diagnostic isolation)
+STREAM_VIEW_MODES = ("auto", "viewport", "usd-camera", "off")
+# Frames to let viewport/stage transforms apply after view configuration.
+# This is NOT a stream-readiness wait.
+STREAM_VIEW_WARMUP_FRAMES = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,10 +39,7 @@ class LiveWorldConfig:
     streaming_experience: str = STREAMING_EXPERIENCE
     device: str = "cuda"
     idle_sleep_s: float = 0.05
-    # Round 1 isolation: prove the default streaming stage streams with the
-    # default camera BEFORE touching /World/Camera.  Enabled explicitly with
-    # --stream-camera only after the base streaming path passes.
-    stream_camera: bool = False
+    stream_view_mode: str = "auto"
 
     def __post_init__(self) -> None:
         if Path(self.runtime_root) != DEFAULT_RUNTIME_ROOT:
@@ -44,8 +50,11 @@ class LiveWorldConfig:
             raise ValueError("device must be cpu, cuda or cuda:0")
         if self.idle_sleep_s < 0:
             raise ValueError("idle_sleep_s must not be negative")
-        if not isinstance(self.stream_camera, bool):
-            raise ValueError("stream_camera must be a bool")
+        if self.stream_view_mode not in STREAM_VIEW_MODES:
+            raise ValueError(
+                f"stream_view_mode must be one of {STREAM_VIEW_MODES}, "
+                f"got {self.stream_view_mode!r}"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,15 +168,16 @@ class IsaacDynamicScene:
         )
 
 
-def _ensure_stream_camera(app: Any) -> None:
-    """Point the WebRTC stream at the workspace via an explicit camera.
+def _ensure_stream_camera(app: Any) -> bool:
+    """Point the WebRTC stream at the workspace via /World/Camera.
 
     The camera is framed on the Franka + cube workspace (eye -> target) so the
     client's initial view shows the scene.  A bare camera prim looks straight
     down at the ground (default -Z orientation in a Z-up stage), which made the
-    stream show a zoomed-in close-up of empty ground.  Falls back to the
-    streaming app's default camera when the viewport API is unavailable, so a
-    failure here never aborts the worker.
+    stream show a zoomed-in close-up of empty ground.  Runs on the SAME stage:
+    no create_new_stage, no new SimulationApp, no WebRTC restart, no timeline
+    change.  Returns True only when the camera prim + look-at transform +
+    viewport binding all applied.
     """
     try:
         import omni.kit.app  # noqa: F401  (ensures omni modules are importable)
@@ -206,8 +216,205 @@ def _ensure_stream_camera(app: Any) -> None:
         viewport.camera_path = camera_path
         app.update()
         print("[worker] stream camera ready", flush=True)
+        return True
     except Exception as exc:  # noqa: BLE001
         print(f"[worker] camera setup skipped, using default viewport: {exc}", flush=True)
+        return False
+
+
+def _prim_valid(stage: Any, path: str) -> bool:
+    """True when a USD prim exists at path on stage (works for fake stages too)."""
+    if stage is None:
+        return False
+    try:
+        prim = stage.GetPrimAtPath(path)
+        if not prim:
+            return False
+        return bool(getattr(prim, "IsValid", lambda: True)())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _check_stream_scene_prims(stage: Any) -> tuple[bool, str]:
+    """Verify the prims the stream must show exist before STREAM_VIEW_READY:
+    the robot, at least one cube, and the target zone."""
+    missing = []
+    if not _prim_valid(stage, "/World/robot"):
+        missing.append("/World/robot")
+    if not any(
+        _prim_valid(stage, path)
+        for path in (
+            "/World/red_cube",
+            "/World/green_cube",
+            "/World/red_cube_left",
+            "/World/red_cube_right",
+        )
+    ):
+        missing.append("/World/{red,green,red_cube_left,red_cube_right}_cube")
+    if not _prim_valid(stage, "/World/zone_unstack_target"):
+        missing.append("/World/zone_unstack_target")
+    if missing:
+        return False, "missing prims: " + ", ".join(missing)
+    return True, ""
+
+
+def _get_stream_stage() -> Any:
+    from isaacsim.core.utils.stage import get_current_stage
+
+    return get_current_stage()
+
+
+def _try_native_viewport(app: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """Configure the streaming Perspective View via Isaac's native viewport API.
+
+    Target camera: /OmniverseKit_Persp (Kit default perspective).  The exact
+    ViewportManager signature is NOT assumed statically: several documented
+    call shapes are attempted in order and the working one is logged, so the
+    live Isaac Sim 6.0 run validates the API (NEEDS LIVE ISAAC VALIDATION).
+    Never rebuilds the stage / SimulationApp / WebRTC session / timeline.
+    """
+    try:
+        from isaacsim.core.rendering_manager import ViewportManager
+    except Exception as exc:  # noqa: BLE001
+        return None, f"isaacsim.core.rendering_manager unavailable: {exc}"
+
+    try:
+        manager = ViewportManager.get_instance()
+    except Exception as exc:  # noqa: BLE001
+        return None, f"ViewportManager.get_instance failed: {exc}"
+
+    camera_path = "/OmniverseKit_Persp"
+    eye = [1.30, -1.55, 0.95]
+    target = [0.35, 0.0, 0.25]
+
+    if not hasattr(manager, "set_camera_view"):
+        return None, "ViewportManager instance has no set_camera_view method"
+
+    candidates = (
+        (
+            "ViewportManager.set_camera_view(camera_path, eye=..., target=...) [class]",
+            lambda: ViewportManager.set_camera_view(camera_path, eye=eye, target=target),
+        ),
+        (
+            "manager.set_camera_view(camera_path, eye=..., target=...) [instance]",
+            lambda: manager.set_camera_view(camera_path, eye=eye, target=target),
+        ),
+        (
+            "manager.set_camera_view(camera_path=..., eye=..., target=...)",
+            lambda: manager.set_camera_view(camera_path=camera_path, eye=eye, target=target),
+        ),
+        (
+            "manager.set_camera_view(eye=..., target=...)",
+            lambda: manager.set_camera_view(eye=eye, target=target),
+        ),
+        (
+            "manager.set_camera_view(eye, target, camera_prim_path=...)",
+            lambda: manager.set_camera_view(eye, target, camera_prim_path=camera_path),
+        ),
+    )
+    applied: str | None = None
+    last_error: str | None = None
+    for label, call in candidates:
+        try:
+            call()
+        except Exception as exc:  # noqa: BLE001
+            last_error = f"{label}: {exc}"
+            continue
+        applied = label
+        break
+    if applied is None:
+        return None, f"all set_camera_view call shapes failed; last: {last_error}"
+
+    # Bind the perspective camera prim (same stage, no rebuild) to the active
+    # viewport so the stream renders it.
+    try:
+        from omni.kit.viewport.utility import get_active_viewport
+        from pxr import UsdGeom
+
+        stage = _get_stream_stage()
+        if not stage.GetPrimAtPath(camera_path):
+            UsdGeom.Camera.Define(stage, camera_path)
+        viewport = get_active_viewport()
+        viewport.camera_path = camera_path
+        app.update()
+    except Exception as exc:  # noqa: BLE001
+        return None, f"camera prim / viewport binding failed: {exc}"
+
+    return {"mode": "viewport", "camera": camera_path, "api": applied}, None
+
+
+def _try_usd_camera_fallback(app: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """Fallback: /World/Camera + explicit look-at transform + viewport binding.
+
+    Same invariants as the native path: no new stage, no new SimulationApp,
+    no WebRTC restart, no experience change, timeline untouched.
+    """
+    try:
+        ok = _ensure_stream_camera(app)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"usd-camera setup raised: {exc}"
+    if not ok:
+        return None, "usd-camera setup reported failure"
+    return {"mode": "usd-camera", "camera": "/World/Camera", "api": "ensure_stream_camera"}, None
+
+
+def _configure_stream_view(app: Any, config: LiveWorldConfig) -> dict[str, Any]:
+    """Configure the streaming Perspective View (native first, usd-camera
+    fallback).  Never rebuilds the stage / SimulationApp / WebRTC session.
+
+    Prints STREAM_VIEW_READY / STREAM_VIEW_FAILED / STREAM_VIEW_OFF.
+    STREAM_VIEW_READY only means camera/view configuration succeeded -- it is
+    NOT a WebRTC media readiness claim (that is judged by real client video).
+    The worker keeps running even when the view cannot be configured
+    (configured=false), it never fakes success.
+    """
+    mode = config.stream_view_mode
+    if mode == "off":
+        print("[worker] STREAM_VIEW_OFF (camera/view untouched)", flush=True)
+        return {"mode": "off", "configured": False, "camera": None, "error": None}
+
+    try:
+        stage = _get_stream_stage()
+    except Exception as exc:  # noqa: BLE001
+        reason = f"get_current_stage failed: {exc}"
+        print(f"[worker] STREAM_VIEW_FAILED reason={reason}", flush=True)
+        return {"mode": mode, "configured": False, "camera": None, "error": reason}
+
+    ok, missing = _check_stream_scene_prims(stage)
+    if not ok:
+        reason = f"scene prims not ready: {missing}"
+        print(f"[worker] STREAM_VIEW_FAILED reason={reason}", flush=True)
+        return {"mode": mode, "configured": False, "camera": None, "error": reason}
+
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    if mode in ("auto", "viewport"):
+        result, error = _try_native_viewport(app)
+    if result is None and mode in ("auto", "usd-camera"):
+        if mode == "auto":
+            print(
+                f"[worker] native viewport unavailable ({error}); "
+                "falling back to usd-camera",
+                flush=True,
+            )
+        result, error = _try_usd_camera_fallback(app)
+
+    if result is None:
+        reason = error or "no stream view method succeeded"
+        print(f"[worker] STREAM_VIEW_FAILED reason={reason}", flush=True)
+        return {"mode": mode, "configured": False, "camera": None, "error": reason}
+
+    print(
+        f"[worker] STREAM_VIEW_READY mode={result['mode']} "
+        f"camera={result['camera']} api={result['api']}",
+        flush=True,
+    )
+    return {
+        "mode": result["mode"],
+        "configured": True,
+        "camera": result["camera"],
+        "error": None,
+    }
 
 
 class PersistentIsaacSession:
@@ -220,6 +427,7 @@ class PersistentIsaacSession:
         profile: Any,
         provider_factory: Callable[..., Any],
         adapter_factory: Callable[[Any, dict[str, Any], Any], Any],
+        stream_view_state: dict[str, Any] | None = None,
     ) -> None:
         self.app = app
         self.driver = driver
@@ -227,6 +435,11 @@ class PersistentIsaacSession:
         self.profile = profile
         self.provider_factory = provider_factory
         self.adapter_factory = adapter_factory
+        self.stream_view_state = stream_view_state or {}
+
+    @property
+    def stream_view_configured(self) -> bool:
+        return bool(self.stream_view_state.get("configured"))
 
     @classmethod
     def create(cls, app: Any, config: LiveWorldConfig) -> "PersistentIsaacSession":
@@ -245,10 +458,18 @@ class PersistentIsaacSession:
         # shows up as 'HydraEngine rtx failed creating scene renderer' and
         # NVST_R_BUSY / black WebRTC.  Only the batch runner rebuilds stages.
         driver.connect(defer_start=True, create_stage=False)
+        # Franka / ground / light are created inside connect on the SAME
+        # streaming stage; cubes + target are created here, also on that stage.
         scene = IsaacDynamicScene.create(app)
-        if config.stream_camera:
-            _ensure_stream_camera(app)
-        driver.start()
+        driver.start()  # timeline play + reset + ~10 updates
+        for _ in range(STREAM_VIEW_WARMUP_FRAMES):
+            app.update()
+        # Configure the Perspective Streaming View AFTER the scene exists and
+        # the timeline is playing; then let the view transform apply a few
+        # frames.  30 frames is NOT a stream-readiness wait.
+        stream_view_state = _configure_stream_view(app, config)
+        for _ in range(STREAM_VIEW_WARMUP_FRAMES):
+            app.update()
         profile = load_profile("sim")
         return cls(
             app=app,
@@ -259,6 +480,7 @@ class PersistentIsaacSession:
             adapter_factory=lambda profile, perception, received_driver: ExecutorAdapter.from_profile(
                 profile, perception, driver=received_driver
             ),
+            stream_view_state=stream_view_state,
         )
 
     def reset(self, job: dict[str, Any]) -> None:
@@ -433,42 +655,53 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", choices=("cpu", "cuda", "cuda:0"), default="cuda")
     parser.add_argument("--idle-sleep-s", type=float, default=0.05)
     parser.add_argument(
+        "--stream-view-mode",
+        choices=STREAM_VIEW_MODES,
+        default=None,
+        help="how to configure the streaming Perspective View (default auto = "
+        "native viewport API first, usd-camera fallback)",
+    )
+    parser.add_argument(
         "--stream-camera",
         action="store_true",
-        help="add /World/Camera and point the stream at the workspace "
-        "(round 2; default off to isolate stage/stream behavior first)",
+        help="DEPRECATED alias for --stream-view-mode usd-camera",
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args, _kit_args = build_parser().parse_known_args(argv)
+    stream_view_mode = args.stream_view_mode or (
+        "usd-camera" if args.stream_camera else "auto"
+    )
     built = build_live_world(
         LiveWorldConfig(
             device=args.device,
             idle_sleep_s=args.idle_sleep_s,
-            stream_camera=args.stream_camera,
+            stream_view_mode=stream_view_mode,
         )
     )
     print(
         json.dumps(
             {
                 # WORKER_READY means the job loop / runtime is up.  It is NOT
-                # a streaming readiness claim; the stream is judged separately
-                # by real media in the WebRTC client.
+                # a streaming readiness claim.
                 "status": "WORKER_READY",
                 "kit_instance_id": built.kit_instance_id,
                 "world_id": built.world_id,
                 "runtime_root": str(built.runtime_root),
+                "stream_view_configured": bool(
+                    getattr(built.world, "stream_view_configured", False)
+                ),
             },
             sort_keys=True,
         ),
         flush=True,
     )
     print(
-        "[worker] job loop is up; the streaming app is still loading "
-        "(~3 min). STREAM_WARMUP markers will be printed; open the WebRTC "
-        "client and check for real media (never rely on elapsed time alone)",
+        "[worker] WORKER_READY != STREAM_VIEW_READY != WEBRTC MEDIA READY; "
+        "the stream is judged by real video in the WebRTC client, never by "
+        "elapsed time alone",
         flush=True,
     )
     try:

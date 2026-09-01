@@ -12,10 +12,13 @@ from tests.unit.test_cloud_relay_isaac_job import execute_job
 from tests.unit.test_cloud_orchestrator import perception_document
 from tools.run_live_isaac_worker import (
     DEFAULT_RUNTIME_ROOT,
+    STREAM_VIEW_MODES,
     STREAMING_EXPERIENCE,
     IsaacDynamicScene,
     LiveWorldConfig,
     PersistentIsaacSession,
+    _check_stream_scene_prims,
+    _configure_stream_view,
     build_live_world,
     run_worker_loop,
 )
@@ -63,6 +66,28 @@ class FakeRuntimeWorker:
     def process_once(self):
         self.calls += 1
         return {"status": "IDLE"}
+
+
+class FakeStage:
+    """Minimal stage double: GetPrimAtPath returns a valid prim or None."""
+
+    def __init__(self, paths) -> None:
+        self.paths = set(paths)
+
+    def GetPrimAtPath(self, path):
+        if path in self.paths:
+            return types.SimpleNamespace(IsValid=lambda: True)
+        return None
+
+
+FULL_SCENE_PATHS = {
+    "/World/robot",
+    "/World/red_cube",
+    "/World/green_cube",
+    "/World/red_cube_left",
+    "/World/red_cube_right",
+    "/World/zone_unstack_target",
+}
 
 
 class LiveIsaacEntrypointTests(unittest.TestCase):
@@ -243,12 +268,14 @@ class LiveIsaacEntrypointTests(unittest.TestCase):
     def test_persistent_session_never_rebuilds_the_streaming_stage(self) -> None:
         """Regression: the live worker must keep the streaming app's
         SimulationApp / USD context / Hydra renderer / WebRTC session as ONE
-        instance.  It must call driver.connect(create_stage=False) — never
-        stage_utils.create_new_stage() — and must not touch the custom stream
-        camera by default (round 1 isolation)."""
+        instance.  connect(create_stage=False) must be used exactly once, the
+        stream view must be configured on the same session, and reset must
+        never rebuild the stage / SimulationApp / streaming."""
         app = FakeApp()
         connect_calls = []
         start_calls = []
+        reset_calls = []
+        view_calls = []
 
         class FakeOmniDriver:
             def __init__(self, *args, **kwargs):
@@ -261,6 +288,9 @@ class LiveIsaacEntrypointTests(unittest.TestCase):
             def start(self):
                 start_calls.append(True)
 
+            def reset_for_task(self):
+                reset_calls.append("driver-reset")
+
             def shutdown(self):
                 pass
 
@@ -268,32 +298,222 @@ class LiveIsaacEntrypointTests(unittest.TestCase):
             @staticmethod
             def create(received_app):
                 self.assertIs(received_app, app)
-                return object()
+                return types.SimpleNamespace(reset=lambda _job: reset_calls.append("scene-reset"))
 
-        camera_calls = []
+        def fake_configure_view(received_app, received_config):
+            self.assertIs(received_app, app)
+            self.assertEqual(received_config.stream_view_mode, "auto")
+            view_calls.append(received_config.stream_view_mode)
+            return {"mode": "viewport", "configured": True, "camera": "/OmniverseKit_Persp"}
+
         with (
             patch("modules.executor.isaac_driver.OmniDriver", FakeOmniDriver),
             patch("integration.config.loader.load_profile", return_value=object()),
             patch("tools.run_live_isaac_worker.IsaacDynamicScene", FakeScene),
-            patch(
-                "tools.run_live_isaac_worker._ensure_stream_camera",
-                side_effect=lambda a: camera_calls.append(a),
-            ),
+            patch("tools.run_live_isaac_worker._configure_stream_view", side_effect=fake_configure_view),
         ):
-            PersistentIsaacSession.create(app, LiveWorldConfig())
+            session = PersistentIsaacSession.create(app, LiveWorldConfig())
+            session.reset({"run_id": "run-001", "task": {}})
 
         self.assertEqual(len(connect_calls), 1)
         self.assertIs(connect_calls[0]["defer_start"], True)
         self.assertIs(connect_calls[0]["create_stage"], False)
         self.assertEqual(len(start_calls), 1)
-        # Round 1 isolation: the custom stream camera is OFF by default.
-        self.assertEqual(camera_calls, [])
+        # The stream view is configured once, after the scene exists.
+        self.assertEqual(view_calls, ["auto"])
+        self.assertTrue(session.stream_view_configured)
+        self.assertEqual(session.stream_view_state["camera"], "/OmniverseKit_Persp")
+        # reset() reuses the same stage/SimulationApp/streaming: no extra
+        # connect, no start, no rebuild.
+        self.assertEqual(len(connect_calls), 1)
+        self.assertEqual(len(start_calls), 1)
+        self.assertEqual(reset_calls, ["scene-reset", "driver-reset"])
 
-    def test_stream_camera_switch_is_off_by_default_and_validated(self) -> None:
-        self.assertIs(LiveWorldConfig().stream_camera, False)
-        self.assertIs(LiveWorldConfig(stream_camera=True).stream_camera, True)
+    def test_stream_view_mode_defaults_to_auto_and_validated(self) -> None:
+        self.assertEqual(LiveWorldConfig().stream_view_mode, "auto")
+        for mode in STREAM_VIEW_MODES:
+            self.assertEqual(LiveWorldConfig(stream_view_mode=mode).stream_view_mode, mode)
         with self.assertRaises(ValueError):
-            LiveWorldConfig(stream_camera="yes")
+            LiveWorldConfig(stream_view_mode="bogus")
+
+    def test_check_stream_scene_prims_requires_robot_cube_and_target(self) -> None:
+        ok, _reason = _check_stream_scene_prims(FakeStage(FULL_SCENE_PATHS))
+        self.assertTrue(ok)
+        ok, reason = _check_stream_scene_prims(FakeStage(FULL_SCENE_PATHS - {"/World/robot"}))
+        self.assertFalse(ok)
+        self.assertIn("/World/robot", reason)
+        ok, reason = _check_stream_scene_prims(
+            FakeStage(FULL_SCENE_PATHS - {"/World/red_cube", "/World/green_cube",
+                                          "/World/red_cube_left", "/World/red_cube_right"})
+        )
+        self.assertFalse(ok)
+        self.assertIn("red_cube", reason)
+        ok, reason = _check_stream_scene_prims(FakeStage(FULL_SCENE_PATHS - {"/World/zone_unstack_target"}))
+        self.assertFalse(ok)
+        self.assertIn("zone_unstack_target", reason)
+
+    def test_configure_stream_view_auto_prefers_native_viewport(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        usd_calls = []
+        with (
+            patch("tools.run_live_isaac_worker._get_stream_stage", return_value=FakeStage(FULL_SCENE_PATHS)),
+            patch(
+                "tools.run_live_isaac_worker._try_native_viewport",
+                return_value=({"mode": "viewport", "camera": "/OmniverseKit_Persp", "api": "manager.set_camera_view"}, None),
+            ),
+            patch(
+                "tools.run_live_isaac_worker._try_usd_camera_fallback",
+                side_effect=lambda _a: usd_calls.append(True) or (None, "must not be used"),
+            ),
+        ):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                state = _configure_stream_view(FakeApp(), LiveWorldConfig(stream_view_mode="auto"))
+
+        output = buffer.getvalue()
+        self.assertTrue(state["configured"])
+        self.assertEqual(state["mode"], "viewport")
+        self.assertIn("STREAM_VIEW_READY mode=viewport camera=/OmniverseKit_Persp", output)
+        self.assertEqual(usd_calls, [])
+        self.assertNotIn("STREAM_READY", output)
+
+    def test_configure_stream_view_auto_falls_back_to_usd_camera(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        with (
+            patch("tools.run_live_isaac_worker._get_stream_stage", return_value=FakeStage(FULL_SCENE_PATHS)),
+            patch("tools.run_live_isaac_worker._try_native_viewport", return_value=(None, "no API")),
+            patch(
+                "tools.run_live_isaac_worker._try_usd_camera_fallback",
+                return_value=({"mode": "usd-camera", "camera": "/World/Camera", "api": "ensure_stream_camera"}, None),
+            ),
+        ):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                state = _configure_stream_view(FakeApp(), LiveWorldConfig(stream_view_mode="auto"))
+
+        output = buffer.getvalue()
+        self.assertTrue(state["configured"])
+        self.assertEqual(state["mode"], "usd-camera")
+        self.assertIn("STREAM_VIEW_READY mode=usd-camera camera=/World/Camera", output)
+        self.assertIn("falling back to usd-camera", output)
+        self.assertNotIn("STREAM_READY", output)
+
+    def test_configure_stream_view_auto_failure_keeps_worker_running(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        with (
+            patch("tools.run_live_isaac_worker._get_stream_stage", return_value=FakeStage(FULL_SCENE_PATHS)),
+            patch("tools.run_live_isaac_worker._try_native_viewport", return_value=(None, "native broke")),
+            patch("tools.run_live_isaac_worker._try_usd_camera_fallback", return_value=(None, "usd broke")),
+        ):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                state = _configure_stream_view(FakeApp(), LiveWorldConfig(stream_view_mode="auto"))
+
+        output = buffer.getvalue()
+        self.assertFalse(state["configured"])
+        # auto reports the fallback error (the last attempt) as the reason.
+        self.assertIn("falling back to usd-camera", output)
+        self.assertIn("STREAM_VIEW_FAILED reason=usd broke", output)
+        self.assertNotIn("STREAM_VIEW_READY", output)
+        self.assertNotIn("STREAM_READY", output)
+
+    def test_configure_stream_view_viewport_mode_never_falls_back(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        usd_calls = []
+        with (
+            patch("tools.run_live_isaac_worker._get_stream_stage", return_value=FakeStage(FULL_SCENE_PATHS)),
+            patch("tools.run_live_isaac_worker._try_native_viewport", return_value=(None, "native broke")),
+            patch(
+                "tools.run_live_isaac_worker._try_usd_camera_fallback",
+                side_effect=lambda _a: usd_calls.append(True) or (None, "must not be used"),
+            ),
+        ):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                state = _configure_stream_view(FakeApp(), LiveWorldConfig(stream_view_mode="viewport"))
+
+        self.assertFalse(state["configured"])
+        self.assertIn("STREAM_VIEW_FAILED", buffer.getvalue())
+        self.assertEqual(usd_calls, [])
+
+    def test_configure_stream_view_usd_camera_mode_skips_native(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        native_calls = []
+        with (
+            patch("tools.run_live_isaac_worker._get_stream_stage", return_value=FakeStage(FULL_SCENE_PATHS)),
+            patch(
+                "tools.run_live_isaac_worker._try_native_viewport",
+                side_effect=lambda _a: native_calls.append(True) or (None, "must not be used"),
+            ),
+            patch(
+                "tools.run_live_isaac_worker._try_usd_camera_fallback",
+                return_value=({"mode": "usd-camera", "camera": "/World/Camera", "api": "ensure_stream_camera"}, None),
+            ),
+        ):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                state = _configure_stream_view(FakeApp(), LiveWorldConfig(stream_view_mode="usd-camera"))
+
+        self.assertTrue(state["configured"])
+        self.assertEqual(state["mode"], "usd-camera")
+        self.assertEqual(native_calls, [])
+        self.assertIn("STREAM_VIEW_READY mode=usd-camera", buffer.getvalue())
+
+    def test_configure_stream_view_off_touches_nothing(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        native_calls = []
+        usd_calls = []
+        with (
+            patch(
+                "tools.run_live_isaac_worker._try_native_viewport",
+                side_effect=lambda _a: native_calls.append(True) or (None, "must not be used"),
+            ),
+            patch(
+                "tools.run_live_isaac_worker._try_usd_camera_fallback",
+                side_effect=lambda _a: usd_calls.append(True) or (None, "must not be used"),
+            ),
+        ):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                state = _configure_stream_view(FakeApp(), LiveWorldConfig(stream_view_mode="off"))
+
+        self.assertFalse(state["configured"])
+        self.assertEqual(state["mode"], "off")
+        self.assertIn("STREAM_VIEW_OFF", buffer.getvalue())
+        self.assertEqual(native_calls, [])
+        self.assertEqual(usd_calls, [])
+
+    def test_configure_stream_view_fails_when_scene_prims_missing(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+
+        native_calls = []
+        with (
+            patch("tools.run_live_isaac_worker._get_stream_stage", return_value=FakeStage(set())),
+            patch(
+                "tools.run_live_isaac_worker._try_native_viewport",
+                side_effect=lambda _a: native_calls.append(True) or (None, "must not be used"),
+            ),
+        ):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                state = _configure_stream_view(FakeApp(), LiveWorldConfig(stream_view_mode="auto"))
+
+        self.assertFalse(state["configured"])
+        self.assertIn("STREAM_VIEW_FAILED reason=scene prims not ready", buffer.getvalue())
+        self.assertEqual(native_calls, [])
 
     def test_loop_prints_warmup_elapsed_only_never_stream_ready(self) -> None:
         import io
