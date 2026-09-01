@@ -208,10 +208,11 @@ class PersistentIsaacSession:
         from modules.perception.isaac_ground_truth import IsaacGroundTruthProvider
 
         driver = OmniDriver(app, device=config.device)
-        # A fresh stage is the verified Franka creation path (batch mode).
-        # The stream camera is added explicitly afterwards by
-        # _ensure_stream_camera(), so WebRTC still has a render target.
-        driver.connect(defer_start=True, create_stage=True)
+        # Reuse the streaming app's default stage/camera: recreating the stage
+        # destroys the WebRTC render target (NVST_R_BUSY / black client). The
+        # verified Franka path works on this stage too (confirmed in the run
+        # that only failed later on a runtime-directory permission).
+        driver.connect(defer_start=True, create_stage=False)
         scene = IsaacDynamicScene.create(app)
         _ensure_stream_camera(app)
         driver.start()
@@ -280,8 +281,9 @@ class PersistentIsaacSession:
         return {"execution.json": execution, "final_pose.json": final_pose}
 
     def step(self, *, render: bool = True) -> None:
-        del render
-        self.app.update()
+        # Force a render frame every loop so the WebRTC stream always has
+        # fresh output; without an explicit render the livestream goes BUSY.
+        self.app.update(render=True)
 
     def shutdown(self) -> None:
         self.driver.shutdown()
