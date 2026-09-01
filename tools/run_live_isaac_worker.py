@@ -208,7 +208,10 @@ class PersistentIsaacSession:
         from modules.perception.isaac_ground_truth import IsaacGroundTruthProvider
 
         driver = OmniDriver(app, device=config.device)
-        driver.connect(defer_start=True, create_stage=False)
+        # A fresh stage is the verified Franka creation path (batch mode).
+        # The stream camera is added explicitly afterwards by
+        # _ensure_stream_camera(), so WebRTC still has a render target.
+        driver.connect(defer_start=True, create_stage=True)
         scene = IsaacDynamicScene.create(app)
         _ensure_stream_camera(app)
         driver.start()
@@ -315,7 +318,15 @@ def build_live_world(
             world_id=world_id,
         )
     except Exception:
-        app.close()
+        import traceback
+
+        # Print the real failure before any teardown: closing the app on a
+        # partially-initialized streaming Kit can itself abort the process.
+        traceback.print_exc()
+        try:
+            app.close()
+        except Exception:  # noqa: BLE001
+            pass
         raise
     return BuiltLiveWorld(
         app=app,
