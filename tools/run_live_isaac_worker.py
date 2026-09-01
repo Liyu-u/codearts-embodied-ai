@@ -156,8 +156,12 @@ class IsaacDynamicScene:
 def _ensure_stream_camera(app: Any) -> None:
     """Point the WebRTC stream at the workspace via an explicit camera.
 
-    Falls back to the streaming app's default camera when the viewport API
-    is unavailable, so a failure here never aborts the worker.
+    The camera is framed on the Franka + cube workspace (eye -> target) so the
+    client's initial view shows the scene.  A bare camera prim looks straight
+    down at the ground (default -Z orientation in a Z-up stage), which made the
+    stream show a zoomed-in close-up of empty ground.  Falls back to the
+    streaming app's default camera when the viewport API is unavailable, so a
+    failure here never aborts the worker.
     """
     try:
         import omni.kit.app  # noqa: F401  (ensures omni modules are importable)
@@ -169,11 +173,29 @@ def _ensure_stream_camera(app: Any) -> None:
         camera_path = "/World/Camera"
         if not stage.GetPrimAtPath(camera_path):
             camera = UsdGeom.Camera.Define(stage, camera_path)
-            camera.GetFocalLengthAttr().Set(24.0)
-            xformable = UsdGeom.Xformable(camera)
-            xformable.ClearXformOpOrder()
-            xformable.AddTranslateOp().Set(Gf.Vec3d(1.4, -1.8, 1.1))
-            xformable.AddRotateXYZOp().Set(Gf.Vec3d(0.0, -35.0, 0.0))
+        else:
+            camera = UsdGeom.Camera(stage.GetPrimAtPath(camera_path))
+        camera.GetFocalLengthAttr().Set(23.0)
+        # Frame the workspace: camera above/beside the origin, looking at the
+        # cubes' area so Franka + targets fill the view.
+        eye = Gf.Vec3d(1.30, -1.55, 0.95)
+        target = Gf.Vec3d(0.35, 0.0, 0.25)
+        up = Gf.Vec3d(0.0, 0.0, 1.0)
+        forward = target - eye
+        forward = forward / (forward.GetLength() or 1.0)
+        z_axis = -forward  # cameras look along their local -Z
+        x_axis = up.Cross(z_axis)
+        x_axis = x_axis / (x_axis.GetLength() or 1.0)
+        y_axis = z_axis.Cross(x_axis)
+        matrix = Gf.Matrix4d(
+            x_axis[0], y_axis[0], z_axis[0], eye[0],
+            x_axis[1], y_axis[1], z_axis[1], eye[1],
+            x_axis[2], y_axis[2], z_axis[2], eye[2],
+            0.0, 0.0, 0.0, 1.0,
+        )
+        xformable = UsdGeom.Xformable(camera)
+        xformable.ClearXformOpOrder()
+        xformable.AddTransformOp().Set(matrix)
         viewport = get_active_viewport()
         viewport.camera_path = camera_path
         app.update()
@@ -281,9 +303,11 @@ class PersistentIsaacSession:
         return {"execution.json": execution, "final_pose.json": final_pose}
 
     def step(self, *, render: bool = True) -> None:
-        # Force a render frame every loop so the WebRTC stream always has
-        # fresh output; without an explicit render the livestream goes BUSY.
-        self.app.update(render=True)
+        # Drive one Kit frame.  Plain app.update() keeps the livestream
+        # encoder fed (verified on the live server); render=True is not part
+        # of the stable SimulationApp.update() signature.
+        del render
+        self.app.update()
 
     def shutdown(self) -> None:
         self.driver.shutdown()
