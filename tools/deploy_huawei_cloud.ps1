@@ -56,6 +56,7 @@ function Send-Bundle {
         "demo", "integration", "modules", "tools", "deploy", "contracts"
     )
     $tarArgs = @(
+        "-C", $SourceDir,
         "-czf", $bundle,
         "--exclude=__pycache__",
         "--exclude=*.pyc",
@@ -64,7 +65,7 @@ function Send-Bundle {
         "--exclude=reports"
     )
     $tarArgs += $include
-    & tar @tarArgs -C $SourceDir | Out-Null
+    & tar @tarArgs | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "failed to create source bundle" }
     & scp "$bundle" "$SshAlias`:$releaseDir/bundle.tar.gz"
     if ($LASTEXITCODE -ne 0) { throw "bundle upload failed" }
@@ -72,9 +73,11 @@ function Send-Bundle {
 }
 
 function DeployCandidate-Phase {
+    Invoke-Remote "mkdir -p $releaseDir/.cloud-runtime"
+    Send-Bundle
     $setup = @(
-        "mkdir -p $releaseDir",
         "tar -xzf $releaseDir/bundle.tar.gz -C $releaseDir",
+        "chown -R codearts:codearts $releaseDir",
         "$remoteBase/venv/bin/python -m py_compile `$(find $releaseDir -name '*.py' -not -path '*__pycache__*')"
     )
     Invoke-Remote ($setup -join " && ")
