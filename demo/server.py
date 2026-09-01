@@ -870,8 +870,10 @@ class DemoHandler(BaseHTTPRequestHandler):
 def main() -> None:
     global _MODEL_CONFIG
     _MODEL_CONFIG = configure_runtime_environment()
-    host = os.environ.get("DEMO_HOST", "127.0.0.1")
-    port = int(os.environ.get("DEMO_PORT", "8765"))
+    # CLOUD_BIND_* is the candidate deployment contract; DEMO_* stays as the
+    # legacy dev fallback (production unit keeps 8765, candidate uses 8876).
+    host = os.environ.get("CLOUD_BIND_HOST", os.environ.get("DEMO_HOST", "127.0.0.1"))
+    port = int(os.environ.get("CLOUD_BIND_PORT", os.environ.get("DEMO_PORT", "8765")))
     server = ThreadingHTTPServer((host, port), DemoHandler)
     print(f"Closed-loop demo: http://{host}:{port}/")
     print("Press Ctrl+C to stop.")

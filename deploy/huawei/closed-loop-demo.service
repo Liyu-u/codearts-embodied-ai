@@ -1,0 +1,25 @@
+# systemd unit for the embodied-ai closed-loop candidate (127.0.0.1:8876).
+# The candidate is deployed to /opt/codearts/releases/<sha>/; production 8765
+# and the MediaMTX Livestream (/live/) are left untouched.
+# Install: /etc/systemd/system/closed-loop-demo.service
+[Unit]
+Description=CodeArts embodied-ai closed-loop candidate (127.0.0.1:8876)
+After=network.target
+
+[Service]
+Type=simple
+User=codearts
+Group=codearts
+WorkingDirectory=/opt/codearts/current
+EnvironmentFile=/etc/codearts/demo.env
+# The server reads CLOUD_BIND_HOST/CLOUD_BIND_PORT from the environment file
+# (candidate binds 127.0.0.1:8876; production keeps 8765 on a separate unit).
+ExecStart=/opt/codearts/venv/bin/python -m demo.server
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/codearts/current/.cloud-runtime
+
+[Install]
+WantedBy=multi-user.target
