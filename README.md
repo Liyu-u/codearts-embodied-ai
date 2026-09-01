@@ -240,6 +240,11 @@ python tools/run_codearts_testsets.py --live --policy quality --repeats 3 `
 
 前端接口、配置方法、当前 Demo 边界和后续 Isaac Sim/RGB-D/真机接入要求见 [`docs/前端接口与仿真平台接入说明.md`](docs/前端接口与仿真平台接入说明.md)。
 
+真实上线（华为云 + Windows Relay + Persistent Live Isaac Worker + HLS）的部署、运维、
+Livestream 人工门禁与回滚，见 [`docs/华为云真实闭环部署与Livestream运维手册.md`](docs/华为云真实闭环部署与Livestream运维手册.md)。
+`demo/` 下同步 Mock 接口（含旧 `POST /api/run`）仅作为开发/调试用途，不用于线上验收；
+线上使用异步 `POST /api/runs` + `after_sequence` 事件轮询 + 同源 HLS（`/live/isaac/index.m3u8`）。
+
 上线前最终验收使用 `tools/run_final_acceptance.py`，按离线回归、CodeArts 在线、LLM 留出泛化、Isaac Sim HIL 和 RGB-D 相机 HIL 五档分别出具证据。完整矩阵见 `testdata/acceptance/final_acceptance_matrix_v1.json`；只有五档全部 `PASS` 才能将仿真平台报告判定为上线可接受。
 
 ### 6.4 远程 Isaac Sim 验收
