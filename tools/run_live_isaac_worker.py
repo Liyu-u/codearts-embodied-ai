@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from uuid import uuid4
+
+# The worker is invoked as tools/run_live_isaac_worker.py inside the
+# container; put the repo root on sys.path so the tools package resolves.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.live_worker.runtime import LiveRuntimeWorker
 from tools.relay.runtime_protocol import RuntimeLayout
