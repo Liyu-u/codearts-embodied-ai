@@ -485,6 +485,14 @@ class CloudStore:
             raise KeyError(job_id)
         return self._job_from_row(row)
 
+    def list_jobs(self, run_id: str) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM jobs WHERE run_id=? ORDER BY created_at, job_id",
+                (run_id,),
+            ).fetchall()
+        return [self._job_from_row(row) for row in rows]
+
     def list_events(self, run_id: str, *, after_sequence: int = 0) -> list[dict[str, Any]]:
         with self._connection() as connection:
             rows = connection.execute(
