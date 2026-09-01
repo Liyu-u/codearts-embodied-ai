@@ -184,9 +184,9 @@ def _ensure_stream_camera(app: Any) -> None:
         forward = target - eye
         forward = forward / (forward.GetLength() or 1.0)
         z_axis = -forward  # cameras look along their local -Z
-        x_axis = up.Cross(z_axis)
+        x_axis = Gf.Cross(up, z_axis)  # Gf.Cross is a module function, not a method
         x_axis = x_axis / (x_axis.GetLength() or 1.0)
-        y_axis = z_axis.Cross(x_axis)
+        y_axis = Gf.Cross(z_axis, x_axis)
         matrix = Gf.Matrix4d(
             x_axis[0], y_axis[0], z_axis[0], eye[0],
             x_axis[1], y_axis[1], z_axis[1], eye[1],
@@ -414,6 +414,11 @@ def main(argv: list[str] | None = None) -> int:
             },
             sort_keys=True,
         ),
+        flush=True,
+    )
+    print(
+        "[worker] wait for 'app ready' (~3.5 min) before opening the "
+        "WebRTC client; NVST_R_BUSY before that is expected",
         flush=True,
     )
     try:
