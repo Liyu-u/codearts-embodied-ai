@@ -71,8 +71,7 @@ class Remote:
         self.scp_base = ["scp", "-P", str(port), "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", "-o", "StrictHostKeyChecking=no", "-i", str(key)]
 
     def run(self, command: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
-        encoded = base64.b64encode(command.encode("utf-8")).decode("ascii")
-        remote = f"printf '%s' '{encoded}' | base64 -d | bash"
+        remote = encode_remote_bash(command)
         return subprocess.run([*self.base, self.spec, remote], text=True, capture_output=True, check=check)
 
     def upload(self, local: Path, remote: str) -> None:
@@ -80,6 +79,13 @@ class Remote:
 
     def download(self, remote: str, local: Path) -> None:
         subprocess.run([*self.scp_base, f"{self.spec}:{remote}", str(local)], check=True)
+
+
+def encode_remote_bash(command: str) -> str:
+    """Encode one fixed local command without interpolating it into SSH syntax."""
+
+    encoded = base64.b64encode(command.encode("utf-8")).decode("ascii")
+    return f"printf '%s' '{encoded}' | base64 -d | bash"
 
 
 def _write(path: Path, value: Any) -> None:
