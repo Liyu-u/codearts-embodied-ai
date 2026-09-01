@@ -20,7 +20,7 @@ import time
 from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
 
@@ -30,6 +30,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from integration.config.local_env import load_codearts_env, load_local_env  # noqa: E402
+from demo.cloud.security import MAX_JSON_BYTES, read_json_body  # noqa: E402
+from demo.cloud.service import configure_cloud_service, get_cloud_service  # noqa: E402
 
 MODEL_CONFIG_PATH = ROOT / ".model_config.local.json"
 _MODEL_IDS = ("A", "B", "C", "D")
@@ -212,10 +214,6 @@ def _merge_model_config(payload: dict, current: dict) -> dict:
 
 
 _MODEL_CONFIG = _load_model_config()
-_CLOUD_SERVICE = configure_cloud_service()
-
-
-from demo.cloud.service import configure_cloud_service, get_cloud_service  # noqa: E402
 from demo.scenarios import get_scenario, list_scenarios  # noqa: E402
 from integration.adapters import intent, strategy, tracecoder  # noqa: E402
 from integration.adapters import perception as perception_adapter  # noqa: E402
@@ -472,8 +470,110 @@ def _livestream_catalog() -> dict:
         "source": "mediamtx" if url else None,
     }
 
+class PayloadTooLarge(ValueError):
+    pass
+
+
 class DemoHandler(BaseHTTPRequestHandler):
     server_version = "ClosedLoopDemo/1.0"
+
+    def _read_json_payload(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length > MAX_JSON_BYTES:
+            raise PayloadTooLarge(f"json body exceeds {MAX_JSON_BYTES} bytes")
+        payload = read_json_body(self.rfile.read(length) or b"{}")
+        if not isinstance(payload, dict):
+            raise ValueError("JSON body must be an object")
+        return payload
+
+    def _require_browser(self, action: str):
+        return get_cloud_service().authorize_browser(self.headers.get("Cookie"), action)
+
+    def _handle_relay_post(self, path: str) -> bool:
+        if not path.startswith("/api/relay/"):
+            return False
+        service = get_cloud_service()
+        try:
+            service.require_relay(self.headers.get("Authorization"))
+        except (PermissionError, RuntimeError) as exc:
+            self._send_json(401, {"ok": False, "error": str(exc)})
+            return True
+        try:
+            payload = self._read_json_payload()
+        except PayloadTooLarge as exc:
+            self._send_json(413, {"ok": False, "error": str(exc)})
+            return True
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            self._send_json(400, {"ok": False, "error": str(exc)})
+            return True
+
+        parts = path.strip("/").split("/")
+        try:
+            if path == "/api/relay/register":
+                relay = service.relay_register(
+                    str(payload.get("relay_id") or ""), payload.get("status") or {}
+                )
+                self._send_json(200, {"ok": True, "relay": relay})
+                return True
+            if path == "/api/relay/heartbeat":
+                relay = service.relay_heartbeat(
+                    str(payload.get("relay_id") or ""), payload.get("status") or {}
+                )
+                self._send_json(200, {"ok": True, "relay": relay})
+                return True
+            if path == "/api/relay/jobs/claim":
+                job = service.relay_claim(
+                    str(payload.get("relay_id") or ""),
+                    int(payload.get("lease_ms") or 20_000),
+                )
+                self._send_json(200, {"ok": True, "job": job})
+                return True
+            if len(parts) == 5 and parts[:3] == ["api", "relay", "jobs"]:
+                job_id, operation = parts[3], parts[4]
+                relay_id = str(payload.get("relay_id") or "")
+                if operation == "lease":
+                    job = service.relay_renew(
+                        job_id, relay_id, int(payload.get("lease_ms") or 20_000)
+                    )
+                    self._send_json(200, {"ok": True, "job": job})
+                    return True
+                if operation == "events":
+                    events = payload.get("events")
+                    if not isinstance(events, list):
+                        raise ValueError("events must be an array")
+                    inserted = service.relay_events(job_id, relay_id, events)
+                    self._send_json(200, {"ok": True, "inserted": inserted})
+                    return True
+                if operation == "artifacts":
+                    service.relay_artifact(
+                        job_id,
+                        relay_id,
+                        str(payload.get("artifact_name") or ""),
+                        payload.get("value"),
+                    )
+                    self._send_json(200, {"ok": True})
+                    return True
+                if operation == "complete":
+                    run = service.relay_complete(
+                        job_id,
+                        relay_id,
+                        succeeded=payload.get("succeeded") is True,
+                        error=str(payload.get("error")) if payload.get("error") else None,
+                    )
+                    self._send_json(200, {"ok": True, "run": run})
+                    return True
+            self._send_json(404, {"ok": False, "error": "relay route not found"})
+            return True
+        except PermissionError as exc:
+            self._send_json(409, {"ok": False, "error": str(exc)})
+            return True
+        except KeyError as exc:
+            self._send_json(404, {"ok": False, "error": f"not found: {exc}"})
+            return True
+        except ValueError as exc:
+            status = 409 if "lease" in str(exc).lower() or "active" in str(exc).lower() else 400
+            self._send_json(status, {"ok": False, "error": str(exc)})
+            return True
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         self._send_bytes(204, b"", "text/plain; charset=utf-8")
@@ -525,7 +625,7 @@ class DemoHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"settings": _settings_catalog()})
             return
         if parsed.path == "/api/livestream":
-            self._send_json(200, _livestream_catalog())
+            self._send_json(200, get_cloud_service().livestream())
             return
 
         if parsed.path == "/api/model-config":
@@ -541,20 +641,33 @@ class DemoHandler(BaseHTTPRequestHandler):
             self._send_json(200, get_cloud_service().health())
             return
         if parsed.path == "/api/runs":
-            runs = [get_cloud_service().get_run(row["run_id"]) for row in get_cloud_service().store.list_runs()]
-            self._send_json(200, {"runs": runs})
+            try:
+                self._require_browser("read")
+                self._send_json(200, {"runs": get_cloud_service().list_runs()})
+            except PermissionError as exc:
+                self._send_json(401, {"ok": False, "error": str(exc)})
             return
         if parsed.path.startswith("/api/runs/") and parsed.path.endswith("/events"):
             run_id = parsed.path.split("/")[3]
             try:
-                self._send_json(200, {"events": get_cloud_service().get_events(run_id)})
+                self._require_browser("read")
+                query = parse_qs(parsed.query)
+                after_sequence = int((query.get("after_sequence") or [0])[0])
+                self._send_json(200, {"events": get_cloud_service().get_events(run_id, after_sequence)})
+            except PermissionError as exc:
+                self._send_json(401, {"ok": False, "error": str(exc)})
+            except (ValueError, KeyError) as exc:
+                self._send_json(400, {"ok": False, "error": str(exc)})
             except KeyError:
                 self._send_json(404, {"ok": False, "error": "run not found"})
             return
         if parsed.path.startswith("/api/runs/"):
             run_id = parsed.path.split("/")[3]
             try:
+                self._require_browser("read")
                 self._send_json(200, {"run": get_cloud_service().get_run(run_id)})
+            except PermissionError as exc:
+                self._send_json(401, {"ok": False, "error": str(exc)})
             except KeyError:
                 self._send_json(404, {"ok": False, "error": "run not found"})
             return
@@ -562,6 +675,8 @@ class DemoHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        if self._handle_relay_post(parsed.path):
+            return
         if parsed.path == "/api/tasks":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
@@ -592,11 +707,19 @@ class DemoHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/runs":
             try:
-                length = int(self.headers.get("Content-Length", "0"))
-                payload = json.loads(self.rfile.read(length) or b"{}")
-                run = get_cloud_service().create_run(str(payload.get("scene_id") or ""), str(payload.get("instruction") or ""))
+                session = self._require_browser("create_run")
+                payload = self._read_json_payload()
+                run = get_cloud_service().create_run(
+                    str(payload.get("scene_id") or ""),
+                    str(payload.get("instruction") or ""),
+                    session.user_id,
+                )
                 self._send_json(202, {"ok": True, "run": run})
-            except ValueError as exc:
+            except PermissionError as exc:
+                self._send_json(401, {"ok": False, "error": str(exc)})
+            except PayloadTooLarge as exc:
+                self._send_json(413, {"ok": False, "error": str(exc)})
+            except (ValueError, KeyError) as exc:
                 self._send_json(400, {"ok": False, "error": str(exc)})
             except Exception as exc:
                 self._send_json(500, {"ok": False, "error": f"cloud run error: {exc}"})
@@ -664,7 +787,7 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
         self.end_headers()
         if body:

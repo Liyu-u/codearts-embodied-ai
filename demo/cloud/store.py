@@ -476,6 +476,13 @@ class CloudStore:
             raise KeyError(run_id)
         return self._run_from_row(row)
 
+    def list_runs(self) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM runs ORDER BY created_at DESC, run_id DESC"
+            ).fetchall()
+        return [self._run_from_row(row) for row in rows]
+
     def get_job(self, job_id: str) -> dict[str, Any]:
         with self._connection() as connection:
             row = connection.execute(
@@ -548,3 +555,15 @@ class CloudStore:
         value = dict(row)
         value["status"] = _json_load(value.pop("status_json"), {})
         return value
+
+    def list_relay_sessions(self) -> list[dict[str, Any]]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM relay_sessions ORDER BY last_seen_at DESC, relay_id"
+            ).fetchall()
+        values: list[dict[str, Any]] = []
+        for row in rows:
+            value = dict(row)
+            value["status"] = _json_load(value.pop("status_json"), {})
+            values.append(value)
+        return values
