@@ -152,6 +152,35 @@ class CloudHttpAcceptanceTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertFalse(invalid["ok"])
 
+    def test_login_issues_operator_cookie_and_blocks_bad_credentials(self) -> None:
+        import os
+        from unittest.mock import patch
+
+        with patch.dict(os.environ, {"CLOUD_OPERATOR_PASSWORD": "test-operator-pw"}):
+            status, ok = self.request(
+                "POST",
+                "/api/login",
+                {"user": "op-001", "password": "test-operator-pw"},
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(ok["role"], "operator")
+            self.assertEqual(ok["user"], "op-001")
+
+            status, bad = self.request(
+                "POST", "/api/login", {"user": "op-001", "password": "wrong"}
+            )
+            self.assertEqual(status, 401)
+            self.assertFalse(bad["ok"])
+
+    def test_session_endpoint_reports_anonymous_and_logout_clears(self) -> None:
+        status, anonymous = self.request("GET", "/api/session")
+        self.assertEqual(status, 200)
+        self.assertFalse(anonymous["authenticated"])
+
+        status, logged_out = self.request("POST", "/api/logout", {})
+        self.assertEqual(status, 200)
+        self.assertTrue(logged_out["ok"])
+
     def test_relay_auth_claim_lease_events_artifacts_and_completion(self) -> None:
         status, _ = self.request(
             "POST",

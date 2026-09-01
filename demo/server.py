@@ -474,6 +474,27 @@ class PayloadTooLarge(ValueError):
     pass
 
 
+def _https_enabled() -> bool:
+    """True when the deployment serves HTTPS (sets Secure on session cookies)."""
+    return os.getenv("CLOUD_HTTPS", "") == "1"
+
+
+def _format_cookie(cookie: dict) -> str:
+    """Serialize the IssuedSession cookie metadata into a Set-Cookie value."""
+    parts = [f"{cookie['Name']}={cookie['Value']}"]
+    if cookie.get("HttpOnly"):
+        parts.append("HttpOnly")
+    if cookie.get("SameSite"):
+        parts.append(f"SameSite={cookie['SameSite']}")
+    if cookie.get("Secure"):
+        parts.append("Secure")
+    if cookie.get("Path"):
+        parts.append(f"Path={cookie['Path']}")
+    if cookie.get("Max-Age"):
+        parts.append(f"Max-Age={cookie['Max-Age']}")
+    return "; ".join(parts)
+
+
 class DemoHandler(BaseHTTPRequestHandler):
     server_version = "ClosedLoopDemo/1.0"
 
@@ -627,6 +648,12 @@ class DemoHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/livestream":
             self._send_json(200, get_cloud_service().livestream())
             return
+        if parsed.path == "/api/session":
+            self._send_json(
+                200,
+                get_cloud_service().current_session(self.headers.get("Cookie")),
+            )
+            return
 
         if parsed.path == "/api/model-config":
             self._send_json(200, {"config": _public_model_config(_MODEL_CONFIG)})
@@ -704,6 +731,38 @@ class DemoHandler(BaseHTTPRequestHandler):
                 return
             scene_id = str(payload.get("id") or f"scene-{uuid4().hex[:8]}")
             self._send_json(201, {"ok": True, "scene": {"id": scene_id, "name": payload.get("name", "新建场景"), "status": "DRAFT", "objects": 0, "revision": "1"}})
+            return
+        if parsed.path == "/api/login":
+            try:
+                payload = self._read_json_payload()
+                issued = get_cloud_service().login(
+                    str(payload.get("user") or ""),
+                    str(payload.get("password") or ""),
+                    https=_https_enabled(),
+                )
+                self._send_json_with_cookie(
+                    200,
+                    {
+                        "ok": True,
+                        "user": issued.record.user_id,
+                        "role": issued.record.role.value,
+                    },
+                    _format_cookie(issued.cookie),
+                )
+            except PermissionError as exc:
+                self._send_json(401, {"ok": False, "error": str(exc)})
+            except PayloadTooLarge as exc:
+                self._send_json(413, {"ok": False, "error": str(exc)})
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                self._send_json(400, {"ok": False, "error": str(exc)})
+            return
+        if parsed.path == "/api/logout":
+            get_cloud_service().logout(self.headers.get("Cookie"))
+            self._send_json_with_cookie(
+                200,
+                {"ok": True},
+                "closed_loop_session=; Path=/; HttpOnly; Max-Age=0",
+            )
             return
         if parsed.path == "/api/runs":
             try:
@@ -789,6 +848,17 @@ class DemoHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def _send_json_with_cookie(self, status: int, payload: dict, cookie_value: str) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Set-Cookie", cookie_value)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         if body:
             self.wfile.write(body)

@@ -1,18 +1,95 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>具身智能机器人平台</title><link rel="stylesheet" href="/styles.css"></head><body><div class="app">
-<aside class="side"><div class="brand"><span>◇</span><div><b>具身智能机器人平台</b></div></div><nav class="side-nav" aria-label="主导航">
-<button class="nav active" data-page="home" title="总览"><span aria-hidden="true">▦</span><em>总览</em></button>
-<button class="nav" data-page="tasks" title="任务管理"><span aria-hidden="true">⌁</span><em>任务管理</em></button>
-<button class="nav" data-page="twin" title="数字孪生"><span aria-hidden="true">◇</span><em>数字孪生</em></button>
-<button class="nav" data-page="robots" title="机器人管理"><span aria-hidden="true">♙</span><em>机器人管理</em></button>
-<button class="nav" data-page="scenes" title="场景管理"><span aria-hidden="true">⌗</span><em>场景管理</em></button>
-<button class="nav" data-page="data" title="数据管理"><span aria-hidden="true">▤</span><em>数据管理</em></button>
-<button class="nav" data-page="models" title="模型管理"><span aria-hidden="true">◈</span><em>模型管理</em></button><button class="nav" data-page="model-config" title="模型配置"><span aria-hidden="true">⚙</span><em>模型配置</em></button>
-<button class="nav" data-page="logs" title="日志与审计"><span aria-hidden="true">☷</span><em>日志与审计</em></button>
-<button class="nav" data-page="settings" title="系统设置"><span aria-hidden="true">⚙</span><em>系统设置</em></button>
-</nav><div class="side-bottom"><p>●　默认工作区　⌄</p><p><strong>R</strong> robot_admin　›</p></div></aside>
-<main class="main"><header class="top"><div class="title">‹<div><small id="pageKicker">工作台 / 总览</small><h1 id="pageTitle">任务执行中心</h1></div></div><div class="stats"><span id="health">●　服务连接中</span><label>系统时间<b id="clock">—</b></label><label>任务执行<b>3 / 8</b></label><label>CPU<b>32%</b></label><label>内存<b>46%</b></label></div><div class="actions"><button id="mode">运行模式<br><b>自动执行</b></button><select id="robot"><option>RBT-001</option><option>RBT-002（接口占位）</option></select><button>♧</button><button>⚙</button></div></header>
-<section id="homeView" class="page-view home-view"><section class="layout"><div class="left"><article class="panel task"><header><div><h2>任务输入</h2></div><button id="clear">清空</button></header><label>自然语言任务指令</label><textarea id="instruction" rows="3" placeholder="例如：把绿色方块放到桌子上"></textarea><div class="counter"><span id="count">0 / 200</span><span>支持自然语言、目标物和目的地描述</span></div><div class="task-actions"><button id="voice">♩ 语音输入<small>接口占位</small></button><button class="primary" id="run">▶ 开始执行</button></div></article><article class="panel recent"><header><div><h2>最近任务</h2></div><button id="all">查看全部</button></header><div id="recent"><i></i><i></i><i></i></div></article><article class="panel contract"><header><div><h2>接口状态</h2></div><b>已预留</b></header><p>●　闭环运行　<code>POST /api/run</code><em>已连接</em></p><p>●　实时事件　<code>WS /api/events</code><em>待接入</em></p><p>●　视频遥测　<code>GET /api/robots/{id}</code><em>待接入</em></p></article></div>
-<div class="center"><article class="panel scene-panel"><header><div><h2>数字孪生视图 <i>● 场景在线</i></h2></div><div class="tools"><button class="active">3D</button><button id="view2d">2D</button><button>⌗</button><select><option>主相机</option><option>俯视相机（占位）</option></select><button id="full">⛶</button></div></header><div class="scene" id="scene"><span class="live">● 实时仿真 · Sim-RTX</span><svg id="svg" viewBox="0 0 960 500"></svg><span class="placeholder" id="placeholder">3D 场景接口占位<small>真实仿真画面 / 视频流接入后将在此替换</small></span><div class="scene-buttons"><button>⌖ 坐标轴</button><button>◌ 碰撞体</button><button>⌁ 轨迹</button><button>⌗ 检测框</button></div></div><footer>场景：<b id="sceneName">—</b>　目标物：<b id="objectCount">—</b>　轨迹点：<b id="pointCount">—</b>　置信度：<b id="confidence">—</b><code>GET /api/scenes/{id}</code></footer></article>
-<article class="panel flow"><header><div><h2>四模块协同工作链路</h2></div><span id="flowStatus">● 等待运行</span></header><div class="flow-grid"><section data-stage="perception"><b>01 <i>待运行</i></b><h3>感知与理解</h3><p>环境识别 · 目标检测 · 语义理解</p><main id="perception"><small>等待感知输入</small></main><footer>置信度 <strong id="perceptionMetric">—</strong></footer></section><strong class="arrow">→</strong><section data-stage="planning"><b>02 <i>待运行</i></b><h3>任务规划</h3><p>任务分解 · 路径规划 · 约束校验</p><main id="planning"><small>等待任务理解</small></main><footer>步骤数 <strong id="planningMetric">—</strong></footer></section><strong class="arrow">→</strong><section data-stage="execution"><b>03 <i>待运行</i></b><h3>动作执行</h3><p>轨迹跟踪 · 力控执行 · 安全监控</p><main id="execution"><small>等待可执行策略</small></main><footer>执行进度 <strong id="executionMetric">—</strong></footer></section><strong class="arrow">→</strong><section data-stage="verification"><b>04 <i>待运行</i></b><h3>结果验证</h3><p>执行复核 · 状态确认 · 反馈优化</p><main id="verification"><small>等待执行证据</small></main><footer>验证结果 <strong id="verificationMetric">—</strong></footer></section></div><div class="loop">↺ 验证反馈 / 数据闭环 ↶</div></article></div>
-<aside class="right"><article class="panel robot"><header><div><h2>机器人状态</h2></div><b>正常</b></header><div class="robot-info"><div class="robot-drawing"></div><div><h3>RBT-001</h3><i>● 就绪</i><small>AUBO i10</small><small>IP 地址　192.168.1.10</small><small>负载　2.1 / 10.0 kg</small></div></div><h4>关节状态 <span>实时接口占位</span></h4><div class="joints"><p>J1 <b>-45.12°</b><i><em style="width:62%"></em></i><small>12.5°/s</small></p><p>J2 <b>-30.45°</b><i><em style="width:41%"></em></i><small>8.3°/s</small></p><p>J3 <b>78.23°</b><i><em style="width:72%"></em></i><small>15.2°/s</small></p><p>J4 <b>15.67°</b><i><em style="width:35%"></em></i><small>6.1°/s</small></p><p>J5 <b>95.21°</b><i><em style="width:64%"></em></i><small>10.0°/s</small></p><p>J6 <b>-120.33°</b><i><em style="width:56%"></em></i><small>9.7°/s</small></p></div><div class="health-list"><p>安全模式 <b>● 正常</b></p><p>急停状态 <b>● 未触发</b></p><p>防护门 <b class="warn">● 关闭</b></p><p>碰撞检测 <b>● 正常</b></p><p>当前速度倍率 <strong>100%</strong></p></div></article><article class="panel runtime"><header><div><h2>执行进度</h2></div><span id="runtimeState">待运行</span></header><div class="ring" id="ring"><b id="progress">0%</b><small>当前任务</small></div><div class="runtime-grid"><p>当前步骤<b id="step">—</b></p><p>预计剩余<b id="remaining">—</b></p></div><p>当前任务 <strong id="taskName">尚未开始</strong></p><p>目标物 <strong id="target">—</strong></p></article><article class="panel future"><header><div><h2>待接入能力</h2></div><b>占位</b></header><p>◉ <strong>实时相机画面</strong><small>视频流 / 实时传输</small><em>待接入</em></p><p>◇ <strong>真实 3D 仿真</strong><small>仿真引擎 / 三维场景</small><em>待接入</em></p><p>⇄ <strong>机器人遥测</strong><small>关节 / 力控 / 安全信号</small><em>待接入</em></p></article></aside></section>
-<section class="bottom"><article class="panel events"><header><div><h2>事件日志</h2></div><nav><button class="active">事件</button><button>信息</button><button>警告</button><button>错误</button></nav></header><div id="events"><p><time>14:31:18</time><i></i><b>系统初始化</b><small>等待任务指令输入</small></p><p><time>14:32:05</time><i></i><b>场景加载完成</b><small>数字孪生工作台_01 已就绪</small></p><p class="success"><time>14:32:10</time><i></i><b>服务连接正常</b><small>四模块接口已完成健康检查</small></p><p class="placeholder"><time>—</time><i></i><b>实时事件流</b><small>WS /api/events 接入后显示</small></p></div></article><article class="panel controls"><header><div><h2>任务控制</h2></div><span>当前模式：<b id="controlMode">自动</b></span></header><div><button id="pause">Ⅱ 暂停</button><button id="stop">■ 停止</button><button id="emergency">△ 紧急停止</button></div><small>● 控制接口已预留：<code>POST /api/robots/{id}/commands</code></small></article></section><footer class="footer">A/B/C/D 闭环演示 · 前端概念实现 <span>本地服务：<b id="footer">连接中</b> · 未完成能力均保留 API 占位符</span></footer></section><section id="unitView" class="page-view unit-view" hidden aria-live="polite"></section></main></div><div class="toast" id="toast"></div><script src="/app.js?v=api-base-20260830"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>具身智能真实执行平台</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="title">
+      <div><small>真实闭环</small><h1>具身智能执行平台</h1></div>
+    </div>
+    <div id="systemHealth" class="health-strip">
+      <span class="health-item" data-component="cloud">Cloud <b>未连接</b></span>
+      <span class="health-item" data-component="relay">Relay <b>未连接</b></span>
+      <span class="health-item" data-component="isaac">Isaac <b>未连接</b></span>
+      <span class="health-item" data-component="livestream">直播 <b>未连接</b></span>
+      <span class="health-item" data-component="providers">A/B/D <b>未探测</b></span>
+      <span class="health-item" data-component="session">会话 <b id="sessionState">未登录</b></span>
+    </div>
+    <div class="actions">
+      <button id="loginBtn" type="button">登录</button>
+      <button id="logoutBtn" type="button" hidden>退出</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="left">
+      <article class="panel">
+        <h2>已验证场景</h2>
+        <div id="scenarioList" class="scenario-list"><p class="muted">等待中</p></div>
+      </article>
+      <article class="panel">
+        <h2>任务指令</h2>
+        <textarea id="instruction" rows="3" placeholder="例如：把红色方块放到桌面区域"></textarea>
+        <button id="run" type="button" class="primary" disabled>▶ 开始执行</button>
+        <p id="runHint" class="muted">需要登录后才能执行</p>
+      </article>
+    </aside>
+
+    <section class="center">
+      <article class="panel">
+        <h2>真实执行直播 <span id="livestreamStatus" class="badge badge-off">OFFLINE</span></h2>
+        <div class="video-wrap">
+          <video id="livestream" controls playsinline></video>
+          <p id="livestreamMsg" class="muted">未连接</p>
+        </div>
+      </article>
+      <article class="panel stages">
+        <h2>A/B/C/D 阶段状态</h2>
+        <div class="stage-row">
+          <div class="stage" id="stageA"><b>A 意图理解</b><span class="stage-state">等待中</span><small id="stageADetail">无数据</small></div>
+          <div class="stage" id="stageB"><b>B 策略生成</b><span class="stage-state">等待中</span><small id="stageBDetail">无数据</small></div>
+          <div class="stage" id="stageC"><b>C Isaac 执行</b><span class="stage-state">等待中</span><small id="stageCDetail">无数据</small></div>
+          <div class="stage" id="stageD"><b>D 验证</b><span class="stage-state">等待中</span><small id="stageDDetail">无数据</small></div>
+        </div>
+      </article>
+    </section>
+
+    <aside class="right">
+      <article class="panel">
+        <h2>运行状态</h2>
+        <dl class="run-meta">
+          <dt>运行 ID</dt><dd id="runId">—</dd>
+          <dt>状态</dt><dd id="runState">无数据</dd>
+          <dt>当前动作</dt><dd id="currentAction">无数据</dd>
+          <dt>目标</dt><dd id="runTarget">无数据</dd>
+          <dt>安全事件</dt><dd id="safetyEvent">无数据</dd>
+          <dt>修复尝试</dt><dd id="repairAttempts">无数据</dd>
+        </dl>
+      </article>
+      <article class="panel">
+        <h2>结果摘要</h2>
+        <div id="resultSummary" class="muted">无数据</div>
+        <div id="evidenceSummary" class="muted">无数据</div>
+      </article>
+    </aside>
+  </main>
+
+  <section class="bottom">
+    <article class="panel">
+      <h2>事件时间线</h2>
+      <div id="eventTimeline" class="timeline"><p class="muted">等待中</p></div>
+    </article>
+  </section>
+
+  <footer class="footer" id="footerNote">连接中…</footer>
+</div>
+<div class="toast" id="toast" hidden></div>
+<script src="/vendor/hls.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

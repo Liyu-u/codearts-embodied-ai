@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import hmac
 import os
 import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, MutableMapping
 
-from demo.cloud.auth import SessionRecord, authorize, validate_session
+from demo.cloud.auth import (
+    IssuedSession,
+    Role,
+    SessionRecord,
+    authorize,
+    issue_session,
+    revoke_session,
+    validate_session,
+)
 from demo.cloud.orchestrator import CloudOrchestrator
 from demo.cloud.scenario_registry import list_verified_scenarios
 from demo.cloud.security import require_bearer, validate_artifact
@@ -53,6 +62,62 @@ class CloudService:
         session = validate_session(token, self.browser_sessions, now_ms=self.now_ms())
         authorize(session.role, action)
         return session
+
+    def login(
+        self,
+        user: str,
+        password: str,
+        *,
+        https: bool = False,
+        ttl_ms: int = 8 * 3600_000,
+    ) -> IssuedSession:
+        """Issue an operator session after checking the env-configured password.
+
+        Login is only possible when CLOUD_OPERATOR_PASSWORD is configured;
+        the password is compared in constant time and never echoed.
+        """
+        expected = os.getenv("CLOUD_OPERATOR_PASSWORD", "")
+        if not expected:
+            raise PermissionError(
+                "operator login is not configured; set CLOUD_OPERATOR_PASSWORD"
+            )
+        if not user or not password:
+            raise PermissionError("user and password are required")
+        if not hmac.compare_digest(
+            str(password).encode("utf-8"), expected.encode("utf-8")
+        ):
+            raise PermissionError("invalid credentials")
+        return issue_session(
+            str(user),
+            Role.OPERATOR,
+            self.browser_sessions,
+            ttl_ms=int(ttl_ms),
+            now_ms=self.now_ms(),
+            https=bool(https),
+        )
+
+    def logout(self, cookie_header: str | None) -> None:
+        token = self._cookie_value(cookie_header, "closed_loop_session")
+        if not token:
+            return
+        try:
+            revoke_session(token, self.browser_sessions)
+        except PermissionError:
+            return
+
+    def current_session(self, cookie_header: str | None) -> dict[str, Any]:
+        token = self._cookie_value(cookie_header, "closed_loop_session")
+        if not token:
+            return {"authenticated": False, "role": None}
+        try:
+            record = validate_session(token, self.browser_sessions, now_ms=self.now_ms())
+        except PermissionError:
+            return {"authenticated": False, "role": None}
+        return {
+            "authenticated": True,
+            "user": record.user_id,
+            "role": record.role.value,
+        }
 
     def require_relay(self, authorization_header: str | None) -> None:
         require_bearer(authorization_header, self.relay_token, production=True)
