@@ -920,6 +920,21 @@ class OmniDriver:
             self._started = False
             self._franka = None
 
+    def reset_for_task(self) -> None:
+        """Reset the existing articulation without rebuilding Kit or Stage."""
+        if not self._connected or self._franka is None:
+            raise DriverError("OmniDriver not connected; call connect() first")
+        import omni.timeline
+
+        self._stopped = False
+        omni.timeline.get_timeline_interface().play()
+        self._app.update()
+        self._franka.reset_to_default_pose()
+        self._last_ee_pose = None
+        for _ in range(5):
+            self._app.update()
+        self._started = True
+
     # ------------------------------------------------------------------
     # 运动原语
     # ------------------------------------------------------------------

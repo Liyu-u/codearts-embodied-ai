@@ -105,6 +105,7 @@ class LiveRuntimeWorkerTests(unittest.TestCase):
         self.assertEqual(outcome["status"], "SUCCEEDED")
         self.assertEqual(self.calls, [("reset", "run-worker-001"), ("prepare", "run-worker-001")])
         self.assertEqual([event["sequence"] for event in events], [1, 2])
+        self.assertEqual(perception["provenance"]["backend"], "isaac_ground_truth")
         self.assertEqual(perception["provenance"]["kit_instance_id"], "kit-instance-test")
         self.assertEqual(completion["provenance"]["world_id"], "world-session-test")
         self.assertTrue(all(event["provenance"]["world_id"] == "world-session-test" for event in events))

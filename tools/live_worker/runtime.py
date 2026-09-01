@@ -185,7 +185,14 @@ class LiveRuntimeWorker:
         document = deepcopy(dict(value))
         provenance = document.get("provenance")
         merged = dict(provenance) if isinstance(provenance, Mapping) else {}
-        merged.update(self.provenance)
+        merged.setdefault("backend", "isaac")
+        merged.update(
+            {
+                "kit_instance_id": self.worker_instance_id,
+                "worker_instance_id": self.worker_instance_id,
+                "world_id": self.world_id,
+            }
+        )
         document["provenance"] = merged
         return document
 
