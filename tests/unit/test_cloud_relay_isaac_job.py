@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from tools.live_intelligent_e2e import document_digest, strategy_digest
-from tools.relay.isaac_job import IsaacJobConfig, IsaacJobRunner
+from tools.relay.isaac_job import IsaacJobConfig, IsaacJobRunner, OpenSSHRuntimeRemote
 from tests.unit.test_cloud_orchestrator import perception_document, strategy_document, task_document
 
 
@@ -141,6 +142,87 @@ class IsaacJobRunnerTests(unittest.TestCase):
                 self.build_runner(remote, directory, timeout_s=0.01).run(execute_job(), lambda _event: None)
         self.assertEqual(remote.cleaned, ["run-001"])
 
+
+class OpenSSHRuntimeRemoteTests(unittest.TestCase):
+    def test_upload_uses_strict_host_verification_and_atomic_remote_rename(self) -> None:
+        calls = []
+
+        def run_command(command, **kwargs):
+            captured = {"command": list(command), "kwargs": kwargs}
+            if command[0] == "scp":
+                local = Path(command[-2])
+                captured["uploaded"] = json.loads(local.read_text(encoding="utf-8"))
+            calls.append(captured)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = root / "id_ed25519"
+            known_hosts = root / "known_hosts"
+            key.write_text("test-key", encoding="utf-8")
+            known_hosts.write_text("host-key", encoding="utf-8")
+            remote = OpenSSHRuntimeRemote(
+                server="10.16.0.40",
+                port=5122,
+                user="stu_01",
+                ssh_key=key,
+                known_hosts=known_hosts,
+                run_command=run_command,
+            )
+            job = {
+                "schema_version": "cloud-job.v1",
+                "job_type": "ISAAC_PREPARE_AND_PERCEIVE",
+                "run_id": "run-001",
+                "case_id": "multi-red-001",
+                "scene_id": "multi_object_stacking",
+            }
+
+            remote.upload_job("/data/stu_01/workspace/live-runtime/inbox/run-001.json", job)
+
+        flattened = [token for call in calls for token in call["command"]]
+        self.assertIn("StrictHostKeyChecking=yes", flattened)
+        self.assertIn(f"UserKnownHostsFile={known_hosts.resolve()}", flattened)
+        self.assertEqual(next(call["uploaded"] for call in calls if "uploaded" in call), job)
+        scp_target = next(call["command"][-1] for call in calls if call["command"][0] == "scp")
+        self.assertIn("run-001.json.", scp_target)
+        self.assertTrue(scp_target.endswith(".tmp"))
+
+    def test_reads_runtime_files_and_cleanup_is_limited_to_current_inbox_and_active(self) -> None:
+        commands = []
+
+        def run_command(command, **kwargs):
+            commands.append(list(command))
+            if command[0] == "ssh" and "cat" in OpenSSHRuntimeRemote.decode_command(command[-1]):
+                return subprocess.CompletedProcess(command, 0, '{"status":"ok"}\n', "")
+            if command[0] == "ssh" and kwargs.get("check") is False:
+                return subprocess.CompletedProcess(command, 0, "", "")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = root / "id_ed25519"
+            known_hosts = root / "known_hosts"
+            key.write_text("test-key", encoding="utf-8")
+            known_hosts.write_text("host-key", encoding="utf-8")
+            remote = OpenSSHRuntimeRemote(
+                server="10.16.0.40",
+                port=5122,
+                user="stu_01",
+                ssh_key=key,
+                known_hosts=known_hosts,
+                run_command=run_command,
+                remote_root="/data/stu_01/workspace/live-runtime",
+            )
+
+            self.assertEqual(remote.read_json("/data/stu_01/workspace/live-runtime/results/run-001/complete.json"), {"status": "ok"})
+            self.assertTrue(remote.exists("/data/stu_01/workspace/live-runtime/results/run-001/complete.json"))
+            remote.cleanup_run("run-001")
+
+        cleanup = OpenSSHRuntimeRemote.decode_command(commands[-1][-1])
+        self.assertIn("/inbox/run-001.json", cleanup)
+        self.assertIn("/active/run-001.json", cleanup)
+        self.assertNotIn("results/run-001", cleanup)
+        self.assertNotIn("rm -rf", cleanup)
 
 if __name__ == "__main__":
     unittest.main()

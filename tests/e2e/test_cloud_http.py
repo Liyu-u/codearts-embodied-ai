@@ -192,6 +192,14 @@ class CloudHttpAcceptanceTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(completed["run"]["state"], "QUEUED_C")
 
+        status, replayed = self.request("POST", f"/api/relay/jobs/{job['job_id']}/complete", {"relay_id": "relay-a", "succeeded": True}, headers=self.relay_headers())
+        self.assertEqual(status, 200)
+        self.assertEqual(replayed["run"]["state"], "QUEUED_C")
+        self.assertEqual(
+            len([item for item in self.store.list_jobs(job["run_id"]) if item["job_type"] == "ISAAC_EXECUTE"]),
+            1,
+        )
+
     def test_oversized_json_body_returns_413(self) -> None:
         connection = HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
         connection.putrequest("POST", "/api/relay/heartbeat")

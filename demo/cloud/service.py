@@ -188,6 +188,7 @@ class CloudService:
         error: str | None = None,
     ) -> dict[str, Any]:
         job = self.store.get_job(job_id)
+        replay = job["state"] in {"SUCCEEDED", "FAILED"}
         self.store.complete_job(
             job_id,
             relay_id,
@@ -195,6 +196,8 @@ class CloudService:
             error=error,
             now_ms=self.now_ms(),
         )
+        if replay:
+            return public_run_snapshot(self.store.get_run(job["run_id"]))
         if job["job_type"] == "ISAAC_PREPARE_AND_PERCEIVE":
             artifacts = {
                 item["artifact_name"]: item["value"]

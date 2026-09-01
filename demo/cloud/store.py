@@ -102,6 +102,8 @@ class CloudStore:
                     attempts INTEGER NOT NULL DEFAULT 0,
                     available_at INTEGER NOT NULL DEFAULT 0,
                     error TEXT,
+                    completion_relay_id TEXT,
+                    completion_succeeded INTEGER,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
                     completed_at INTEGER
@@ -138,6 +140,14 @@ class CloudStore:
                 );
                 """
             )
+            job_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
+            }
+            if "completion_relay_id" not in job_columns:
+                connection.execute("ALTER TABLE jobs ADD COLUMN completion_relay_id TEXT")
+            if "completion_succeeded" not in job_columns:
+                connection.execute("ALTER TABLE jobs ADD COLUMN completion_succeeded INTEGER")
 
     @staticmethod
     def _run_from_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -441,13 +451,28 @@ class CloudStore:
         now_ms: int | None = None,
     ) -> dict[str, Any]:
         now = utc_ms() if now_ms is None else int(now_ms)
+        target = JobState.SUCCEEDED if succeeded else JobState.FAILED
         with self._immediate() as connection:
+            row = connection.execute(
+                "SELECT * FROM jobs WHERE job_id=?", (job_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(job_id)
+            if row["state"] in {JobState.SUCCEEDED.value, JobState.FAILED.value}:
+                if (
+                    row["state"] != target.value
+                    or row["completion_relay_id"] != relay_id
+                    or bool(row["completion_succeeded"]) != bool(succeeded)
+                    or row["error"] != error
+                ):
+                    raise ValueError("completed job result does not match the original receipt")
+                return self._job_from_row(row)
             self._require_lease(connection, job_id, relay_id, now)
-            state = JobState.SUCCEEDED if succeeded else JobState.FAILED
             connection.execute(
                 "UPDATE jobs SET state=?, error=?, updated_at=?, completed_at=?, "
+                "completion_relay_id=?, completion_succeeded=?, "
                 "lease_owner=NULL, lease_expires_at=NULL WHERE job_id=?",
-                (state.value, error, now, now, job_id),
+                (target.value, error, now, now, relay_id, int(bool(succeeded)), job_id),
             )
         return self.get_job(job_id)
 

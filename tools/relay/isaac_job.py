@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import base64
 import json
+import shlex
+import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Protocol
+from uuid import uuid4
 
-from tools.relay.runtime_protocol import atomic_write_json, validate_job
+from tools.relay.runtime_protocol import atomic_write_json, validate_job, validate_run_id
 
 
 class RuntimeRemote(Protocol):
@@ -19,6 +24,133 @@ class RuntimeRemote(Protocol):
     def exists(self, remote_path: str) -> bool: ...
 
     def cleanup_run(self, run_id: str) -> None: ...
+
+
+class OpenSSHRuntimeRemote:
+    def __init__(
+        self,
+        *,
+        server: str,
+        port: int,
+        user: str,
+        ssh_key: str | Path,
+        known_hosts: str | Path,
+        remote_root: str = "/data/stu_01/workspace/live-runtime",
+        connect_timeout_s: int = 12,
+        run_command=subprocess.run,
+    ) -> None:
+        if not server or not user or port <= 0 or port > 65_535:
+            raise ValueError("valid SSH server, user and port are required")
+        root = PurePosixPath(remote_root)
+        if not remote_root.startswith("/") or ".." in root.parts:
+            raise ValueError("remote_root must be a safe absolute POSIX path")
+        key = Path(ssh_key).expanduser().resolve()
+        hosts = Path(known_hosts).expanduser().resolve()
+        if not key.is_file():
+            raise FileNotFoundError(f"SSH key not found: {key}")
+        if not hosts.is_file():
+            raise FileNotFoundError(f"known_hosts not found: {hosts}")
+        self.spec = f"{user}@{server}"
+        self.remote_root = str(root)
+        self._run_command = run_command
+        common = [
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            f"ConnectTimeout={int(connect_timeout_s)}",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            f"UserKnownHostsFile={hosts}",
+            "-i",
+            str(key),
+        ]
+        self._ssh = ["ssh", "-n", "-T", "-p", str(port), *common]
+        self._scp = ["scp", "-P", str(port), *common]
+
+    @staticmethod
+    def encode_command(command: str) -> str:
+        encoded = base64.b64encode(command.encode("utf-8")).decode("ascii")
+        return f"printf '%s' '{encoded}' | base64 -d | bash"
+
+    @staticmethod
+    def decode_command(encoded_command: str) -> str:
+        marker = "printf '%s' '"
+        suffix = "' | base64 -d | bash"
+        if not encoded_command.startswith(marker) or not encoded_command.endswith(suffix):
+            raise ValueError("not an encoded relay command")
+        value = encoded_command[len(marker) : -len(suffix)]
+        return base64.b64decode(value).decode("utf-8")
+
+    def _safe_path(self, remote_path: str) -> str:
+        path = PurePosixPath(remote_path)
+        root = PurePosixPath(self.remote_root)
+        if not remote_path.startswith("/") or ".." in path.parts:
+            raise ValueError("unsafe remote path")
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("remote path is outside runtime root") from exc
+        return str(path)
+
+    def _run(self, command: str, *, check: bool = True):
+        return self._run_command(
+            [*self._ssh, self.spec, self.encode_command(command)],
+            text=True,
+            capture_output=True,
+            check=check,
+        )
+
+    def upload_job(self, remote_path: str, job: dict[str, Any]) -> None:
+        target = self._safe_path(remote_path)
+        remote_temp = f"{target}.{uuid4().hex}.tmp"
+        with tempfile.TemporaryDirectory(prefix="codearts-relay-") as directory:
+            local = Path(directory) / "job.json"
+            atomic_write_json(local, job)
+            self._run(f"mkdir -p {shlex.quote(str(PurePosixPath(target).parent))}")
+            self._run_command(
+                [*self._scp, str(local), f"{self.spec}:{remote_temp}"],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            self._run(f"mv {shlex.quote(remote_temp)} {shlex.quote(target)}")
+
+    def read_text(self, remote_path: str) -> str | None:
+        target = self._safe_path(remote_path)
+        result = self._run(f"cat {shlex.quote(target)}", check=False)
+        if result.returncode == 1:
+            return None
+        if result.returncode != 0:
+            raise subprocess.CalledProcessError(
+                result.returncode,
+                result.args,
+                output=result.stdout,
+                stderr=result.stderr,
+            )
+        return result.stdout
+
+    def read_json(self, remote_path: str) -> object:
+        text = self.read_text(remote_path)
+        return None if text is None else json.loads(text)
+
+    def exists(self, remote_path: str) -> bool:
+        target = self._safe_path(remote_path)
+        result = self._run(f"test -s {shlex.quote(target)}", check=False)
+        if result.returncode not in {0, 1}:
+            raise subprocess.CalledProcessError(
+                result.returncode,
+                result.args,
+                output=result.stdout,
+                stderr=result.stderr,
+            )
+        return result.returncode == 0
+
+    def cleanup_run(self, run_id: str) -> None:
+        safe = validate_run_id(run_id)
+        inbox = self._safe_path(f"{self.remote_root}/inbox/{safe}.json")
+        active = self._safe_path(f"{self.remote_root}/active/{safe}.json")
+        self._run(f"rm -f -- {shlex.quote(inbox)} {shlex.quote(active)}")
 
 
 @dataclass(frozen=True, slots=True)
