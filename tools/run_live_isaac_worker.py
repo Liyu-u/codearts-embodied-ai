@@ -7,7 +7,7 @@ import json
 import sys
 import time
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from uuid import uuid4
@@ -31,6 +31,10 @@ STREAM_VIEW_MODES = ("auto", "viewport", "usd-camera", "off")
 # Frames to let viewport/stage transforms apply after view configuration.
 # This is NOT a stream-readiness wait.
 STREAM_VIEW_WARMUP_FRAMES = 30
+# Production stream framing: covers Franka, red/green cubes and the target
+# zone in one level, horizontal (Z-up) view.  Overridable via CLI.
+DEFAULT_STREAM_CAMERA_EYE = (1.35, -1.45, 1.05)
+DEFAULT_STREAM_CAMERA_TARGET = (0.40, 0.00, 0.25)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +44,8 @@ class LiveWorldConfig:
     device: str = "cuda"
     idle_sleep_s: float = 0.05
     stream_view_mode: str = "auto"
+    stream_camera_eye: tuple[float, float, float] = DEFAULT_STREAM_CAMERA_EYE
+    stream_camera_target: tuple[float, float, float] = DEFAULT_STREAM_CAMERA_TARGET
 
     def __post_init__(self) -> None:
         if Path(self.runtime_root) != DEFAULT_RUNTIME_ROOT:
@@ -55,6 +61,15 @@ class LiveWorldConfig:
                 f"stream_view_mode must be one of {STREAM_VIEW_MODES}, "
                 f"got {self.stream_view_mode!r}"
             )
+        for name, value in (
+            ("stream_camera_eye", self.stream_camera_eye),
+            ("stream_camera_target", self.stream_camera_target),
+        ):
+            if (
+                len(value) != 3
+                or not all(isinstance(component, (int, float)) for component in value)
+            ):
+                raise ValueError(f"{name} must be a 3-component numeric tuple")
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,13 +279,15 @@ def _get_stream_stage() -> Any:
     return get_current_stage()
 
 
-def _try_native_viewport(app: Any) -> tuple[dict[str, Any] | None, str | None]:
-    """Configure the streaming Perspective View via Isaac's native viewport API.
+def _try_native_viewport(
+    app: Any, config: LiveWorldConfig
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Configure the streaming Perspective View via Isaac Sim 6.0 native API.
 
-    Target camera: /OmniverseKit_Persp (Kit default perspective).  The exact
-    ViewportManager signature is NOT assumed statically: several documented
-    call shapes are attempted in order and the working one is logged, so the
-    live Isaac Sim 6.0 run validates the API (NEEDS LIVE ISAAC VALIDATION).
+    Official 6.0 classmethod API (there is NO get_instance() step):
+      ViewportManager.set_camera("/OmniverseKit_Persp")
+      ViewportManager.set_camera_view("/OmniverseKit_Persp", eye=..., target=...)
+    set_resolution is best-effort only and must never fail camera config.
     Never rebuilds the stage / SimulationApp / WebRTC session / timeline.
     """
     try:
@@ -278,69 +295,36 @@ def _try_native_viewport(app: Any) -> tuple[dict[str, Any] | None, str | None]:
     except Exception as exc:  # noqa: BLE001
         return None, f"isaacsim.core.rendering_manager unavailable: {exc}"
 
-    try:
-        manager = ViewportManager.get_instance()
-    except Exception as exc:  # noqa: BLE001
-        return None, f"ViewportManager.get_instance failed: {exc}"
-
     camera_path = "/OmniverseKit_Persp"
-    eye = [1.30, -1.55, 0.95]
-    target = [0.35, 0.0, 0.25]
-
-    if not hasattr(manager, "set_camera_view"):
-        return None, "ViewportManager instance has no set_camera_view method"
-
-    candidates = (
-        (
-            "ViewportManager.set_camera_view(camera_path, eye=..., target=...) [class]",
-            lambda: ViewportManager.set_camera_view(camera_path, eye=eye, target=target),
-        ),
-        (
-            "manager.set_camera_view(camera_path, eye=..., target=...) [instance]",
-            lambda: manager.set_camera_view(camera_path, eye=eye, target=target),
-        ),
-        (
-            "manager.set_camera_view(camera_path=..., eye=..., target=...)",
-            lambda: manager.set_camera_view(camera_path=camera_path, eye=eye, target=target),
-        ),
-        (
-            "manager.set_camera_view(eye=..., target=...)",
-            lambda: manager.set_camera_view(eye=eye, target=target),
-        ),
-        (
-            "manager.set_camera_view(eye, target, camera_prim_path=...)",
-            lambda: manager.set_camera_view(eye, target, camera_prim_path=camera_path),
-        ),
-    )
-    applied: str | None = None
-    last_error: str | None = None
-    for label, call in candidates:
-        try:
-            call()
-        except Exception as exc:  # noqa: BLE001
-            last_error = f"{label}: {exc}"
-            continue
-        applied = label
-        break
-    if applied is None:
-        return None, f"all set_camera_view call shapes failed; last: {last_error}"
-
-    # Bind the perspective camera prim (same stage, no rebuild) to the active
-    # viewport so the stream renders it.
+    eye = list(config.stream_camera_eye)
+    target = list(config.stream_camera_target)
     try:
-        from omni.kit.viewport.utility import get_active_viewport
-        from pxr import UsdGeom
-
-        stage = _get_stream_stage()
-        if not stage.GetPrimAtPath(camera_path):
-            UsdGeom.Camera.Define(stage, camera_path)
-        viewport = get_active_viewport()
-        viewport.camera_path = camera_path
-        app.update()
+        ViewportManager.set_camera(camera_path)
+        ViewportManager.set_camera_view(
+            camera_path,
+            eye=eye,
+            target=target,
+        )
     except Exception as exc:  # noqa: BLE001
-        return None, f"camera prim / viewport binding failed: {exc}"
+        return None, f"native ViewportManager failed: {exc}"
 
-    return {"mode": "viewport", "camera": camera_path, "api": applied}, None
+    try:
+        ViewportManager.set_resolution((1280, 720))
+    except Exception:  # noqa: BLE001
+        # resolution failure must not fail camera configuration
+        pass
+
+    for _ in range(STREAM_VIEW_WARMUP_FRAMES):
+        app.update()
+
+    return (
+        {
+            "mode": "viewport",
+            "camera": camera_path,
+            "api": "ViewportManager.set_camera_view",
+        },
+        None,
+    )
 
 
 def _try_usd_camera_fallback(app: Any) -> tuple[dict[str, Any] | None, str | None]:
@@ -389,7 +373,7 @@ def _configure_stream_view(app: Any, config: LiveWorldConfig) -> dict[str, Any]:
     result: dict[str, Any] | None = None
     error: str | None = None
     if mode in ("auto", "viewport"):
-        result, error = _try_native_viewport(app)
+        result, error = _try_native_viewport(app, config)
     if result is None and mode in ("auto", "usd-camera"):
         if mode == "auto":
             print(
@@ -406,7 +390,10 @@ def _configure_stream_view(app: Any, config: LiveWorldConfig) -> dict[str, Any]:
 
     print(
         f"[worker] STREAM_VIEW_READY mode={result['mode']} "
-        f"camera={result['camera']} api={result['api']}",
+        f"camera={result['camera']} "
+        f"eye={','.join(str(x) for x in config.stream_camera_eye)} "
+        f"target={','.join(str(x) for x in config.stream_camera_target)} "
+        f"api={result['api']}",
         flush=True,
     )
     return {
@@ -562,7 +549,15 @@ def build_live_world(
 ) -> BuiltLiveWorld:
     app_factory = simulation_app_factory or _simulation_app_factory
     app = app_factory(
-        {"headless": True}, experience=config.streaming_experience
+        {
+            # Production target: 1280x720 for WebRTC / OBS / HLS.
+            "headless": True,
+            "width": 1280,
+            "height": 720,
+            "window_width": 1280,
+            "window_height": 720,
+        },
+        experience=config.streaming_experience,
     )
     kit_instance_id = f"kit-{id_factory()}"
     world_id = f"world-{id_factory()}"
@@ -650,6 +645,21 @@ def run_worker_loop(
     return iterations
 
 
+def _parse_vec3(value: str) -> tuple[float, float, float]:
+    """Parse 'X,Y,Z' into a 3-float tuple for camera framing CLI args."""
+    parts = value.split(",")
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError(
+            f"expected 3 comma-separated floats, got {value!r}"
+        )
+    try:
+        return tuple(float(part) for part in parts)  # type: ignore[return-value]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"expected 3 comma-separated floats, got {value!r}"
+        ) from exc
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", choices=("cpu", "cuda", "cuda:0"), default="cuda")
@@ -666,6 +676,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="DEPRECATED alias for --stream-view-mode usd-camera",
     )
+    parser.add_argument(
+        "--stream-camera-eye",
+        type=_parse_vec3,
+        default=None,
+        metavar="X,Y,Z",
+        help=f"camera eye, default {','.join(str(x) for x in DEFAULT_STREAM_CAMERA_EYE)}",
+    )
+    parser.add_argument(
+        "--stream-camera-target",
+        type=_parse_vec3,
+        default=None,
+        metavar="X,Y,Z",
+        help=f"camera target, default {','.join(str(x) for x in DEFAULT_STREAM_CAMERA_TARGET)}",
+    )
     return parser
 
 
@@ -674,13 +698,16 @@ def main(argv: list[str] | None = None) -> int:
     stream_view_mode = args.stream_view_mode or (
         "usd-camera" if args.stream_camera else "auto"
     )
-    built = build_live_world(
-        LiveWorldConfig(
-            device=args.device,
-            idle_sleep_s=args.idle_sleep_s,
-            stream_view_mode=stream_view_mode,
-        )
+    config = LiveWorldConfig(
+        device=args.device,
+        idle_sleep_s=args.idle_sleep_s,
+        stream_view_mode=stream_view_mode,
     )
+    if args.stream_camera_eye is not None:
+        config = replace(config, stream_camera_eye=args.stream_camera_eye)
+    if args.stream_camera_target is not None:
+        config = replace(config, stream_camera_target=args.stream_camera_target)
+    built = build_live_world(config)
     print(
         json.dumps(
             {

@@ -144,12 +144,27 @@ docker run -d --name live-isaac-worker \
   -v /data/stu_01/workspace/final-live-cloud-closed-loop:/workspace:rw \
   -v /data/stu_01/workspace/live-runtime:/data/stu_01/workspace/live-runtime:rw \
   nvcr.io/nvidia/isaac-sim:6.0.0 \
-  -lc 'cd /isaac-sim && ./python.sh /workspace/tools/run_live_isaac_worker.py --device cpu --idle-sleep-s 0.05 --stream-view-mode auto --/app/headless=true --/persistent/isaac/asset_root/default=/isaacsim_assets/Assets/Isaac/6.0'
+  -lc 'cd /isaac-sim && ./python.sh /workspace/tools/run_live_isaac_worker.py \
+  --device cpu \
+  --idle-sleep-s 0.05 \
+  --stream-view-mode auto \
+  --stream-camera-eye 1.35,-1.45,1.05 \
+  --stream-camera-target 0.40,0.00,0.25 \
+  --/app/headless=true \
+  --/exts/omni.kit.livestream.app/primaryStream/publicIp=10.16.0.40 \
+  --/exts/omni.kit.livestream.app/primaryStream/signalPort=49100 \
+  --/exts/omni.kit.livestream.app/primaryStream/streamPort=47998 \
+  --/persistent/isaac/asset_root/default=/isaacsim_assets/Assets/Isaac/6.0'
 ```
 
 - `-d` 后台运行；`--no-healthcheck` 避免镜像默认 AppReady healthcheck 误导；
   GPU physical 0；`--network=host`（WebRTC 49100/47998 必需）；`--ipc=host`；
   assets 只读；runtime 与 project workspace 可写；不新增公网端口。
+- **三个 livestream 参数是必须项**（真实服务器验证过）：缺省时 49100 signaling
+  可连但 47998 media 不建立、Client 黑屏；写入后 49100 ESTAB + 47998 UDP + 真实画面。
+  不要提供不含这三个参数的 production 命令。
+- 流目标固定 **1280×720 / 30 FPS**（SimulationApp width/height=1280×720，
+  WebRTC Client 与 OBS 同选 1280×720）。
 - 缓存挂载使用实际验证过的 `/home/isaac/...` 布局（镜像默认用户 isaac），
   不使用 `/root/.cache/...`。
 
@@ -175,10 +190,29 @@ streaming stage World0 → World1，破坏 Hydra/RTX renderer，表现为
 
 | mode | 行为 |
 |---|---|
-| `auto`（默认） | 先尝试 Isaac 原生 Perspective View API（`isaacsim.core.rendering_manager.ViewportManager`，相机 `/OmniverseKit_Persp`，eye=[1.30,-1.55,0.95] → target=[0.35,0,0.25]）；API 不存在或失败 → fallback 到 `/World/Camera` + look-at transform + active viewport 绑定 |
+| `auto`（默认） | 先尝试 Isaac 6.0 原生 Perspective View classmethod API（`ViewportManager.set_camera` + `set_camera_view`，相机 `/OmniverseKit_Persp`）；失败 → fallback 到 `/World/Camera` + look-at transform + active viewport 绑定 |
 | `viewport` | 只用 native API，失败即 `STREAM_VIEW_FAILED` |
 | `usd-camera` | 只用 `/World/Camera` 兜底（`--stream-camera` 是它的废弃别名） |
 | `off` | 完全不改 Camera/View（诊断隔离用，非生产） |
+
+native 实现（Isaac Sim 6.0 classmethod API，**不存在 `get_instance()` 步骤**）：
+
+```python
+from isaacsim.core.rendering_manager import ViewportManager
+
+ViewportManager.set_camera("/OmniverseKit_Persp")
+ViewportManager.set_camera_view(
+    "/OmniverseKit_Persp",
+    eye=[1.35, -1.45, 1.05],     # --stream-camera-eye（可配置）
+    target=[0.40, 0.00, 0.25],   # --stream-camera-target（可配置）
+)
+# set_resolution((1280, 720)) 为 best-effort，失败不影响 camera
+# 之后 30 × app.update() 让 view 生效
+```
+
+比赛现场如需调整构图，只改启动参数 `--stream-camera-eye` / `--stream-camera-target`
+（`X,Y,Z` 逗号分隔 3 浮点），不需要改代码、不拖动 WebRTC Client、不进 Isaac UI。
+默认 eye/target 覆盖 Franka、red/green cubes、`zone_unstack_target`，Z-up 水平构图。
 
 fallback 与 native 都遵守 Stage 不变量：不建新 Stage、不重建 SimulationApp、
 不重启 WebRTC、不改 Experience、不关 Timeline。两者都失败 → 输出
@@ -186,6 +220,12 @@ fallback 与 native 都遵守 Stage 不变量：不建新 Stage、不重建 Simu
 `stream_view_configured=false`，绝不伪装成功。
 `STREAM_VIEW_READY` 前先检查场景 prim：`/World/robot`、至少一个 cube
 （`/World/red_cube` 等）、`/World/zone_unstack_target` 都必须存在。
+
+预期成功日志（验收必须看到 `mode=viewport`，不是 usd-camera）：
+
+```
+[worker] STREAM_VIEW_READY mode=viewport camera=/OmniverseKit_Persp eye=1.35,-1.45,1.05 target=0.40,0.00,0.25 api=ViewportManager.set_camera_view
+```
 
 ### 运行时与证据（同一 World 不变量）
 
@@ -225,13 +265,15 @@ STEP 3  学校：docker ps —— 只有一个本项目 live Isaac。
 STEP 4  scoped：docker rm -f live-isaac-worker
 STEP 5  用上面的"唯一推荐启动命令"启动。
 STEP 6  docker logs -f live-isaac-worker
-        必须出现 WORKER_READY 与 STREAM_VIEW_READY mode=...
-        若出现 STREAM_VIEW_FAILED → 停止 WebRTC 验收并分析。
+        必须出现 WORKER_READY 与
+        STREAM_VIEW_READY mode=viewport camera=/OmniverseKit_Persp ...（native 成功）
+        若出现 STREAM_VIEW_FAILED，或 STREAM_VIEW_READY mode=usd-camera
+        → 停止 WebRTC 验收并分析（生产验收必须 mode=viewport）。
 STEP 7  docker ps --filter 'name=^/live-isaac-worker$' \
         --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
 STEP 8  ss -ltnp | grep ':49100' || true
 STEP 9  只启动一个 Windows Native WebRTC Client，连接 10.16.0.40
-        （不要写 10.16.0.40:49100）。
+        （不要写 10.16.0.40:49100），Client 分辨率选 1280×720。
 STEP 10 连接成功后：ss -lunp | grep ':47998' || true
 STEP 11 docker logs --since 5m live-isaac-worker 2>&1 \
         | grep -Ei 'WORKER_READY|STREAM_VIEW|HydraEngine|renderer|webrtc|NVST|49100|47998|fatal|failed'
@@ -243,8 +285,8 @@ STEP 11 docker logs --since 5m live-isaac-worker 2>&1 \
 A. 只有一个 Isaac container。
 B. Simulation App Startup Complete。
 C. WORKER_READY。
-D. STREAM_VIEW_READY。
-E. TCP 49100 正常。
+D. STREAM_VIEW_READY mode=viewport（不是 usd-camera）。
+E. TCP 49100 正常（ESTAB ↔ Windows）。
 F. 只连接一个 WebRTC Client。
 G. Windows WebRTC Client 能看到 Franka / cube / target（不是纯黑、空地、极近 ground close-up）。
 H. 视频持续更新，不是冻结的一帧。
@@ -255,7 +297,10 @@ K. 没有导致黑屏的 HydraEngine rtx failed creating scene renderer
 L. Worker 一直 Up。
 M. SimulationApp 没 shutdown。
 N. 没有第二个 Isaac。
-==> LIVE WORKER STREAM PASS
+O. 镜头水平：世界 Z 轴视觉上保持竖直，无明显 roll。
+P. 不需要手动鼠标旋转/缩放/平移调整构图。
+Q. Franka + cube + target 同时出现在合理构图中（1280×720）。
+==> LIVE CAMERA PASS
 ```
 
 ### DOF mismatch 追踪（TODO，不在本轮 Camera 修复里处理）

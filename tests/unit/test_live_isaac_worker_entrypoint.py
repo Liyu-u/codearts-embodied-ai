@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import sys
 import tempfile
 import types
@@ -19,6 +20,8 @@ from tools.run_live_isaac_worker import (
     PersistentIsaacSession,
     _check_stream_scene_prims,
     _configure_stream_view,
+    _parse_vec3,
+    _try_native_viewport,
     build_live_world,
     run_worker_loop,
 )
@@ -145,6 +148,11 @@ class LiveIsaacEntrypointTests(unittest.TestCase):
         self.assertEqual(len(app_calls), 1)
         self.assertEqual(app_calls[0][1], STREAMING_EXPERIENCE)
         self.assertTrue(app_calls[0][0]["headless"])
+        # Production stream target: 1280x720 for WebRTC / OBS / HLS.
+        self.assertEqual(app_calls[0][0]["width"], 1280)
+        self.assertEqual(app_calls[0][0]["height"], 720)
+        self.assertEqual(app_calls[0][0]["window_width"], 1280)
+        self.assertEqual(app_calls[0][0]["window_height"], 720)
         self.assertEqual(built.runtime_root, DEFAULT_RUNTIME_ROOT)
         self.assertEqual(worker_instances[0].args[0].root, DEFAULT_RUNTIME_ROOT)
         self.assertEqual(worker_instances[0].kwargs["worker_instance_id"], "kit-stable-id")
@@ -335,6 +343,115 @@ class LiveIsaacEntrypointTests(unittest.TestCase):
             self.assertEqual(LiveWorldConfig(stream_view_mode=mode).stream_view_mode, mode)
         with self.assertRaises(ValueError):
             LiveWorldConfig(stream_view_mode="bogus")
+
+    def test_stream_camera_eye_target_defaults_and_validation(self) -> None:
+        config = LiveWorldConfig()
+        self.assertEqual(config.stream_camera_eye, (1.35, -1.45, 1.05))
+        self.assertEqual(config.stream_camera_target, (0.40, 0.00, 0.25))
+        self.assertEqual(
+            LiveWorldConfig(stream_camera_eye=(2.0, -1.0, 0.5)).stream_camera_eye,
+            (2.0, -1.0, 0.5),
+        )
+        self.assertEqual(
+            LiveWorldConfig(stream_camera_target=(0.1, 0.2, 0.3)).stream_camera_target,
+            (0.1, 0.2, 0.3),
+        )
+        with self.assertRaises(ValueError):
+            LiveWorldConfig(stream_camera_eye=(1.0, 2.0))
+        with self.assertRaises(ValueError):
+            LiveWorldConfig(stream_camera_target=("a", "b", "c"))
+
+    def test_parse_vec3_cli(self) -> None:
+        self.assertEqual(_parse_vec3("1.35,-1.45,1.05"), (1.35, -1.45, 1.05))
+        self.assertEqual(_parse_vec3(" 0.40, 0.00, 0.25 "), (0.40, 0.00, 0.25))
+        with self.assertRaises(argparse.ArgumentTypeError):
+            _parse_vec3("1,2")
+        with self.assertRaises(argparse.ArgumentTypeError):
+            _parse_vec3("a,b,c")
+
+    def test_try_native_viewport_uses_isaac60_classmethod_api(self) -> None:
+        """Isaac Sim 6.0 classmethod API: no get_instance() step; set_camera +
+        set_camera_view(camera, *, eye=..., target=...) on the class, plus a
+        best-effort set_resolution((1280, 720)) and 30 warm-up frames."""
+        calls = []
+
+        class FakeViewportManager:
+            @classmethod
+            def set_camera(cls, path):
+                calls.append(("set_camera", path))
+
+            @classmethod
+            def set_camera_view(cls, camera, *, eye, target):
+                calls.append(("set_camera_view", camera, eye, target))
+
+            @classmethod
+            def set_resolution(cls, resolution):
+                calls.append(("set_resolution", resolution))
+
+        rendering_manager = types.ModuleType("isaacsim.core.rendering_manager")
+        rendering_manager.ViewportManager = FakeViewportManager
+        core_pkg = types.ModuleType("isaacsim.core")
+        core_pkg.rendering_manager = rendering_manager
+        isaacsim_pkg = types.ModuleType("isaacsim")
+        isaacsim_pkg.core = core_pkg
+
+        app = FakeApp()
+        with patch.dict(
+            sys.modules,
+            {
+                "isaacsim": isaacsim_pkg,
+                "isaacsim.core": core_pkg,
+                "isaacsim.core.rendering_manager": rendering_manager,
+            },
+        ):
+            result, error = _try_native_viewport(app, LiveWorldConfig())
+
+        self.assertIsNone(error)
+        self.assertEqual(result["mode"], "viewport")
+        self.assertEqual(result["camera"], "/OmniverseKit_Persp")
+        self.assertEqual(result["api"], "ViewportManager.set_camera_view")
+        self.assertEqual(
+            calls,
+            [
+                ("set_camera", "/OmniverseKit_Persp"),
+                (
+                    "set_camera_view",
+                    "/OmniverseKit_Persp",
+                    [1.35, -1.45, 1.05],
+                    [0.40, 0.00, 0.25],
+                ),
+                ("set_resolution", (1280, 720)),
+            ],
+        )
+        # The 6.0 classmethod API has no get_instance() step.
+        self.assertFalse(hasattr(FakeViewportManager, "get_instance"))
+        self.assertEqual(app.updates, 30)
+
+    def test_try_native_viewport_reports_failure_cleanly(self) -> None:
+        class BrokenViewportManager:
+            @classmethod
+            def set_camera(cls, path):
+                raise RuntimeError("boom")
+
+        rendering_manager = types.ModuleType("isaacsim.core.rendering_manager")
+        rendering_manager.ViewportManager = BrokenViewportManager
+        core_pkg = types.ModuleType("isaacsim.core")
+        core_pkg.rendering_manager = rendering_manager
+        isaacsim_pkg = types.ModuleType("isaacsim")
+        isaacsim_pkg.core = core_pkg
+
+        with patch.dict(
+            sys.modules,
+            {
+                "isaacsim": isaacsim_pkg,
+                "isaacsim.core": core_pkg,
+                "isaacsim.core.rendering_manager": rendering_manager,
+            },
+        ):
+            result, error = _try_native_viewport(FakeApp(), LiveWorldConfig())
+
+        self.assertIsNone(result)
+        self.assertIn("native ViewportManager failed", error)
 
     def test_check_stream_scene_prims_requires_robot_cube_and_target(self) -> None:
         ok, _reason = _check_stream_scene_prims(FakeStage(FULL_SCENE_PATHS))
