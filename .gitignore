@@ -39,6 +39,8 @@ Thumbs.db
 # Runtime output
 *.log
 results/
+.cloud-runtime/
+.relay-runtime/
 
 # Local CodeArts/remote-session state and generated acceptance artifacts
 .codeartsdoer/
