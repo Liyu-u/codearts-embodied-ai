@@ -4,6 +4,9 @@ import hashlib
 import hmac
 import re
 import secrets
+from dataclasses import dataclass, replace
+from enum import Enum
+from typing import MutableMapping
 
 _PBKDF2_ITERATIONS = 310_000
 _SALT_BYTES = 16
@@ -55,3 +58,115 @@ def new_session_token() -> str:
 
 def session_token_hash(token: str) -> bytes:
     return hashlib.sha256(token.encode("utf-8")).digest()
+
+
+class Role(str, Enum):
+    VIEWER = "viewer"
+    OPERATOR = "operator"
+    ADMIN = "admin"
+
+
+_ROLE_ACTIONS: dict[Role, frozenset[str]] = {
+    Role.VIEWER: frozenset({"read"}),
+    Role.OPERATOR: frozenset({"read", "create_run", "cancel_run"}),
+    Role.ADMIN: frozenset(
+        {"read", "create_run", "cancel_run", "update_configuration", "manage_users"}
+    ),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class SessionRecord:
+    token_hash: bytes
+    user_id: str
+    role: Role
+    issued_at_ms: int
+    expires_at_ms: int
+    revoked: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class IssuedSession:
+    token: str
+    record: SessionRecord
+    cookie: dict[str, object]
+
+
+def _role(value: Role | str) -> Role:
+    try:
+        return value if isinstance(value, Role) else Role(value)
+    except (TypeError, ValueError) as exc:
+        raise PermissionError("unknown browser role") from exc
+
+
+def authorize(role: Role | str, action: str) -> bool:
+    normalized = _role(role)
+    if action not in _ROLE_ACTIONS[normalized]:
+        raise PermissionError(f"role {normalized.value} cannot perform {action}")
+    return True
+
+
+def issue_session(
+    user_id: str,
+    role: Role | str,
+    sessions: MutableMapping[bytes, SessionRecord],
+    *,
+    ttl_ms: int,
+    now_ms: int,
+    https: bool,
+) -> IssuedSession:
+    if not user_id or ttl_ms <= 0:
+        raise ValueError("user_id and a positive ttl_ms are required")
+    token = new_session_token()
+    digest = session_token_hash(token)
+    record = SessionRecord(
+        token_hash=digest,
+        user_id=user_id,
+        role=_role(role),
+        issued_at_ms=int(now_ms),
+        expires_at_ms=int(now_ms) + int(ttl_ms),
+    )
+    sessions[digest] = record
+    cookie: dict[str, object] = {
+        "Name": "closed_loop_session",
+        "Value": token,
+        "HttpOnly": True,
+        "SameSite": "Strict",
+        "Secure": bool(https),
+        "Path": "/",
+        "Max-Age": max(1, int(ttl_ms) // 1000),
+    }
+    return IssuedSession(token=token, record=record, cookie=cookie)
+
+
+def _find_session(
+    token: str, sessions: MutableMapping[bytes, SessionRecord]
+) -> tuple[bytes, SessionRecord]:
+    candidate = session_token_hash(token)
+    for stored_hash, record in sessions.items():
+        if hmac.compare_digest(candidate, stored_hash):
+            return stored_hash, record
+    raise PermissionError("invalid browser session")
+
+
+def validate_session(
+    token: str,
+    sessions: MutableMapping[bytes, SessionRecord],
+    *,
+    now_ms: int,
+) -> SessionRecord:
+    _, record = _find_session(token, sessions)
+    if record.revoked:
+        raise PermissionError("browser session is revoked")
+    if int(now_ms) >= record.expires_at_ms:
+        raise PermissionError("browser session has expired")
+    return record
+
+
+def revoke_session(
+    token: str, sessions: MutableMapping[bytes, SessionRecord]
+) -> SessionRecord:
+    stored_hash, record = _find_session(token, sessions)
+    revoked = replace(record, revoked=True)
+    sessions[stored_hash] = revoked
+    return revoked

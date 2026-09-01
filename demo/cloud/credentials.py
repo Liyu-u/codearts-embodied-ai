@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Mapping
 
 from cryptography.fernet import Fernet
 
@@ -24,3 +25,14 @@ class CredentialCipher:
 
     def decrypt(self, value: bytes) -> str:
         return self._fernet.decrypt(value).decode("utf-8")
+
+
+def public_credential_configuration(
+    encrypted_values: Mapping[str, bytes | str | None],
+) -> dict[str, dict[str, bool]]:
+    """Expose credential presence without returning ciphertext or plaintext."""
+
+    return {
+        name: {"configured": bool(value)}
+        for name, value in encrypted_values.items()
+    }
