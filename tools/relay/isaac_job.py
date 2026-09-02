@@ -97,6 +97,8 @@ class OpenSSHRuntimeRemote:
         return self._run_command(
             [*self._ssh, self.spec, self.encode_command(command)],
             text=True,
+            encoding="utf-8",
+            errors="strict",
             capture_output=True,
             check=check,
         )
@@ -111,6 +113,8 @@ class OpenSSHRuntimeRemote:
             self._run_command(
                 [*self._scp, str(local), f"{self.spec}:{remote_temp}"],
                 text=True,
+                encoding="utf-8",
+                errors="strict",
                 capture_output=True,
                 check=True,
             )
@@ -118,9 +122,25 @@ class OpenSSHRuntimeRemote:
 
     def read_text(self, remote_path: str) -> str | None:
         target = self._safe_path(remote_path)
-        result = self._run(f"cat {shlex.quote(target)}", check=False)
-        if result.returncode == 1:
+
+        existence = self._run(
+            f"test -e {shlex.quote(target)}",
+            check=False,
+        )
+        if existence.returncode == 1:
             return None
+        if existence.returncode != 0:
+            raise subprocess.CalledProcessError(
+                existence.returncode,
+                existence.args,
+                output=existence.stdout,
+                stderr=existence.stderr,
+            )
+
+        result = self._run(
+            f"cat {shlex.quote(target)}",
+            check=False,
+        )
         if result.returncode != 0:
             raise subprocess.CalledProcessError(
                 result.returncode,
@@ -128,6 +148,7 @@ class OpenSSHRuntimeRemote:
                 output=result.stdout,
                 stderr=result.stderr,
             )
+
         return result.stdout
 
     def read_json(self, remote_path: str) -> object:

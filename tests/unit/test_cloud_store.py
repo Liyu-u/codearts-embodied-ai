@@ -55,6 +55,49 @@ class CloudStoreTests(unittest.TestCase):
         self.assertEqual(events[0]["sequence"], 1)
         self.assertEqual(events[0]["payload"], {"visible": True})
 
+    def test_runtime_event_sequence_is_rebased_onto_cloud_sequence(self) -> None:
+        self.store.append_events(
+            "run-001",
+            [
+                {
+                    "event_id": "evt-cloud",
+                    "type": "RUN_CREATED",
+                    "payload": {},
+                }
+            ],
+        )
+
+        self.store.append_events(
+            "run-001",
+            [
+                {
+                    "event_id": "evt-runtime",
+                    "type": "JOB_STARTED",
+                    "sequence": 1,
+                    "payload": {"job_type": "ISAAC_PREPARE_AND_PERCEIVE"},
+                    "provenance": {
+                        "backend": "isaac",
+                        "world_id": "world-test",
+                    },
+                }
+            ],
+        )
+
+        events = self.store.list_events("run-001")
+
+        self.assertEqual(
+            [event["sequence"] for event in events],
+            [1, 2],
+        )
+        self.assertEqual(
+            events[1]["payload"]["runtime_sequence"],
+            1,
+        )
+        self.assertEqual(
+            events[1]["payload"]["runtime_provenance"]["backend"],
+            "isaac",
+        )
+
     def test_duplicate_artifact_name_is_idempotent_but_drift_is_rejected(self) -> None:
         job = self.store.enqueue_job(
             "run-001", "ISAAC_PREPARE_AND_PERCEIVE", {"case_id": "multi-red-001"}

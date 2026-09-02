@@ -99,12 +99,17 @@ def atomic_append_event(path: str | Path, event: Mapping[str, Any]) -> None:
         json.dumps(dict(event), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         + "\n"
     ).encode("utf-8")
-    descriptor = os.open(target, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+    descriptor = os.open(target, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
     try:
         os.write(descriptor, encoded)
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+    # os.open(mode=...) is still affected by umask and existing files
+    # retain their previous mode. Ensure the host-side Relay can read
+    # runtime events written by the container's different UID.
+    os.chmod(target, 0o644)
 
 
 @dataclass(frozen=True, slots=True)

@@ -45,6 +45,13 @@ class LiveRuntimeWorker:
         self.worker_instance_id = worker_instance_id
         self.world_id = world_id
         self._ensure_layout()
+
+        # Cross-UID handoff:
+        # Windows Relay uploads jobs as host user stu_01, while the
+        # persistent Isaac container consumes them as isaac-sim.
+        # The inbox is therefore intentionally shared writable.
+        (self.layout.root / "inbox").chmod(0o777)
+
         atomic_write_json(
             self.layout.root / "worker.json",
             {

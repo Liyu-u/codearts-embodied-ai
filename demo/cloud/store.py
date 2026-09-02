@@ -392,7 +392,28 @@ class CloudStore:
                 ).fetchone()
                 if existing is not None:
                     continue
-                sequence = int(event.get("sequence") or next_sequence)
+                payload = dict(event.get("payload") or {})
+
+                runtime_sequence = event.get("sequence")
+                if runtime_sequence is not None:
+                    if (
+                        isinstance(runtime_sequence, bool)
+                        or not isinstance(runtime_sequence, int)
+                    ):
+                        raise ValueError("event sequence must be an integer")
+                    payload.setdefault("runtime_sequence", runtime_sequence)
+
+                runtime_provenance = event.get("provenance")
+                if isinstance(runtime_provenance, Mapping):
+                    payload.setdefault(
+                        "runtime_provenance",
+                        dict(runtime_provenance),
+                    )
+
+                # The Cloud event stream owns its sequence namespace.
+                # Runtime/Worker sequence numbers are source metadata only.
+                sequence = next_sequence
+
                 connection.execute(
                     "INSERT INTO events(event_id, run_id, job_id, sequence, event_type, "
                     "stage, payload_json, created_at) VALUES(?,?,?,?,?,?,?,?)",
@@ -403,12 +424,12 @@ class CloudStore:
                         sequence,
                         event_type,
                         event.get("stage"),
-                        _json_dump(dict(event.get("payload") or {})),
+                        _json_dump(payload),
                         int(event.get("created_at") or now),
                     ),
                 )
                 inserted += 1
-                next_sequence = max(next_sequence, sequence + 1)
+                next_sequence += 1
         return inserted
 
     def save_artifact(
