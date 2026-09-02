@@ -82,6 +82,35 @@ class LiveIntelligentEvidenceTests(unittest.TestCase):
         self.assertFalse(result["eligible"])
         self.assertIn("ACTION_AFTER_TERMINAL_STOP", result["errors"])
 
+    def test_safe_stop_allows_explicit_terminal_stop_step(self):
+        docs = self._documents()
+        docs["execution"].update({
+            "status": "SAFE_STOP",
+            "steps": [
+                {
+                    "step_id": "grasp",
+                    "action": "grasp",
+                    "status": "FAILED",
+                    "reason": "COLLISION_DETECTED",
+                },
+                {
+                    "step_id": "safe_stop",
+                    "action": "stop",
+                    "phase": "safe_stop",
+                    "status": "SUCCESS",
+                    "reason": "COLLISION_DETECTED",
+                },
+            ],
+        })
+
+        result = audit_documents(docs, "V4_FULL")
+
+        self.assertTrue(result["eligible"])
+        self.assertNotIn(
+            "ACTION_AFTER_TERMINAL_STOP",
+            result["errors"],
+        )
+
     def test_metrics_keep_physical_safety_and_api_failures_separate(self):
         metrics = compute_metrics([
             {"eligible": True, "population": "normal", "status": "SUCCEEDED", "api_ok": True, "contract_ok": True, "binding_ok": True, "duration_ms": 100},

@@ -148,7 +148,9 @@ class IsaacDynamicScene:
             scales=(0.10, 0.10, 0.02),
             colors="gray",
         )
-        GeomPrim(paths=marker.paths, apply_collision_apis=True)
+        # The destination zone is a visual/semantic marker, not a
+        # physical obstacle. Giving it a collider makes the grasp safety
+        # sphere collide with the nearby target zone before finger closure.
         app.update()
         return cls(app, dynamic)
 

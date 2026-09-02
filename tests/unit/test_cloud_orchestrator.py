@@ -345,6 +345,50 @@ class CloudOrchestratorTests(unittest.TestCase):
             blocked["error_message"],
         )
 
+    def test_terminal_stop_success_is_not_action_after_terminal_stop(self) -> None:
+        safe_stop = {
+            "status": "SAFE_STOP",
+            "steps": [
+                {
+                    "action": "grasp",
+                    "status": "FAILED",
+                    "reason": "COLLISION_DETECTED",
+                },
+                {
+                    "action": "stop",
+                    "phase": "safe_stop",
+                    "status": "SUCCESS",
+                    "reason": "COLLISION_DETECTED",
+                },
+            ],
+        }
+
+        unsafe_resume = {
+            "status": "SAFE_STOP",
+            "steps": [
+                {
+                    "action": "grasp",
+                    "status": "FAILED",
+                    "reason": "COLLISION_DETECTED",
+                },
+                {
+                    "action": "release",
+                    "status": "SUCCESS",
+                },
+            ],
+        }
+
+        self.assertFalse(
+            CloudOrchestrator._successful_action_after_stop(
+                safe_stop
+            )
+        )
+        self.assertTrue(
+            CloudOrchestrator._successful_action_after_stop(
+                unsafe_resume
+            )
+        )
+
     def test_c_digest_backend_final_pose_and_d_evidence_fail_closed(self) -> None:
         cases = ("digest", "backend", "final_pose", "d_fallback")
         for case in cases:

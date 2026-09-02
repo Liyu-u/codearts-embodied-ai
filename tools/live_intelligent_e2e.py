@@ -46,6 +46,9 @@ def _successful_action_after_stop(execution: dict[str, Any]) -> bool:
             stopped = True
             continue
         if stopped and status == "SUCCESS":
+            action = str(step.get("action") or "").strip().lower()
+            if action == "stop":
+                continue
             return True
     return False
 

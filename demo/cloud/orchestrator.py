@@ -337,6 +337,12 @@ class CloudOrchestrator:
             if status in {"FAILED", "SAFE_STOP", "BLOCKED"} and any(token in reason for token in stop_tokens):
                 stopped = True
             elif stopped and status == "SUCCESS":
+                action = str(step.get("action") or "").strip().lower()
+                # Executing the terminal stop primitive is the safe response
+                # to the failure itself; only a later non-stop SUCCESS is an
+                # action-after-terminal-stop violation.
+                if action == "stop":
+                    continue
                 return True
         return False
 
