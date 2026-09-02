@@ -116,15 +116,40 @@ class CloudOrchestrator:
     def _require_strategy_evidence(
         strategy: dict[str, Any], task: dict[str, Any], perception: dict[str, Any]
     ) -> None:
+        if strategy.get("blocked") or not strategy.get("success"):
+            reasons = []
+
+            for value in strategy.get("blocking_reasons") or []:
+                if value:
+                    reasons.append(str(value))
+
+            for value in (strategy.get("validation") or {}).get("errors") or []:
+                if value:
+                    reasons.append(str(value))
+
+            provider_error = strategy.get("provider_error")
+            if provider_error:
+                reasons.append(str(provider_error))
+
+            reasons = list(dict.fromkeys(reasons))
+            detail = "; ".join(reasons) if reasons else "unknown B failure"
+
+            raise EvidenceError("B strategy blocked: " + detail)
+
+        if strategy.get("code") is not None:
+            raise EvidenceError("B strategy contains executable code")
+
         validation = validate_strategy(
             strategy,
             task=task,
             capabilities=DEFAULT_CAPABILITIES,
         )
         if not validation["passed"]:
-            raise EvidenceError("B strategy failed validation: " + "; ".join(validation["errors"]))
-        if strategy.get("code") is not None or strategy.get("blocked") or not strategy.get("success"):
-            raise EvidenceError("B strategy is blocked, unsuccessful, or contains code")
+            raise EvidenceError(
+                "B strategy failed validation: "
+                + "; ".join(validation["errors"])
+            )
+
         provenance = strategy.get("provenance") or {}
         if (
             not provenance.get("request_id")

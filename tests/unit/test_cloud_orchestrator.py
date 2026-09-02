@@ -229,6 +229,58 @@ class CloudOrchestratorTests(unittest.TestCase):
         blocked = orchestrator.handle_perception("run-test", perception_document())
         self.assertEqual(blocked["state"], "BLOCKED")
 
+    def test_b_block_reason_is_preserved_before_empty_steps_validation(self) -> None:
+        def blocked_strategy(_task, perception, run_id):
+            return {
+                "schema_version": "strategy.v1",
+                "task_id": run_id,
+                "steps": [],
+                "code": None,
+                "success": False,
+                "blocked": True,
+                "blocking_reasons": [
+                    "CODEARTS_REVIEW_OUTPUT_MISSING"
+                ],
+                "validation": {
+                    "passed": False,
+                    "errors": [
+                        "CODEARTS_REVIEW_OUTPUT_MISSING"
+                    ],
+                },
+                "provenance": {
+                    "source": "codearts_agent",
+                    "request_id": "codearts-failed-001",
+                    "fallback": False,
+                },
+                "input_perception_sha256":
+                    document_digest(perception),
+            }
+
+        orchestrator = self.build_orchestrator(
+            strategy=blocked_strategy
+        )
+
+        orchestrator.create_run(
+            "multi-red-001",
+            "把红色方块放到桌面区域",
+            "operator-1",
+        )
+
+        blocked = orchestrator.handle_perception(
+            "run-test",
+            perception_document(),
+        )
+
+        self.assertEqual(blocked["state"], "BLOCKED")
+        self.assertIn(
+            "CODEARTS_REVIEW_OUTPUT_MISSING",
+            blocked["error_message"],
+        )
+        self.assertNotIn(
+            "STEPS_EMPTY",
+            blocked["error_message"],
+        )
+
     def test_c_digest_backend_final_pose_and_d_evidence_fail_closed(self) -> None:
         cases = ("digest", "backend", "final_pose", "d_fallback")
         for case in cases:
