@@ -1208,6 +1208,40 @@ class OmniDriver:
                 if fallback_unresolved or not fallback_paths:
                     detail = ";".join(unknown_hits[:2]) or "raycast fallback found no path"
                     raise DriverError(f"PhysX overlap hit path unavailable ({detail})")
+            # The grasp TCP intentionally operates close to the support
+            # surface. With the configured 5 cm safety sphere, a valid grasp
+            # pose around z=4.85 cm geometrically overlaps the ground plane by
+            # roughly 1.5 mm. Mirror the existing FrankaPickPlaceDriver
+            # semantics: ground is ignored only when TCP clearance is still
+            # above the bounded safe threshold. All other colliders remain
+            # fail-closed.
+            ground_clearance = (
+                float(pose.get("z", 0.0))
+                >= max(0.04, float(radius) * 0.8)
+            )
+
+            if ground_clearance:
+                hits = [
+                    item
+                    for item in hits
+                    if not (
+                        item == "/World/ground_plane"
+                        or item.startswith("/World/ground_plane/")
+                    )
+                ]
+
+            if int(hit_count) > 0:
+                print(
+                    "[omni-collision-query] "
+                    f"pose={pose!r} "
+                    f"radius={float(radius)!r} "
+                    f"excluded_paths={excluded_paths!r} "
+                    f"hit_count={int(hit_count)!r} "
+                    f"ground_clearance={ground_clearance!r} "
+                    f"remaining_hits={hits!r}",
+                    flush=True,
+                )
+
             return not hits
         except DriverError:
             raise
