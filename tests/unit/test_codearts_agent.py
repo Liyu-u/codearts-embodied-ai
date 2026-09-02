@@ -277,6 +277,47 @@ class CodeArtsClientTests(unittest.TestCase):
         self.assertTrue(result["trace"]["task_id_bound_locally"])
         self.assertEqual(result["trace"]["validation_retry_count"], 1)
 
+    def test_two_empty_strategies_can_recover_on_third_attempt(self):
+        calls = []
+        empty = {
+            "schema_version": "strategy.v1",
+            "task_id": "task-from-example",
+            "steps": [],
+            "code": None,
+        }
+        valid = valid_strategy()
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            strategy = empty if len(calls) <= 2 else valid
+            content = f"{OUTPUT_BEGIN}\n{json.dumps(strategy)}\n{OUTPUT_END}"
+            return SimpleNamespace(
+                returncode=0,
+                stdout=content,
+                stderr="",
+            )
+
+        with patch.dict(
+            os.environ,
+            {
+                "CODEARTS_STRATEGY_MAX_RETRIES": "2",
+                "CODEARTS_STRATEGY_RETRY_BACKOFF_S": "0",
+            },
+        ):
+            client = CodeArtsStrategyClient(
+                executable="codearts",
+                runner=runner,
+                which=lambda _: r"C:\Tools\codearts.exe",
+            )
+            result = client.generate(TASK)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(
+            result["trace"]["validation_retry_count"],
+            2,
+        )
+
     def test_persistent_empty_strategy_is_rejected_and_never_sent_forward(self):
         empty = {
             "schema_version": "strategy.v1",

@@ -145,10 +145,16 @@ class CodeArtsStrategyClient:
         errors = validate_strategy(candidate, task)
 
         # A zero-step envelope is a transient provider formatting failure in
-        # practice.  Spend only the bounded B retry budget on that shape;
+        # practice. Spend only the bounded B retry budget on that shape;
         # semantic/action validation errors are never retried.
-        if errors and _is_retryable_strategy_validation(errors) and self.max_retries:
-            trace["validation_retry_count"] = 1
+        validation_retry_count = 0
+        while (
+            errors
+            and _is_retryable_strategy_validation(errors)
+            and validation_retry_count < self.max_retries
+        ):
+            validation_retry_count += 1
+            trace["validation_retry_count"] = validation_retry_count
             time.sleep(min(2.0, self.retry_backoff_s))
             with _CLI_LOCK:
                 retry_completed, retry_error = self._run_cli_with_retries(command, trace)
@@ -160,6 +166,16 @@ class CodeArtsStrategyClient:
                 return _failure(f"CODEARTS_CLI_FAILED:{detail}", trace)
             candidate = extract_strategy(retry_completed.stdout)
             if candidate is None:
+                provider_error = extract_provider_error(
+                    (retry_completed.stdout or "")
+                    + "\n"
+                    + (retry_completed.stderr or "")
+                )
+                if provider_error:
+                    return _failure(
+                        f"CODEARTS_PROVIDER_ERROR:{provider_error}",
+                        trace,
+                    )
                 return _failure("CODEARTS_OUTPUT_MISSING_STRATEGY", trace)
             candidate = _bind_provider_task_id(candidate, task, trace)
             errors = validate_strategy(candidate, task)
