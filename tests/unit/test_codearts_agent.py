@@ -313,6 +313,14 @@ class CodeArtsClientTests(unittest.TestCase):
 
         self.assertTrue(result["success"], result)
         self.assertEqual(len(calls), 3)
+
+        titles = [
+            command[command.index("--title") + 1]
+            for command in calls
+        ]
+
+        self.assertEqual(len(set(titles)), 3)
+
         self.assertEqual(
             result["trace"]["validation_retry_count"],
             2,

@@ -156,8 +156,18 @@ class CodeArtsStrategyClient:
             validation_retry_count += 1
             trace["validation_retry_count"] = validation_retry_count
             time.sleep(min(2.0, self.retry_backoff_s))
+            retry_command = list(command)
+            title_index = retry_command.index("--title") + 1
+            retry_command[title_index] = (
+                f"robot-strategy-{task.get('task_id', 'unknown')}-"
+                f"{uuid4().hex[:10]}"
+            )
+
             with _CLI_LOCK:
-                retry_completed, retry_error = self._run_cli_with_retries(command, trace)
+                retry_completed, retry_error = self._run_cli_with_retries(
+                    retry_command,
+                    trace,
+                )
             if retry_error:
                 return _failure(retry_error, trace)
             trace["exit_code"] = retry_completed.returncode
