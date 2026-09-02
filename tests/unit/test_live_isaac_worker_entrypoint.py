@@ -247,6 +247,59 @@ class LiveIsaacEntrypointTests(unittest.TestCase):
             "task-run-001",
         )
 
+    def test_execute_preserves_safe_stop_evidence_without_post_pose_read(self) -> None:
+        reads = []
+
+        class Driver:
+            def read_object_pose(self, object_id):
+                reads.append(object_id)
+                if len(reads) >= 2:
+                    # After SAFE_STOP the driver is e-stopped and this raises;
+                    # execute() must never reach this second read.
+                    raise RuntimeError("OmniDriver is in emergency stop state")
+                return {"x": 0.5, "y": 0.1, "z": 0.03, "object_id": object_id}
+
+        class Scene:
+            def reset(self, _job):
+                pass
+
+            def manifest(self, _job):
+                return [{"id": "green_cube", "category": "cube"}]
+
+        class Adapter:
+            def run(self, strategy):
+                return {
+                    "schema_version": "execution.v1",
+                    "task_id": strategy["task_id"],
+                    "status": "SAFE_STOP",
+                    "steps": [],
+                    "safety_events": [{"type": "MOTION_TIMEOUT"}],
+                    "provenance": {"backend": "isaac"},
+                }
+
+        session = PersistentIsaacSession(
+            app=FakeApp(),
+            driver=Driver(),
+            scene=Scene(),
+            profile=object(),
+            provider_factory=lambda **kwargs: object(),
+            adapter_factory=lambda profile, perception, received_driver: Adapter(),
+        )
+        job = execute_job("run-001")
+
+        artifacts = session.execute(job)
+
+        # Post-action pose read must be skipped after a SAFE_STOP so the real
+        # execution evidence survives (previously the e-stop read crashed
+        # execute() and dropped execution.json -> "execution.json is missing").
+        self.assertEqual(reads, ["red_cube"])
+        execution = artifacts["execution.json"]
+        self.assertEqual(execution["status"], "SAFE_STOP")
+        self.assertEqual(execution["safety_events"], [{"type": "MOTION_TIMEOUT"}])
+        self.assertIsNone(execution["object_after"])
+        self.assertEqual(execution["object_before"]["object_id"], "red_cube")
+        self.assertFalse(artifacts["final_pose.json"]["goal_reached"])
+
     def test_omni_driver_reset_reuses_existing_franka_and_clears_stop_state(self) -> None:
         app = FakeApp()
 

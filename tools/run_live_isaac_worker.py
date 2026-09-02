@@ -502,7 +502,15 @@ class PersistentIsaacSession:
         execution = adapter.run(strategy)
         if execution.get("task_id") != task_id:
             raise ValueError("executor task_id drift")
-        after = self.driver.read_object_pose(object_id) if object_id else None
+        # Post-action pose is only meaningful for a SUCCEEDED run.  After a
+        # SAFE_STOP (or any failure that engaged emergency stop) the driver is
+        # e-stopped and read_object_pose raises "OmniDriver is in emergency
+        # stop state", which must NOT overwrite the real execution evidence —
+        # previously that crash dropped execution.json entirely and surfaced
+        # only as the secondary "execution.json is missing".
+        after = None
+        if object_id and execution.get("status") == "SUCCEEDED":
+            after = self.driver.read_object_pose(object_id)
         execution["object_id"] = object_id or None
         execution["object_before"] = before
         execution["object_after"] = after
