@@ -168,6 +168,7 @@ class CloudRelayAgent:
         job = deepcopy(dict(payload))
         job["job_type"] = claimed.get("job_type")
         job["run_id"] = claimed.get("run_id")
+        job["job_id"] = claimed.get("job_id")
         return job
 
     def _renew_while_running(self, job_id: str, stopped: threading.Event) -> None:

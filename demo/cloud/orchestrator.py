@@ -96,7 +96,12 @@ class CloudOrchestrator:
     @staticmethod
     def _require_intent_evidence(task: dict[str, Any], run_id: str) -> None:
         assert_contract(task, "task.v1")
-        if task.get("task_id") != run_id or task.get("status") != "READY":
+        task_id = task.get("task_id")
+        if not isinstance(task_id, str) or not task_id:
+            raise EvidenceError("A did not return a non-empty task_id")
+        if task_id == run_id:
+            raise EvidenceError("A task_id must be independent from Cloud run_id")
+        if task.get("status") != "READY":
             raise EvidenceError("A did not return one READY task for this run")
         trace = ((task.get("diagnostics") or {}).get("engine_trace") or {})
         if (
@@ -254,24 +259,27 @@ class CloudOrchestrator:
         if not isinstance(final_pose, dict):
             raise EvidenceError("final_pose.json is missing")
         assert_contract(execution, "execution.v1")
-        strategy = job["payload"]["strategy"]
+        payload = job["payload"]
+        strategy = payload["strategy"]
+        task = payload["task"]
         run_id = job["run_id"]
-        if execution.get("task_id") != run_id:
+        task_id = task.get("task_id")
+        if execution.get("task_id") != task_id:
             raise EvidenceError("C execution task_id drift")
         if execution.get("input_strategy_sha256") != strategy_digest(strategy):
             raise EvidenceError("C executed strategy digest drift")
         if (execution.get("provenance") or {}).get("backend") != "isaac":
             raise EvidenceError("C execution is not Isaac-backed")
-        if final_pose.get("run_id") != run_id or final_pose.get("task_id") != run_id:
+        if final_pose.get("run_id") != run_id or final_pose.get("task_id") != task_id:
             raise EvidenceError("final pose run/task identity drift")
         if (final_pose.get("provenance") or {}).get("backend") != "isaac":
             raise EvidenceError("final pose is not Isaac-backed")
         return execution, final_pose
 
     @staticmethod
-    def _require_feedback_evidence(feedback: dict[str, Any], run_id: str) -> None:
+    def _require_feedback_evidence(feedback: dict[str, Any], task_id: str) -> None:
         assert_contract(feedback, "feedback.v1")
-        if feedback.get("task_id") != run_id:
+        if feedback.get("task_id") != task_id:
             raise EvidenceError("D feedback task_id drift")
         provenance = feedback.get("provenance") or {}
         if (
@@ -315,7 +323,10 @@ class CloudOrchestrator:
                 },
                 run_id,
             )
-            self._require_feedback_evidence(feedback, run_id)
+            self._require_feedback_evidence(
+                feedback,
+                str(payload["task"]["task_id"]),
+            )
             self._event(
                 run_id,
                 "D_COMPLETED",

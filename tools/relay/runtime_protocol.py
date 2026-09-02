@@ -55,8 +55,10 @@ def validate_job(job: Mapping[str, Any]) -> dict[str, Any]:
     strategy = value.get("strategy")
     assert_contract(task, "task.v1")
     assert_contract(perception, "perception.v1")
-    if task.get("task_id") != run_id or strategy.get("task_id") != run_id:
-        raise ValueError("task/strategy identity does not match run_id")
+    if task.get("task_id") != strategy.get("task_id"):
+        raise ValueError("strategy task_id does not match task task_id")
+    if value.get("job_id") is not None:
+        _validate_id(value.get("job_id"), "job_id")
     if value.get("perception_sha256") != document_digest(perception):
         raise ValueError("perception digest drift")
     if value.get("strategy_sha256") != strategy_digest(strategy):

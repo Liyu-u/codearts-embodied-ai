@@ -12,6 +12,7 @@ User=codearts
 Group=codearts
 WorkingDirectory=/opt/codearts/current
 EnvironmentFile=/etc/codearts/demo.env
+EnvironmentFile=/etc/codearts/ria.env
 # The server reads CLOUD_BIND_HOST/CLOUD_BIND_PORT from the environment file
 # (candidate binds 127.0.0.1:8876; production keeps 8765 on a separate unit).
 ExecStart=/opt/codearts/venv/bin/python -m demo.server
@@ -19,7 +20,7 @@ Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/codearts/current/.cloud-runtime
+ReadWritePaths=/opt/codearts/state
 
 [Install]
 WantedBy=multi-user.target

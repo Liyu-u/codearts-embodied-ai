@@ -29,6 +29,7 @@ from robot_intent_agent.planner import LLMPlanner  # noqa: E402
 from robot_intent_agent.scene_builder import RawObjectPercept, SemanticSceneBuilder  # noqa: E402
 from robot_intent_agent.semantic_compiler import SemanticCompiler  # noqa: E402
 from robot_intent_agent.schemas.scene import (  # noqa: E402
+    Affordance,
     SpatialPredicate,
     SpatialRelation,
 )
@@ -280,6 +281,52 @@ def _build_scene(perception: dict):
         )
 
     scene = SemanticSceneBuilder().build(raw_objects)
+
+    # perception.v1 execution metadata is authoritative for physical
+    # executability. SemanticSceneBuilder may infer generic affordances from
+    # the category name, but those defaults must never contradict explicit
+    # execution facts supplied by perception.
+    for obj in scene.objects:
+        attrs = getattr(obj, "attributes", {}) or {}
+        execution = attrs.get("_integration_execution")
+        if not isinstance(execution, dict):
+            continue
+
+        affordances = list(getattr(obj, "affordances", []) or [])
+
+        if execution.get("graspable") is False:
+            affordances = [
+                item for item in affordances
+                if item != Affordance.GRASPABLE
+            ]
+        elif (
+            execution.get("graspable") is True
+            and Affordance.GRASPABLE not in affordances
+        ):
+            affordances.append(Affordance.GRASPABLE)
+
+        if execution.get("movable") is False:
+            affordances = [
+                item for item in affordances
+                if item != Affordance.MOVABLE
+            ]
+        elif (
+            execution.get("movable") is True
+            and Affordance.MOVABLE not in affordances
+        ):
+            affordances.append(Affordance.MOVABLE)
+
+        # A non-movable object explicitly authorized as a destination is a
+        # fixed placement surface. Do not infer FIXED merely from
+        # valid_destination=True because movable stack targets are valid too.
+        if (
+            execution.get("valid_destination") is True
+            and execution.get("movable") is False
+            and Affordance.FIXED not in affordances
+        ):
+            affordances.append(Affordance.FIXED)
+
+        obj.affordances = affordances
     # SemanticSceneBuilder creates UUIDs by default.  The integration contract
     # requires perception-owned IDs to survive unchanged, so remap the scene
     # objects and any already-inferred relations before semantic grounding.

@@ -493,10 +493,15 @@ class PersistentIsaacSession:
         strategy = deepcopy(job["strategy"])
         adapter = self.adapter_factory(self.profile, perception, self.driver)
         task = job.get("task") or {}
+        task_id = str(task.get("task_id") or "")
+        if not task_id:
+            raise ValueError("ISAAC_EXECUTE task_id is required")
         target_ids = task.get("target_ids") or []
         object_id = str(target_ids[0]) if target_ids else ""
         before = self.driver.read_object_pose(object_id) if object_id else None
         execution = adapter.run(strategy)
+        if execution.get("task_id") != task_id:
+            raise ValueError("executor task_id drift")
         after = self.driver.read_object_pose(object_id) if object_id else None
         execution["object_id"] = object_id or None
         execution["object_before"] = before
@@ -511,7 +516,7 @@ class PersistentIsaacSession:
         )
         final_pose = {
             "run_id": job["run_id"],
-            "task_id": job["run_id"],
+            "task_id": task_id,
             "object_id": object_id or None,
             "pose": after,
             "goal_reached": execution.get("status") == "SUCCEEDED",

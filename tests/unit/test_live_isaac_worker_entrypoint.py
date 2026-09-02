@@ -235,10 +235,17 @@ class LiveIsaacEntrypointTests(unittest.TestCase):
         artifacts = session.execute(job)
 
         self.assertEqual(calls[:3], [("scene-reset", "run-001"), "driver-reset", "observe"])
-        self.assertIn(("execute", "run-001"), calls)
+        self.assertIn(("execute", "task-run-001"), calls)
         self.assertEqual(perception["provenance"]["backend"], "isaac_ground_truth")
         self.assertEqual(artifacts["execution.json"]["input_strategy_sha256"], job["strategy_sha256"])
-        self.assertEqual(artifacts["final_pose.json"]["task_id"], "run-001")
+        self.assertEqual(
+            artifacts["final_pose.json"]["run_id"],
+            "run-001",
+        )
+        self.assertEqual(
+            artifacts["final_pose.json"]["task_id"],
+            "task-run-001",
+        )
 
     def test_omni_driver_reset_reuses_existing_franka_and_clears_stop_state(self) -> None:
         app = FakeApp()

@@ -34,6 +34,7 @@ if (-not $ReleaseName) {
 }
 
 $remoteBase = "/opt/codearts"
+$stateDir = "$remoteBase/state"
 $releaseDir = "$remoteBase/releases/$ReleaseName"
 $currentLink = "$remoteBase/current"
 $previousLink = "$remoteBase/previous"
@@ -45,9 +46,20 @@ $hlsUrl = "http://127.0.0.1:8888/live/isaac/index.m3u8"
 $serviceUnit = "/etc/systemd/system/closed-loop-demo.service"
 $serviceName = "closed-loop-demo"
 
-function Invoke-Remote([string]$Command) {
+function Invoke-Remote(
+    [string]$Command,
+    [switch]$AllowFailure
+) {
     if (-not $Command) { return @() }
-    return & ssh $SshAlias $Command 2>&1
+
+    $output = & ssh $SshAlias $Command 2>&1
+    $exitCode = $LASTEXITCODE
+
+    if (-not $AllowFailure -and $exitCode -ne 0) {
+        throw "remote command failed with exit code $exitCode"
+    }
+
+    return $output
 }
 
 function Send-Bundle {
@@ -73,7 +85,11 @@ function Send-Bundle {
 }
 
 function DeployCandidate-Phase {
-    Invoke-Remote "mkdir -p $releaseDir/.cloud-runtime"
+    Invoke-Remote "mkdir -p $releaseDir"
+    Invoke-Remote "sudo install -d -o codearts -g codearts -m 0750 $stateDir"
+    Invoke-Remote "sudo test -s /etc/codearts/demo.env"
+    Invoke-Remote "sudo test -s /etc/codearts/ria.env"
+    Invoke-Remote "sudo grep -q '^CLOUD_DB_PATH=/opt/codearts/state/cloud.sqlite3$' /etc/codearts/demo.env"
     Send-Bundle
     $setup = @(
         "tar -xzf $releaseDir/bundle.tar.gz -C $releaseDir",
@@ -97,13 +113,13 @@ function DeployCandidate-Phase {
 }
 
 function CheckCandidate-Phase {
-    $result = Invoke-Remote "curl -s -o /dev/null -w '%{http_code}' $candidateHealth"
+    $result = Invoke-Remote "curl -s -o /dev/null -w '%{http_code}' $candidateHealth" -AllowFailure
     if (($result -join "") -match "200") {
         Write-Host "[check] candidate API health 200"
     } else {
         Write-Warning "[check] candidate API health: $($result -join ' ')"
     }
-    $hls = Invoke-Remote "curl -s -o /dev/null -w '%{http_code}' $hlsUrl"
+    $hls = Invoke-Remote "curl -s -o /dev/null -w '%{http_code}' $hlsUrl" -AllowFailure
     Write-Host "[check] HLS probe $hlsUrl -> $($hls -join '') (read-only, operator-owned)"
 }
 

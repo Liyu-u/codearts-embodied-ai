@@ -64,7 +64,7 @@ class CloudRunTypeTests(unittest.TestCase):
         source = {
             "run_id": "run-001",
             "state": "EXECUTING",
-            "instruction": "把红色方块放到桌面区域",
+            "instruction": "把红色方块放到指定放置区域",
             "relay_token": "secret",
             "credential_ciphertext": "encrypted-secret",
             "database_path": "C:/private/cloud.sqlite3",
@@ -113,7 +113,7 @@ class VerifiedScenarioRegistryTests(unittest.TestCase):
 
         self.assertEqual(
             get_verified_scenario("multi-red-001")["instruction"],
-            "把红色方块放到桌面区域",
+            "把红色方块放到指定放置区域",
         )
         with self.assertRaises(KeyError):
             get_verified_scenario("not-verified")

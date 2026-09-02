@@ -6,7 +6,7 @@ from copy import deepcopy
 from uuid import UUID
 
 from integration.adapters import intent, perception
-from modules.intent_understanding.adapter import _classify_intent_failure
+from modules.intent_understanding.adapter import _build_scene, _classify_intent_failure
 
 
 def _perception(*, target_execution=None, destination_execution=None, dimensions=None):
@@ -142,6 +142,67 @@ class IntentExecutionGateTests(unittest.TestCase):
         result = self._run(_perception())
         self.assertNotIn("destination", result)
         self.assertIn("destination_id", result)
+
+    def test_execution_metadata_overrides_generic_scene_affordances(self):
+        perception = {
+            "schema_version": "perception.v1",
+            "scene_id": "scene-execution-affordance",
+            "objects": [
+                {
+                    "id": "zone-unstack-target",
+                    "category": "放置区域",
+                    "pose": {"x": 0.45, "y": 0.10, "z": 0.025},
+                    "dimensions": {"x": 0.10, "y": 0.10, "z": 0.02},
+                    "attributes": {
+                        "display_name": "放置区域",
+                        "purpose": "safe_placement",
+                    },
+                    "execution": {
+                        "graspable": False,
+                        "movable": False,
+                        "valid_destination": True,
+                    },
+                },
+                {
+                    "id": "movable-stack-target",
+                    "category": "红色方块",
+                    "pose": {"x": 0.50, "y": -0.10, "z": 0.03},
+                    "dimensions": {"x": 0.04, "y": 0.04, "z": 0.04},
+                    "attributes": {"color": "red"},
+                    "execution": {
+                        "graspable": True,
+                        "movable": True,
+                        "valid_destination": True,
+                    },
+                },
+            ],
+        }
+
+        scene = _build_scene(perception)
+
+        zone = scene.find_object("zone-unstack-target")
+        self.assertIsNotNone(zone)
+
+        zone_affordances = {
+            item.value if hasattr(item, "value") else str(item)
+            for item in zone.affordances
+        }
+
+        self.assertIn("fixed", zone_affordances)
+        self.assertNotIn("movable", zone_affordances)
+        self.assertNotIn("graspable", zone_affordances)
+
+        movable = scene.find_object("movable-stack-target")
+        self.assertIsNotNone(movable)
+
+        movable_affordances = {
+            item.value if hasattr(item, "value") else str(item)
+            for item in movable.affordances
+        }
+
+        self.assertIn("movable", movable_affordances)
+        self.assertIn("graspable", movable_affordances)
+        self.assertNotIn("fixed", movable_affordances)
 
     def test_provider_balance_failure_has_stable_diagnostic_class(self):
         class BalanceError(Exception):

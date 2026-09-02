@@ -34,7 +34,7 @@ class FakeRuntimeRemote:
         else:
             self.files[f"{root}/results/{run_id}/execution.json"] = {
                 "schema_version": "execution.v1",
-                "task_id": run_id,
+                "task_id": job["task"]["task_id"],
                 "status": "SUCCEEDED",
                 "steps": [],
                 "input_strategy_sha256": job["strategy_sha256"],
@@ -42,11 +42,19 @@ class FakeRuntimeRemote:
             }
             self.files[f"{root}/results/{run_id}/final_pose.json"] = {
                 "run_id": run_id,
-                "task_id": run_id,
+                "task_id": job["task"]["task_id"],
                 "goal_reached": True,
                 "provenance": {"backend": "isaac"},
             }
-        self.files[f"{root}/results/{run_id}/complete.json"] = {"status": "SUCCEEDED"}
+        completion = {
+            "schema_version": "live-completion.v1",
+            "run_id": run_id,
+            "job_type": job["job_type"],
+            "status": "SUCCEEDED",
+        }
+        if job.get("job_id") is not None:
+            completion["job_id"] = job["job_id"]
+        self.files[f"{root}/results/{run_id}/complete.json"] = completion
 
     def read_text(self, remote_path: str) -> str | None:
         self.reads.append(remote_path)
@@ -55,6 +63,14 @@ class FakeRuntimeRemote:
 
     def read_json(self, remote_path: str):
         self.reads.append(remote_path)
+
+        # Simulate the production SSH remote faithfully: when the completion
+        # marker has not been published yet, reading complete.json returns
+        # None.  IsaacJobRunner now validates the marker contents directly
+        # instead of relying on a separate exists() probe.
+        if not self.complete and remote_path.endswith("/complete.json"):
+            return None
+
         return self.files.get(remote_path)
 
     def exists(self, remote_path: str) -> bool:
@@ -71,6 +87,7 @@ def execute_job(run_id: str = "run-001") -> dict:
     return {
         "schema_version": "cloud-job.v1",
         "job_type": "ISAAC_EXECUTE",
+        "job_id": f"job-{run_id}",
         "run_id": run_id,
         "case_id": "multi-red-001",
         "task": task,
@@ -102,6 +119,7 @@ class IsaacJobRunnerTests(unittest.TestCase):
                 {
                     "schema_version": "cloud-job.v1",
                     "job_type": "ISAAC_PREPARE_AND_PERCEIVE",
+                    "job_id": "job-prepare-run-001",
                     "run_id": "run-001",
                     "case_id": "multi-red-001",
                     "scene_id": "multi_object_stacking",

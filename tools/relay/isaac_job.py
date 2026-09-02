@@ -225,6 +225,24 @@ class IsaacJobRunner:
                 raise ValueError("runtime event sequences are not strictly ordered")
         return events
 
+    @staticmethod
+    def _completion_matches(
+        completion: object,
+        job: Mapping[str, Any],
+    ) -> bool:
+        if not isinstance(completion, dict):
+            return False
+        if completion.get("run_id") != job.get("run_id"):
+            return False
+        if completion.get("job_type") != job.get("job_type"):
+            return False
+
+        job_id = job.get("job_id")
+        if job_id is not None and completion.get("job_id") != job_id:
+            return False
+
+        return True
+
     def run(
         self,
         job: dict[str, Any],
@@ -239,19 +257,23 @@ class IsaacJobRunner:
         try:
             self.config.remote.upload_job(paths["inbox"], validated)
             uploaded = True
+            completion: dict[str, Any] | None = None
             while True:
                 for event in self._new_events(
                     self.config.remote.read_text(paths["events"]), last_sequence
                 ):
                     emit(event)
                     last_sequence = event["sequence"]
-                if self.config.remote.exists(paths["complete"]):
+
+                candidate = self.config.remote.read_json(paths["complete"])
+                if self._completion_matches(candidate, validated):
+                    completion = candidate
                     break
+
                 if time.monotonic() >= deadline:
                     raise TimeoutError(f"persistent Isaac worker timed out for {run_id}")
                 time.sleep(self.config.poll_interval_s)
 
-            completion = self.config.remote.read_json(paths["complete"])
             if not isinstance(completion, dict):
                 raise ValueError("runtime complete marker is not a JSON object")
             artifacts: dict[str, Any] = {}

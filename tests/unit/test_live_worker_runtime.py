@@ -19,6 +19,7 @@ def prepare_job(run_id: str = "run-worker-001") -> dict:
     return {
         "schema_version": "cloud-job.v1",
         "job_type": "ISAAC_PREPARE_AND_PERCEIVE",
+        "job_id": f"job-prepare-{run_id}",
         "run_id": run_id,
         "case_id": "multi-red-001",
         "scene_id": "multi_object_stacking",
@@ -49,14 +50,14 @@ class LiveRuntimeWorkerTests(unittest.TestCase):
             return {
                 "execution.json": {
                     "schema_version": "execution.v1",
-                    "task_id": job["run_id"],
+                    "task_id": job["task"]["task_id"],
                     "status": "SUCCEEDED",
                     "steps": [],
                     "input_strategy_sha256": job["strategy_sha256"],
                 },
                 "final_pose.json": {
                     "run_id": job["run_id"],
-                    "task_id": job["run_id"],
+                    "task_id": job["task"]["task_id"],
                     "goal_reached": True,
                 },
             }
@@ -124,6 +125,32 @@ class LiveRuntimeWorkerTests(unittest.TestCase):
         self.assertEqual(duplicate["status"], "DUPLICATE")
         self.assertEqual(self.calls.count(("prepare", "run-worker-001")), 1)
         self.assertFalse(self.layout.for_run("run-worker-001")["inbox"].exists())
+
+    def test_prepare_then_execute_same_run_are_distinct_runtime_jobs(self) -> None:
+        run_id = "run-worker-sequential"
+        self.enqueue(prepare_job(run_id))
+        worker = self.build_worker()
+
+        prepared = worker.process_once()
+
+        execution_job = execute_job(run_id)
+        execution_job["job_id"] = f"job-execute-{run_id}"
+        self.enqueue(execution_job)
+
+        executed = worker.process_once()
+
+        paths = self.layout.for_run(run_id)
+        completion = json.loads(
+            (paths["result_dir"] / "complete.json").read_text(encoding="utf-8")
+        )
+        events = read_events(paths["events"])
+
+        self.assertEqual(prepared["status"], "SUCCEEDED")
+        self.assertEqual(executed["status"], "SUCCEEDED")
+        self.assertIn(("execute", run_id), self.calls)
+        self.assertEqual(completion["job_type"], "ISAAC_EXECUTE")
+        self.assertEqual(completion["job_id"], f"job-execute-{run_id}")
+        self.assertIn("EXECUTION_STARTED", [event["type"] for event in events])
 
     def test_terminal_event_is_durable_before_complete_marker_is_published(self) -> None:
         actions = []

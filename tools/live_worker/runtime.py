@@ -121,6 +121,24 @@ class LiveRuntimeWorker:
             raise ValueError("result directory must not be a symlink")
         return result_dir / "complete.json"
 
+    def _completion_matches(self, job: Mapping[str, Any]) -> bool:
+        path = self._completion_path(str(job["run_id"]))
+        if not path.is_file():
+            return False
+
+        completion = self._load_object(path)
+
+        if completion.get("run_id") != job.get("run_id"):
+            return False
+        if completion.get("job_type") != job.get("job_type"):
+            return False
+
+        job_id = job.get("job_id")
+        if job_id is not None and completion.get("job_id") != job_id:
+            return False
+
+        return True
+
     def claim_next_job(self) -> dict[str, Any] | None:
         self._ensure_layout()
         if self._active_files():
@@ -134,7 +152,7 @@ class LiveRuntimeWorker:
         source = entries[0]
         job = self._validate_job_file(source)
         run_id = job["run_id"]
-        if self._completion_path(run_id).is_file():
+        if self._completion_matches(job):
             source.unlink()
             return {**job, "_duplicate_receipt": True}
         active = self.layout.for_run(run_id)["active"]
@@ -182,7 +200,7 @@ class LiveRuntimeWorker:
             return None
         path = files[0]
         job = self._validate_job_file(path)
-        if self._completion_path(job["run_id"]).is_file():
+        if self._completion_matches(job):
             path.unlink()
             return {**job, "_duplicate_receipt": True}
         self._event(job["run_id"], "JOB_RECOVERED")
@@ -229,6 +247,8 @@ class LiveRuntimeWorker:
             "artifacts": sorted(expected),
             "provenance": self.provenance,
         }
+        if job.get("job_id") is not None:
+            completion["job_id"] = job["job_id"]
         return completion
 
     def _persist_failure(self, job: Mapping[str, Any], error: str) -> dict[str, Any]:
@@ -243,6 +263,8 @@ class LiveRuntimeWorker:
             "error": error,
             "provenance": self.provenance,
         }
+        if job.get("job_id") is not None:
+            completion["job_id"] = job["job_id"]
         return completion
 
     def process_once(self) -> dict[str, Any]:
@@ -261,6 +283,11 @@ class LiveRuntimeWorker:
                 self.reset(job)
                 artifacts = self.prepare(job)
             else:
+                self._event(
+                    run_id,
+                    "EXECUTION_STARTED",
+                    payload={"job_type": job["job_type"]},
+                )
                 artifacts = self.execute(job)
             if not isinstance(artifacts, Mapping):
                 raise ValueError("runtime callback must return an artifact object")

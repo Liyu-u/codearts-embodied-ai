@@ -12,6 +12,10 @@ from demo.cloud.store import CloudStore
 from tools.live_intelligent_e2e import document_digest, strategy_digest
 
 
+def task_id_for(run_id: str) -> str:
+    return f"task-{run_id}"
+
+
 def perception_document(run_id: str = "run-test") -> dict:
     return {
         "schema_version": "perception.v1",
@@ -35,7 +39,7 @@ def perception_document(run_id: str = "run-test") -> dict:
 def task_document(run_id: str) -> dict:
     return {
         "schema_version": "task.v1",
-        "task_id": run_id,
+        "task_id": task_id_for(run_id),
         "action": "pick_and_place",
         "target_ids": ["red_cube"],
         "destination_id": "zone_unstack_target",
@@ -58,7 +62,7 @@ def task_document(run_id: str) -> dict:
 def strategy_document(run_id: str, perception: dict) -> dict:
     return {
         "schema_version": "strategy.v1",
-        "task_id": run_id,
+        "task_id": task_id_for(run_id),
         "steps": [
             {"step_id": "detect", "action": "detect_object", "arguments": {"object_id": "red_cube"}},
             {"step_id": "move-object", "action": "move_to_object", "arguments": {"object_id": "$detect.object_id"}},
@@ -83,7 +87,7 @@ def strategy_document(run_id: str, perception: dict) -> dict:
 def feedback_document(run_id: str, *, fallback: bool = False, request_id: str | None = "deepseek-d-001") -> dict:
     return {
         "schema_version": "feedback.v1",
-        "task_id": run_id,
+        "task_id": task_id_for(run_id),
         "diagnosis": "真实执行证据已复核",
         "retryable": False,
         "patch": None,
@@ -147,7 +151,7 @@ class CloudOrchestratorTests(unittest.TestCase):
     def upload_success_evidence(self, job: dict, strategy: dict, *, backend: str = "isaac") -> None:
         execution = {
             "schema_version": "execution.v1",
-            "task_id": "run-test",
+            "task_id": task_id_for("run-test"),
             "status": "SUCCEEDED",
             "steps": [{"step_id": "release", "action": "release", "status": "SUCCESS"}],
             "safety_events": [],
@@ -156,7 +160,7 @@ class CloudOrchestratorTests(unittest.TestCase):
         }
         final_pose = {
             "run_id": "run-test",
-            "task_id": "run-test",
+            "task_id": task_id_for("run-test"),
             "object_id": "red_cube",
             "destination_id": "zone_unstack_target",
             "goal_reached": True,
@@ -264,7 +268,7 @@ class CloudOrchestratorTests(unittest.TestCase):
         job, strategy = self.prepare_execution(orchestrator)
         execution = {
             "schema_version": "execution.v1",
-            "task_id": "run-test",
+            "task_id": task_id_for("run-test"),
             "status": "SAFE_STOP",
             "steps": [
                 {"step_id": "move", "action": "move_to_target", "status": "FAILED", "reason": "COLLISION_DETECTED"},
@@ -275,7 +279,7 @@ class CloudOrchestratorTests(unittest.TestCase):
             "provenance": {"backend": "isaac", "run_id": "run-test"},
         }
         self.store.save_artifact("run-test", "execution.json", execution, job_id=job["job_id"], relay_id="relay-a", now_ms=104)
-        self.store.save_artifact("run-test", "final_pose.json", {"run_id": "run-test", "task_id": "run-test", "goal_reached": False, "provenance": {"backend": "isaac"}}, job_id=job["job_id"], relay_id="relay-a", now_ms=105)
+        self.store.save_artifact("run-test", "final_pose.json", {"run_id": "run-test", "task_id": task_id_for("run-test"), "goal_reached": False, "provenance": {"backend": "isaac"}}, job_id=job["job_id"], relay_id="relay-a", now_ms=105)
         self.store.complete_job(job["job_id"], "relay-a", succeeded=False, now_ms=106)
 
         stopped = orchestrator.handle_c_completion(job["job_id"])
