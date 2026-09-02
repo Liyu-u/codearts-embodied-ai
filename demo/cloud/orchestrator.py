@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import time
+
 from copy import deepcopy
 from typing import Any, Callable, Mapping
 from uuid import uuid4
@@ -173,6 +176,69 @@ class CloudOrchestrator:
             self._event(run_id, code, stage=state.value, payload={"message": message})
         return public_run_snapshot(self.store.get_run(run_id))
 
+    def _call_intent_with_retry(
+        self,
+        run: Mapping[str, Any],
+        document: dict[str, Any],
+        run_id: str,
+    ) -> dict[str, Any]:
+        retryable_error = (
+            "A real DeepSeek request evidence is missing or fallback was used"
+        )
+
+        try:
+            max_retries = int(
+                os.getenv("DEEPSEEK_INTENT_MAX_RETRIES", "2")
+            )
+        except ValueError:
+            max_retries = 2
+
+        max_retries = max(0, min(max_retries, 3))
+
+        try:
+            backoff_s = float(
+                os.getenv(
+                    "DEEPSEEK_INTENT_RETRY_BACKOFF_S",
+                    "0.2",
+                )
+            )
+        except ValueError:
+            backoff_s = 0.2
+
+        backoff_s = max(0.0, min(backoff_s, 5.0))
+
+        for attempt in range(max_retries + 1):
+            task = self.intent_call(
+                run["instruction"],
+                deepcopy(document),
+                run_id,
+            )
+
+            try:
+                self._require_intent_evidence(task, run_id)
+                return task
+            except EvidenceError as exc:
+                if (
+                    str(exc) != retryable_error
+                    or attempt >= max_retries
+                ):
+                    raise
+
+                self._event(
+                    run_id,
+                    "A_RETRY",
+                    stage=RunState.UNDERSTANDING.value,
+                    payload={
+                        "failed_attempt": attempt + 1,
+                        "next_attempt": attempt + 2,
+                    },
+                )
+
+                if backoff_s > 0:
+                    time.sleep(backoff_s)
+
+        raise EvidenceError(retryable_error)
+
     def handle_perception(self, run_id: str, document: dict[str, Any]) -> dict[str, Any]:
         try:
             run = self.store.get_run(run_id)
@@ -192,8 +258,11 @@ class CloudOrchestrator:
             )
             self.store.transition_run(run_id, RunState.UNDERSTANDING)
             self._event(run_id, "A_STARTED", stage=RunState.UNDERSTANDING.value)
-            task = self.intent_call(run["instruction"], deepcopy(document), run_id)
-            self._require_intent_evidence(task, run_id)
+            task = self._call_intent_with_retry(
+                run,
+                document,
+                run_id,
+            )
             self._event(
                 run_id,
                 "A_COMPLETED",

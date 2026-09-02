@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 from copy import deepcopy
 from pathlib import Path
 
@@ -200,6 +202,68 @@ class CloudOrchestratorTests(unittest.TestCase):
         self.assertEqual(finished["state"], "SUCCEEDED")
         self.assertTrue(finished["audit_eligible"])
         self.assertEqual(len(self.feedback_inputs), 1)
+
+    def test_a_transient_fallback_retries_and_recovers(self) -> None:
+        calls = []
+
+        def flaky_intent(_instruction, _perception, run_id):
+            calls.append(len(calls) + 1)
+            task = task_document(run_id)
+
+            if len(calls) < 3:
+                trace = task["diagnostics"]["engine_trace"]
+                trace["llm_call_succeeded"] = False
+                trace["llm_request_id"] = None
+                trace["fallback_used"] = True
+
+            return task
+
+        orchestrator = self.build_orchestrator(
+            intent=flaky_intent
+        )
+
+        orchestrator.create_run(
+            "multi-red-001",
+            "把红色方块放到桌面区域",
+            "operator-1",
+        )
+
+        with patch.dict(
+            os.environ,
+            {
+                "DEEPSEEK_INTENT_MAX_RETRIES": "2",
+                "DEEPSEEK_INTENT_RETRY_BACKOFF_S": "0",
+            },
+            clear=False,
+        ):
+            result = orchestrator.handle_perception(
+                "run-test",
+                perception_document(),
+            )
+
+        self.assertEqual(result["state"], "QUEUED_C")
+        self.assertEqual(len(calls), 3)
+
+        events = self.store.list_events(
+            "run-test",
+            after_sequence=0,
+        )
+
+        self.assertEqual(
+            len([
+                event
+                for event in events
+                if event["type"] == "A_RETRY"
+            ]),
+            2,
+        )
+
+        self.assertTrue(
+            any(
+                job["job_type"] == "ISAAC_EXECUTE"
+                for job in self.store.list_jobs("run-test")
+            )
+        )
 
     def test_a_or_b_provider_fallback_fails_closed_before_execute_job(self) -> None:
         def bad_intent(_instruction, _perception, run_id):
