@@ -329,7 +329,8 @@ class CodeArtsClientTests(unittest.TestCase):
             which=lambda _: "C:\\Tools\\codearts.exe",
         )
 
-        result = client.generate(TASK)
+        with patch.dict(os.environ, {"CODEARTS_CLI_PURE": "0"}):
+            result = client.generate(TASK)
 
         self.assertTrue(result["success"], result)
         self.assertEqual(result["strategy"]["mode"], "codearts_agent")

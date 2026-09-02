@@ -128,7 +128,9 @@ class CodeArtsStrategyClient:
 
         candidate = extract_strategy(completed.stdout)
         if candidate is None:
-            provider_error = extract_provider_error(completed.stdout)
+            provider_error = extract_provider_error(
+                (completed.stdout or "") + "\n" + (completed.stderr or "")
+            )
             if provider_error:
                 return _failure(f"CODEARTS_PROVIDER_ERROR:{provider_error}", trace)
             return _failure("CODEARTS_OUTPUT_MISSING_STRATEGY", trace)
@@ -253,7 +255,9 @@ class CodeArtsStrategyClient:
 
         review = extract_review(completed.stdout)
         if review is None:
-            provider_error = extract_provider_error(completed.stdout)
+            provider_error = extract_provider_error(
+                (completed.stdout or "") + "\n" + (completed.stderr or "")
+            )
             if provider_error:
                 return _review_failure(f"CODEARTS_PROVIDER_ERROR:{provider_error}", trace)
             return _review_failure("CODEARTS_REVIEW_OUTPUT_MISSING", trace)

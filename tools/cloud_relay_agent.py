@@ -310,6 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--remote-root", default="/data/stu_01/workspace/live-runtime"
     )
+    parser.add_argument("--cloud-timeout-s", type=float, default=300.0)
     parser.add_argument("--job-timeout-s", type=float, default=900.0)
     parser.add_argument("--poll-interval-s", type=float, default=1.0)
     parser.add_argument("--once", action="store_true")
@@ -331,7 +332,12 @@ def main(argv: list[str] | None = None) -> int:
         known_hosts=args.known_hosts,
         remote_root=args.remote_root,
     )
-    client = RelayClient(args.cloud_url, token, args.relay_id)
+    client = RelayClient(
+        args.cloud_url,
+        token,
+        args.relay_id,
+        timeout_s=args.cloud_timeout_s,
+    )
     state_dir = args.state_dir.resolve()
     runner = IsaacJobRunner(
         IsaacJobConfig(
