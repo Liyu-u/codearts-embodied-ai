@@ -794,6 +794,17 @@ class FrankaPickPlaceDriver:
             if fallback_unresolved or not fallback_paths:
                 detail = ";".join(unknown_hits[:2]) or "raycast fallback found no path"
                 raise DriverError(f"PhysX overlap hit path unavailable ({detail})")
+        if hits:
+            print(
+                "[collision-query] "
+                f"pose={pose!r} "
+                f"radius={float(radius)!r} "
+                f"excluded={excluded!r} "
+                f"hits={hits!r} "
+                f"count={count!r} "
+                f"ignored_ground={ignored_ground!r}",
+                flush=True,
+            )
         return not hits
 
     def e_stop(self) -> None:

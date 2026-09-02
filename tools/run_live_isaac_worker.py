@@ -149,8 +149,22 @@ class IsaacDynamicScene:
             colors="gray",
         )
         # The destination zone is a visual/semantic marker, not a
-        # physical obstacle. Giving it a collider makes the grasp safety
-        # sphere collide with the nearby target zone before finger closure.
+        # physical obstacle. Explicitly disable collision even if Cube itself
+        # authored a CollisionAPI/default collider.
+        from isaacsim.core.utils.stage import get_current_stage
+        from pxr import UsdPhysics
+
+        target_prim = get_current_stage().GetPrimAtPath(
+            "/World/zone_unstack_target"
+        )
+        if not target_prim or not target_prim.IsValid():
+            raise RuntimeError(
+                "zone_unstack_target prim missing while disabling collision"
+            )
+
+        target_collision = UsdPhysics.CollisionAPI.Apply(target_prim)
+        target_collision.CreateCollisionEnabledAttr().Set(False)
+
         app.update()
         return cls(app, dynamic)
 
