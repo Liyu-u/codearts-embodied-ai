@@ -173,6 +173,43 @@ class OpenSSHRuntimeRemote:
         active = self._safe_path(f"{self.remote_root}/active/{safe}.json")
         self._run(f"rm -f -- {shlex.quote(inbox)} {shlex.quote(active)}")
 
+    def worker_status(self) -> str:
+        """Probe the persistent Isaac worker without changing its state.
+
+        online:
+          live-isaac-worker exists, is running, and its worker Python process
+          is visible inside the container.
+
+        offline:
+          SSH succeeded, but the expected container/process is not running.
+
+        unknown:
+          the SSH probe itself failed or produced an unexpected response.
+        """
+        command = (
+            "if docker inspect live-isaac-worker >/dev/null 2>&1 "
+            "&& test \"$(docker inspect -f '{{.State.Running}}' "
+            "live-isaac-worker 2>/dev/null)\" = true "
+            "&& docker top live-isaac-worker -eo pid,args 2>/dev/null "
+            "| grep -q '[r]un_live_isaac_worker.py'; "
+            "then printf 'online\\n'; "
+            "else printf 'offline\\n'; fi"
+        )
+        try:
+            result = self._run(command, check=False)
+        except (OSError, subprocess.SubprocessError):
+            return "unknown"
+
+        if result.returncode != 0:
+            return "unknown"
+
+        output = result.stdout.strip()
+        if not output:
+            return "unknown"
+
+        value = output.splitlines()[-1].strip().lower()
+        return value if value in {"online", "offline"} else "unknown"
+
 
 @dataclass(frozen=True, slots=True)
 class IsaacJobConfig:

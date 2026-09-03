@@ -7,7 +7,7 @@ import threading
 import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 from tools.relay.client import RelayClient, RelayHTTPError
 from tools.relay.isaac_job import IsaacJobConfig, IsaacJobRunner, OpenSSHRuntimeRemote
@@ -153,6 +153,7 @@ class CloudRelayAgent:
         lease_ms: int = 120_000,
         renew_interval_s: float = 20.0,
         heartbeat_interval_s: float = 10.0,
+        status_provider: Callable[[], Mapping[str, Any]] | None = None,
     ) -> None:
         if lease_ms <= 0 or renew_interval_s <= 0 or heartbeat_interval_s <= 0:
             raise ValueError("relay intervals must be positive")
@@ -163,6 +164,21 @@ class CloudRelayAgent:
         self.lease_ms = int(lease_ms)
         self.renew_interval_s = float(renew_interval_s)
         self.heartbeat_interval_s = float(heartbeat_interval_s)
+        self.status_provider = status_provider
+
+    def _status_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"agent": "online"}
+        if self.status_provider is None:
+            return payload
+        try:
+            extra = self.status_provider()
+        except Exception:
+            return payload
+        if isinstance(extra, Mapping):
+            for key, value in extra.items():
+                if str(key) != "agent":
+                    payload[str(key)] = value
+        return payload
 
     @staticmethod
     def _runtime_job(claimed: Mapping[str, Any]) -> dict[str, Any]:
@@ -280,7 +296,7 @@ class CloudRelayAgent:
             now = time.monotonic()
             if not registered:
                 try:
-                    self.client.register({"agent": "online"})
+                    self.client.register(self._status_payload())
                     registered = True
                 except RelayHTTPError:
                     stopped.wait(backoff_s)
@@ -288,7 +304,7 @@ class CloudRelayAgent:
                     continue
             if now - last_heartbeat >= self.heartbeat_interval_s:
                 try:
-                    self.client.heartbeat({"agent": "online"})
+                    self.client.heartbeat(self._status_payload())
                     last_heartbeat = now
                 except RelayHTTPError:
                     pass
@@ -357,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         runner,
         RelayStateStore(state_dir / "relay-state.json"),
         EventSpool(state_dir / "event-spool.json"),
+        status_provider=lambda: {"worker": remote.worker_status()},
     )
     if args.check_config:
         print(json.dumps({"ok": True, "relay_id": args.relay_id, "network_accessed": False}))

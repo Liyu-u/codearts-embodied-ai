@@ -102,6 +102,28 @@ class CloudDisconnectRecoveryTests(unittest.TestCase):
             renew_interval_s=60,
         )
 
+    def test_status_provider_adds_worker_health_without_overriding_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FakeRelayClient()
+            runner = FakeJobRunner()
+            state = RelayStateStore(Path(directory) / "relay-state.json")
+            spool = EventSpool(Path(directory) / "event-spool.json")
+            agent = CloudRelayAgent(
+                client,
+                runner,
+                state,
+                spool,
+                status_provider=lambda: {
+                    "agent": "should-not-override",
+                    "worker": "online",
+                },
+            )
+
+            self.assertEqual(
+                agent._status_payload(),
+                {"agent": "online", "worker": "online"},
+            )
+
     def test_claim_is_persisted_before_execution_and_token_is_never_written(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FakeRelayClient(fail_operation="renew")

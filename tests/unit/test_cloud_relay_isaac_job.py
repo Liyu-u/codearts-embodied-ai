@@ -205,6 +205,45 @@ class OpenSSHRuntimeRemoteTests(unittest.TestCase):
         self.assertIn("run-001.json.", scp_target)
         self.assertTrue(scp_target.endswith(".tmp"))
 
+    def test_worker_status_uses_read_only_remote_probe(self) -> None:
+        commands = []
+
+        def run_command(command, **kwargs):
+            commands.append(list(command))
+            decoded = (
+                OpenSSHRuntimeRemote.decode_command(command[-1])
+                if command[0] == "ssh"
+                else ""
+            )
+            if "docker inspect live-isaac-worker" in decoded:
+                return subprocess.CompletedProcess(command, 0, "online\n", "")
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            key = root / "id_ed25519"
+            known_hosts = root / "known_hosts"
+            key.write_text("test-key", encoding="utf-8")
+            known_hosts.write_text("host-key", encoding="utf-8")
+
+            remote = OpenSSHRuntimeRemote(
+                server="10.16.0.40",
+                port=5122,
+                user="stu_01",
+                ssh_key=key,
+                known_hosts=known_hosts,
+                run_command=run_command,
+            )
+
+            self.assertEqual(remote.worker_status(), "online")
+
+        decoded = OpenSSHRuntimeRemote.decode_command(commands[-1][-1])
+        self.assertIn("docker inspect live-isaac-worker", decoded)
+        self.assertIn("docker top live-isaac-worker", decoded)
+        self.assertNotIn("docker restart", decoded)
+        self.assertNotIn("docker rm", decoded)
+        self.assertNotIn("docker stop", decoded)
+
     def test_reads_runtime_files_and_cleanup_is_limited_to_current_inbox_and_active(self) -> None:
         commands = []
 
