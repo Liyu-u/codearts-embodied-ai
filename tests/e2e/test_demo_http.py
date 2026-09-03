@@ -111,6 +111,7 @@ class DemoHttpAcceptanceTests(unittest.TestCase):
             'id="recordsList"',
             'id="userName"',
             'id="userRole"',
+            'id="saveConfigBtn"',
         ):
             self.assertIn(value, html)
 
@@ -123,6 +124,10 @@ class DemoHttpAcceptanceTests(unittest.TestCase):
             'id + "." + key',
             '["A", "B", "D"]',
             'credential === "ak" ? 0 : 1',
+            'role === "admin"',
+            '"管理员登录"',
+            '"比赛公开模式：配置只读，仅管理员可保存配置"',
+            'isAdminSession()',
         ):
             self.assertIn(value, javascript)
 

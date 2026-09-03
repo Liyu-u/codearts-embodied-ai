@@ -61,9 +61,25 @@ class CloudService:
         return os.getenv("CLOUD_DEMO_OPEN_ACCESS", "").strip() == "1"
 
     def authorize_browser(self, cookie_header: str | None, action: str) -> SessionRecord:
+        # A valid explicit browser session always wins over competition
+        # open-access. This lets an administrator temporarily elevate the
+        # same browser without disabling the public operator experience.
+        token = self._cookie_value(cookie_header, "closed_loop_session")
+        if token:
+            try:
+                session = validate_session(
+                    token,
+                    self.browser_sessions,
+                    now_ms=self.now_ms(),
+                )
+            except PermissionError:
+                if not self._demo_open_access():
+                    raise
+            else:
+                authorize(session.role, action)
+                return session
+
         if self._demo_open_access():
-            # Competition mode grants only OPERATOR capabilities.
-            # ADMIN-only operations remain forbidden.
             authorize(Role.OPERATOR, action)
             now = self.now_ms()
             return SessionRecord(
@@ -74,12 +90,9 @@ class CloudService:
                 expires_at_ms=now + 24 * 3600_000,
             )
 
-        token = self._cookie_value(cookie_header, "closed_loop_session")
-        if not token:
-            raise PermissionError("browser session is required")
-        session = validate_session(token, self.browser_sessions, now_ms=self.now_ms())
-        authorize(session.role, action)
-        return session
+        if token:
+            raise PermissionError("invalid browser session")
+        raise PermissionError("browser session is required")
 
     def login(
         self,
@@ -89,25 +102,44 @@ class CloudService:
         https: bool = False,
         ttl_ms: int = 8 * 3600_000,
     ) -> IssuedSession:
-        """Issue an operator session after checking the env-configured password.
+        """Issue an explicit ADMIN or OPERATOR browser session.
 
-        Login is only possible when CLOUD_OPERATOR_PASSWORD is configured;
-        the password is compared in constant time and never echoed.
+        Username ``admin`` selects the administrator credential stored only in
+        CLOUD_ADMIN_PASSWORD. Other usernames continue to use the optional
+        CLOUD_OPERATOR_PASSWORD credential.
+
+        Password values are compared in constant time and are never returned
+        to the browser after authentication.
         """
-        expected = os.getenv("CLOUD_OPERATOR_PASSWORD", "")
+        normalized_user = str(user or "").strip()
+        supplied_password = str(password or "")
+
+        if not normalized_user or not supplied_password:
+            raise PermissionError("user and password are required")
+
+        if normalized_user.lower() == "admin":
+            expected = os.getenv("CLOUD_ADMIN_PASSWORD", "")
+            role = Role.ADMIN
+            configuration_name = "admin"
+        else:
+            expected = os.getenv("CLOUD_OPERATOR_PASSWORD", "")
+            role = Role.OPERATOR
+            configuration_name = "operator"
+
         if not expected:
             raise PermissionError(
-                "operator login is not configured; set CLOUD_OPERATOR_PASSWORD"
+                f"{configuration_name} login is not configured"
             )
-        if not user or not password:
-            raise PermissionError("user and password are required")
+
         if not hmac.compare_digest(
-            str(password).encode("utf-8"), expected.encode("utf-8")
+            supplied_password.encode("utf-8"),
+            expected.encode("utf-8"),
         ):
             raise PermissionError("invalid credentials")
+
         return issue_session(
-            str(user),
-            Role.OPERATOR,
+            normalized_user,
+            role,
             self.browser_sessions,
             ttl_ms=int(ttl_ms),
             now_ms=self.now_ms(),
@@ -124,7 +156,32 @@ class CloudService:
             return
 
     def current_session(self, cookie_header: str | None) -> dict[str, Any]:
-        if self._demo_open_access():
+        open_access = self._demo_open_access()
+        token = self._cookie_value(cookie_header, "closed_loop_session")
+
+        if token:
+            try:
+                record = validate_session(
+                    token,
+                    self.browser_sessions,
+                    now_ms=self.now_ms(),
+                )
+            except PermissionError:
+                if not open_access:
+                    return {
+                        "authenticated": False,
+                        "role": None,
+                        "demo_open_access": False,
+                    }
+            else:
+                return {
+                    "authenticated": True,
+                    "user": record.user_id,
+                    "role": record.role.value,
+                    "demo_open_access": open_access,
+                }
+
+        if open_access:
             return {
                 "authenticated": True,
                 "user": "competition-demo",
@@ -132,17 +189,10 @@ class CloudService:
                 "demo_open_access": True,
             }
 
-        token = self._cookie_value(cookie_header, "closed_loop_session")
-        if not token:
-            return {"authenticated": False, "role": None}
-        try:
-            record = validate_session(token, self.browser_sessions, now_ms=self.now_ms())
-        except PermissionError:
-            return {"authenticated": False, "role": None}
         return {
-            "authenticated": True,
-            "user": record.user_id,
-            "role": record.role.value,
+            "authenticated": False,
+            "role": None,
+            "demo_open_access": False,
         }
 
     def require_relay(self, authorization_header: str | None) -> None:

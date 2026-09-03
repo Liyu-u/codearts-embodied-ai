@@ -116,36 +116,155 @@
     });
   }
 
+  function isAdminSession() {
+    return Boolean(
+      state.session &&
+      state.session.authenticated &&
+      state.session.role === "admin"
+    );
+  }
+
+  function syncConfigAccess() {
+    var isAdmin = isAdminSession();
+
+    document.querySelectorAll("#modelConfigForm [data-module]").forEach(function (control) {
+      control.disabled = !isAdmin;
+    });
+
+    if ($("saveConfigBtn")) {
+      $("saveConfigBtn").disabled = !isAdmin;
+    }
+
+    if ($("configMessage")) {
+      $("configMessage").textContent = isAdmin
+        ? "管理员模式：可修改 A/D API Key 与模型配置"
+        : "比赛公开模式：配置只读，仅管理员可保存配置";
+    }
+  }
+
   function setSessionFields(session) {
     var authenticated = Boolean(session && session.authenticated);
     var user = authenticated ? (session.user || "未知用户") : "未登录";
     var role = authenticated ? (session.role || "—") : "—";
-    if ($("sessionState")) $("sessionState").textContent = authenticated ? role + " · " + user : "未登录";
-    if ($("sessionRowState")) $("sessionRowState").textContent = authenticated ? "正常" : "未登录";
+    var openAccess = Boolean(session && session.demo_open_access);
+    var isAdmin = authenticated && role === "admin";
+    var canLogout = authenticated && (isAdmin || !openAccess);
+
+    if ($("sessionState")) {
+      $("sessionState").textContent =
+        authenticated ? role + " · " + user : "未登录";
+    }
+
+    if ($("sessionRowState")) {
+      $("sessionRowState").textContent =
+        authenticated ? "正常" : "未登录";
+    }
+
     if ($("userName")) $("userName").textContent = user;
     if ($("userRole")) $("userRole").textContent = role;
-    if ($("userSessionStatus")) $("userSessionStatus").textContent = authenticated ? "已登录" : "未登录";
-    if ($("loginBtn")) $("loginBtn").hidden = authenticated;
-    if ($("logoutBtn")) $("logoutBtn").hidden = !authenticated;
-    if ($("userLogoutBtn")) $("userLogoutBtn").hidden = !authenticated;
-    if ($("run")) $("run").disabled = !authenticated || state.submitInFlight || state.loopActive;
-    if ($("runHint")) $("runHint").textContent = authenticated ? "将以 " + role + " 身份执行" : "需要登录后才能执行";
+
+    if ($("userSessionStatus")) {
+      $("userSessionStatus").textContent = isAdmin
+        ? "管理员会话"
+        : authenticated
+          ? "已登录"
+          : "未登录";
+    }
+
+    if ($("loginBtn")) {
+      $("loginBtn").hidden = isAdmin || (authenticated && !openAccess);
+      $("loginBtn").textContent =
+        openAccess && !isAdmin ? "管理员登录" : "登录";
+    }
+
+    if ($("logoutBtn")) {
+      $("logoutBtn").hidden = !canLogout;
+      $("logoutBtn").textContent = isAdmin ? "退出管理员" : "退出";
+    }
+
+    if ($("userLogoutBtn")) {
+      $("userLogoutBtn").hidden = !canLogout;
+      $("userLogoutBtn").textContent =
+        isAdmin ? "退出管理员" : "退出登录";
+    }
+
+    if ($("run")) {
+      $("run").disabled =
+        !authenticated || state.submitInFlight || state.loopActive;
+    }
+
+    if ($("runHint")) {
+      $("runHint").textContent =
+        authenticated
+          ? "将以 " + role + " 身份执行"
+          : "需要登录后才能执行";
+    }
+
     setHealthBadge("session", authenticated ? "online" : "offline");
+    syncConfigAccess();
   }
 
   function renderSession() {
-    return api("session").then(function (session) { state.session = session; setSessionFields(session); return session; }).catch(function () { setSessionFields({ authenticated: false }); });
+    return api("session")
+      .then(function (session) {
+        state.session = session;
+        setSessionFields(session);
+        return session;
+      })
+      .catch(function () {
+        state.session = { authenticated: false };
+        setSessionFields(state.session);
+      });
   }
 
   function login() {
-    var user = window.prompt("用户名", "operator");
+    var user = window.prompt("管理员用户名", "admin");
     if (!user) return;
-    var password = window.prompt("密码");
+
+    var password = window.prompt("管理员密码");
     if (!password) return;
-    api("login", { method: "POST", body: { user: user, password: password } }).then(function () { toast("登录成功"); return renderSession(); }).catch(function (error) { toast("登录失败: " + error.message); });
+
+    api("login", {
+      method: "POST",
+      body: {
+        user: user,
+        password: password
+      }
+    })
+      .then(function () {
+        return renderSession();
+      })
+      .then(function () {
+        toast(
+          isAdminSession()
+            ? "管理员登录成功"
+            : "登录成功"
+        );
+      })
+      .catch(function (error) {
+        toast("登录失败: " + error.message);
+      });
   }
 
-  function logout() { api("logout", { method: "POST", body: {} }).then(function () { state.session = null; toast("已退出登录"); return renderSession(); }).catch(renderSession); }
+  function logout() {
+    api("logout", {
+      method: "POST",
+      body: {}
+    })
+      .then(function () {
+        state.session = null;
+        return renderSession();
+      })
+      .then(function () {
+        toast(
+          state.session &&
+          state.session.demo_open_access
+            ? "已退出管理员，恢复比赛 operator"
+            : "已退出登录"
+        );
+      })
+      .catch(renderSession);
+  }
 
   function markLivestream(value) {
     var node = $("livestreamStatus");
@@ -330,11 +449,52 @@
       container.appendChild(card);
     });
     if ($("configSource")) $("configSource").textContent = (config.source || "当前配置") + (config.updated_at ? " · " + config.updated_at : "");
+    syncConfigAccess();
   }
 
   function loadConfig() { return Promise.all([api("model-config"), api("settings")]).then(function (values) { renderConfig(values[0]); var settings = values[1].settings || {}; [["settingRuntime", settings.runtime_mode], ["settingScene", settings.default_scene], ["settingSafety", settings.safe_control ? "已启用" : "未启用"], ["settingAudit", settings.audit_enabled ? "已启用" : "未启用"]].forEach(function (item) { if ($(item[0])) $(item[0]).textContent = item[1] == null ? "—" : item[1]; }); }).catch(function (error) { if ($("configFields")) $("configFields").innerHTML = '<p class="muted">配置读取失败: ' + error.message + "</p>"; }); }
 
-  function saveConfig(event) { event.preventDefault(); var modules = {}; document.querySelectorAll("[data-module]").forEach(function (control) { if (control.dataset.configSecret && !control.value.trim()) return; var id = control.dataset.module; modules[id] = modules[id] || {}; modules[id][control.dataset.key] = control.value; }); api("model-config", { method: "PUT", body: { modules: modules } }).then(function (data) { renderConfig(data); if ($("configMessage")) $("configMessage").textContent = "配置已保存并应用"; toast("配置保存成功"); }).catch(function (error) { if ($("configMessage")) $("configMessage").textContent = "保存失败: " + error.message; toast("配置保存失败"); }); }
+  function saveConfig(event) {
+    event.preventDefault();
+
+    if (!isAdminSession()) {
+      if ($("configMessage")) {
+        $("configMessage").textContent =
+          "保存失败：仅管理员可以修改运行配置";
+      }
+      toast("请先进行管理员登录");
+      return;
+    }
+
+    var modules = {};
+
+    document.querySelectorAll("[data-module]").forEach(function (control) {
+      if (control.dataset.configSecret && !control.value.trim()) return;
+
+      var id = control.dataset.module;
+      modules[id] = modules[id] || {};
+      modules[id][control.dataset.key] = control.value;
+    });
+
+    api("model-config", {
+      method: "PUT",
+      body: { modules: modules }
+    })
+      .then(function (data) {
+        renderConfig(data);
+        if ($("configMessage")) {
+          $("configMessage").textContent = "配置已保存并应用";
+        }
+        toast("配置保存成功");
+      })
+      .catch(function (error) {
+        if ($("configMessage")) {
+          $("configMessage").textContent =
+            "保存失败: " + error.message;
+        }
+        toast("配置保存失败");
+      });
+  }
 
   function formatTime(value) { if (!value) return "—"; var date = new Date(Number(value)); return isNaN(date.getTime()) ? String(value) : date.toLocaleString(); }
   function loadRecordEvents(runId, target) { target.textContent = "读取事件…"; api("runs/" + encodeURIComponent(runId) + "/events").then(function (data) { target.textContent = (data.events || []).map(function (item) { return formatTime(item.created_at) + "  " + item.type + (item.payload && item.payload.message ? " · " + item.payload.message : ""); }).join("\n") || "暂无事件"; }).catch(function (error) { target.textContent = "事件读取失败: " + error.message; }); }

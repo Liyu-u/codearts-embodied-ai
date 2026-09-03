@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import unittest
+from unittest.mock import patch
 
 from demo.cloud.auth import (
     Role,
@@ -11,6 +13,7 @@ from demo.cloud.auth import (
     validate_session,
 )
 from demo.cloud.credentials import public_credential_configuration
+from demo.cloud.service import CloudService
 
 
 class CloudAuthorizationTests(unittest.TestCase):
@@ -63,6 +66,72 @@ class CloudAuthorizationTests(unittest.TestCase):
         self.assertEqual(secure.cookie["Secure"], True)
         self.assertEqual(local.cookie["Secure"], False)
         self.assertEqual(secure.cookie["Max-Age"], 1)
+
+
+class CompetitionAdminSessionTests(unittest.TestCase):
+    def build_service(self):
+        return CloudService(
+            None,
+            None,
+            relay_token="test-relay-token",
+            browser_sessions={},
+            now_ms=lambda: 1_000,
+        )
+
+    def test_valid_admin_session_overrides_open_access_operator(self) -> None:
+        service = self.build_service()
+
+        with patch.dict(
+            os.environ,
+            {
+                "CLOUD_DEMO_OPEN_ACCESS": "1",
+                "CLOUD_ADMIN_PASSWORD": "admin-secret-value",
+                "CLOUD_OPERATOR_PASSWORD": "operator-secret-value",
+            },
+            clear=False,
+        ):
+            public_session = service.current_session(None)
+            self.assertEqual(public_session["user"], "competition-demo")
+            self.assertEqual(public_session["role"], Role.OPERATOR.value)
+            self.assertTrue(public_session["demo_open_access"])
+
+            with self.assertRaises(PermissionError):
+                service.authorize_browser(None, "update_configuration")
+
+            issued = service.login("admin", "admin-secret-value")
+            self.assertEqual(issued.record.role, Role.ADMIN)
+
+            cookie = f"closed_loop_session={issued.token}"
+            admin_session = service.current_session(cookie)
+
+            self.assertEqual(admin_session["user"], "admin")
+            self.assertEqual(admin_session["role"], Role.ADMIN.value)
+            self.assertTrue(admin_session["demo_open_access"])
+
+            authorized = service.authorize_browser(
+                cookie,
+                "update_configuration",
+            )
+            self.assertEqual(authorized.role, Role.ADMIN)
+
+            service.logout(cookie)
+
+            fallback = service.current_session(cookie)
+            self.assertEqual(fallback["user"], "competition-demo")
+            self.assertEqual(fallback["role"], Role.OPERATOR.value)
+
+    def test_admin_login_rejects_wrong_password(self) -> None:
+        service = self.build_service()
+
+        with patch.dict(
+            os.environ,
+            {
+                "CLOUD_ADMIN_PASSWORD": "correct-admin-secret",
+            },
+            clear=False,
+        ):
+            with self.assertRaises(PermissionError):
+                service.login("admin", "wrong-admin-secret")
 
 
 class PublicCredentialBoundaryTests(unittest.TestCase):
