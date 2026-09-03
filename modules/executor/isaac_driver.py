@@ -698,7 +698,7 @@ class FrankaPickPlaceDriver:
             self._app.update()
         pose = self.read_object_pose(object_id)
         initial_z = float((initial_pose or {}).get("z", pose["z"]))
-        threshold = max(initial_z + 0.04, float(lift_z) - 0.04)
+        threshold = initial_z + 0.04
         return {
             "verified": pose["z"] >= threshold,
             "object_pose": pose,
@@ -1168,11 +1168,25 @@ class OmniDriver:
             self._app.update()
         pose = self.read_object_pose(object_id)
         initial_z = float((initial_pose or {}).get("z", pose["z"]))
-        threshold = max(initial_z + 0.04, float(lift_z) - 0.04)
+        threshold = initial_z + 0.04
         verified = pose["z"] >= threshold
+
+        print(
+            "[omni-grasp-verify] "
+            f"initial_z={initial_z!r} "
+            f"object_z={float(pose['z'])!r} "
+            f"threshold={threshold!r} "
+            f"eef_lift_target_z={float(lift_z)!r} "
+            f"verified={verified!r}",
+            flush=True,
+        )
+
         return {
             "verified": verified,
             "object_pose": pose,
+            "initial_z": initial_z,
+            "threshold_z": threshold,
+            "lifted_m": float(pose["z"]) - initial_z,
             "reason": "" if verified else "OBJECT_DID_NOT_LIFT",
         }
 
@@ -1344,21 +1358,98 @@ class OmniDriver:
 
         import numpy as np
 
+        target_array = np.asarray(targets, dtype=float)
+
+        # Opening must still reach its commanded width.  Closing is different:
+        # when a real object is between the fingers they physically cannot
+        # reach [0, 0].  Treat a stable contact-limited width as completion of
+        # the close actuator command; the subsequent lift + verify_grasp()
+        # remains responsible for proving that an object was actually grasped.
+        closing = bool(
+            np.max(np.abs(target_array)) <= self.GRIPPER_TOLERANCE_M
+        )
+
         deadline = time.monotonic() + float(timeout_s)
         start_wall = time.monotonic()
         frames = 0
+
+        previous_fingers = None
+        stable_frames = 0
+
+        # The scene cubes are about 0.0515 m wide.  Require the gripper to have
+        # substantially closed before contact-stall completion is accepted.
+        contact_width_max_m = 0.065
+        contact_delta_m = 0.00025
+        contact_stable_frames = 8
+
         while True:
-            self._franka.set_gripper_position(np.asarray(targets))
+            self._franka.set_gripper_position(target_array)
             self._app.update()
             frames += 1
+
             fingers = self._joint_positions_np()[self.GRIPPER_DOF_INDICES]
-            error = float(np.max(np.abs(fingers - np.asarray(targets))))
+            width = float(fingers.sum())
+            error = float(np.max(np.abs(fingers - target_array)))
+
+            # Normal completion: commanded joint position was reached.
             if error <= self.GRIPPER_TOLERANCE_M:
                 wall_ms = int((time.monotonic() - start_wall) * 1000)
-                return _succeeded(wall_ms, width=float(fingers.sum()))
+                return _succeeded(
+                    wall_ms,
+                    width=width,
+                    frames=frames,
+                    contact_limited=False,
+                )
+
+            # During closing, physical contact with an object can prevent the
+            # fingers from reaching zero.  If they have substantially closed
+            # and then remain stationary for several physics ticks, the close
+            # actuator phase is complete.  This does NOT claim grasp success:
+            # robot_backend performs lift + verify_grasp afterwards.
+            if closing and previous_fingers is not None:
+                finger_delta = float(
+                    np.max(np.abs(fingers - previous_fingers))
+                )
+
+                if (
+                    width <= contact_width_max_m
+                    and finger_delta <= contact_delta_m
+                ):
+                    stable_frames += 1
+                else:
+                    stable_frames = 0
+
+                if stable_frames >= contact_stable_frames:
+                    wall_ms = int((time.monotonic() - start_wall) * 1000)
+
+                    print(
+                        "[omni-gripper-contact] "
+                        f"width={width!r} "
+                        f"fingers={fingers.tolist()!r} "
+                        f"frames={frames} "
+                        f"stable_frames={stable_frames}",
+                        flush=True,
+                    )
+
+                    return _succeeded(
+                        wall_ms,
+                        width=width,
+                        frames=frames,
+                        contact_limited=True,
+                    )
+
+            previous_fingers = fingers.copy()
+
             if time.monotonic() >= deadline:
                 wall_ms = int((time.monotonic() - start_wall) * 1000)
+
                 return motion_result(
-                    "FAILED", "ACTION_TIMEOUT", wall_ms,
-                    timed_out=True, width=float(fingers.sum()),
+                    "FAILED",
+                    "ACTION_TIMEOUT",
+                    wall_ms,
+                    timed_out=True,
+                    width=width,
+                    fingers=fingers.tolist(),
+                    frames=frames,
+                    stable_frames=stable_frames,
                 )

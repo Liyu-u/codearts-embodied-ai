@@ -787,8 +787,16 @@ class BaseRobotBackend:
 
     def _grasp_pose(self, item: dict) -> dict:
         center = self._object_center(item)
-        return {"x": center["x"], "y": center["y"],
-                "z": max(self._object_top_z(item) - GRASP_Z_OFFSET_M, PLACE_Z_MIN_M)}
+        # Isaac Sim 6 Franka set_end_effector_pose() targets the EEF/hand
+        # reference frame, not the fingertip contact point.  NVIDIA's own
+        # pick-and-place example lowers to cube_pos.z + 0.10 before closing.
+        # Driving the EEF itself to the cube top makes the hand press into the
+        # support surface and the IK/controller stalls around z ~= 0.115 m.
+        return {
+            "x": center["x"],
+            "y": center["y"],
+            "z": max(float(center["z"]) + 0.10, PLACE_Z_MIN_M),
+        }
 
     def _approach_above(self, pose: dict) -> dict:
         """返回放置点上方 0.10m（且不低于安全抬升高度）的接近位姿。"""

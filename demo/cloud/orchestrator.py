@@ -382,12 +382,34 @@ class CloudOrchestrator:
         if feedback.get("task_id") != task_id:
             raise EvidenceError("D feedback task_id drift")
         provenance = feedback.get("provenance") or {}
+
+        provider_request_ids = provenance.get("request_ids") or []
+        llm_stats = provenance.get("llm_stats") or {}
+        calls = provenance.get("calls") or []
+
+        llm_call_count = llm_stats.get("calls")
+        llm_ok_count = llm_stats.get("ok_calls")
+        llm_fallback_count = llm_stats.get("fallback_calls")
+
         if (
             not provenance.get("request_id")
+            or provenance.get("source") != "tracecoder_llm"
             or provenance.get("fallback")
-            or provenance.get("source") in {None, "tracecoder_rules", "tracecoder_skipped"}
+            or not isinstance(provider_request_ids, list)
+            or not any(str(item).strip() for item in provider_request_ids)
+            or not isinstance(llm_stats, dict)
+            or not isinstance(llm_call_count, int)
+            or llm_call_count < 1
+            or not isinstance(llm_ok_count, int)
+            or llm_ok_count < 1
+            or not isinstance(llm_fallback_count, int)
+            or llm_fallback_count != 0
+            or not isinstance(calls, list)
+            or not calls
         ):
-            raise EvidenceError("D real request evidence is missing or fallback was used")
+            raise EvidenceError(
+                "D real LLM call evidence is missing, failed, or fallback was used"
+            )
 
     def handle_c_completion(self, job_id: str) -> dict[str, Any]:
         job = self.store.get_job(job_id)
@@ -419,6 +441,7 @@ class CloudOrchestrator:
                     "perception": payload["perception"],
                     "execution": execution,
                     "final_pose": final_pose,
+                    "live_acceptance": True,
                     "capabilities": payload.get("capabilities") or DEFAULT_CAPABILITIES,
                 },
                 run_id,
