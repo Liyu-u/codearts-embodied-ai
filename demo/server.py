@@ -805,6 +805,10 @@ class DemoHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/model-config":
             global _MODEL_CONFIG
             try:
+                # Model/provider credentials are infrastructure configuration.
+                # Browser operators, including competition open-access users,
+                # must never be able to modify them.
+                self._require_browser("update_configuration")
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 updated = _merge_model_config(payload, _MODEL_CONFIG)
@@ -812,6 +816,8 @@ class DemoHandler(BaseHTTPRequestHandler):
                 _MODEL_CONFIG = updated
                 _apply_model_config(_MODEL_CONFIG)
                 self._send_json(200, {"ok": True, "config": _public_model_config(_MODEL_CONFIG)})
+            except PermissionError as exc:
+                self._send_json(403, {"ok": False, "error": str(exc)})
             except (ValueError, TypeError, json.JSONDecodeError) as exc:
                 self._send_json(400, {"ok": False, "error": str(exc)})
             except OSError as exc:

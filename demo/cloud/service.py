@@ -55,7 +55,25 @@ class CloudService:
                 return value
         return None
 
+    @staticmethod
+    def _demo_open_access() -> bool:
+        """Return True only for the explicitly enabled competition demo mode."""
+        return os.getenv("CLOUD_DEMO_OPEN_ACCESS", "").strip() == "1"
+
     def authorize_browser(self, cookie_header: str | None, action: str) -> SessionRecord:
+        if self._demo_open_access():
+            # Competition mode grants only OPERATOR capabilities.
+            # ADMIN-only operations remain forbidden.
+            authorize(Role.OPERATOR, action)
+            now = self.now_ms()
+            return SessionRecord(
+                token_hash=b"",
+                user_id="competition-demo",
+                role=Role.OPERATOR,
+                issued_at_ms=now,
+                expires_at_ms=now + 24 * 3600_000,
+            )
+
         token = self._cookie_value(cookie_header, "closed_loop_session")
         if not token:
             raise PermissionError("browser session is required")
@@ -106,6 +124,14 @@ class CloudService:
             return
 
     def current_session(self, cookie_header: str | None) -> dict[str, Any]:
+        if self._demo_open_access():
+            return {
+                "authenticated": True,
+                "user": "competition-demo",
+                "role": Role.OPERATOR.value,
+                "demo_open_access": True,
+            }
+
         token = self._cookie_value(cookie_header, "closed_loop_session")
         if not token:
             return {"authenticated": False, "role": None}
