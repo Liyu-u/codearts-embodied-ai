@@ -990,6 +990,14 @@ class OmniDriver:
         else:
             current = np.asarray(current, dtype=float).copy()
 
+        # OMNI_IK_INCREMENTAL_TARGET_V1:
+        # Keep a commanded Cartesian waypoint separate from the sparsely
+        # sampled measured pose.  The previous implementation documented a
+        # bounded per-frame target but still sent the full final target on
+        # every frame, which can stall Isaac Sim 6 experimental Franka IK
+        # during the vertical grasp descent.
+        command = current.copy()
+
         while True:
             distance = float(np.linalg.norm(target - current))
             if distance < best_distance:
@@ -1002,14 +1010,35 @@ class OmniDriver:
                     distance = float(np.linalg.norm(target - current))
                     if distance < best_distance:
                         best_distance = distance
+                    # Scale the progress threshold to the configured
+                    # Cartesian speed.  A fixed 2 mm threshold can falsely
+                    # declare a low-speed but converging move stalled.
+                    min_progress_m = max(
+                        0.00025,
+                        min(
+                            0.002,
+                            float(linear_speed)
+                            * float(self._physics_dt_s)
+                            * 2.0,
+                        ),
+                    )
                     if (
                         stall_reference_distance == float("inf")
-                        or distance < stall_reference_distance - 0.002
+                        or distance < stall_reference_distance - min_progress_m
                     ):
                         stall_reference_distance = distance
                         stall_samples = 0
                     else:
                         stall_samples += 1
+
+                    # Do not let the command waypoint run far ahead of the
+                    # measured TCP if physics/IK temporarily lags.
+                    if (
+                        float(np.linalg.norm(command - current))
+                        > self.STEP_LIMIT_M * 2.0
+                    ):
+                        command = current.copy()
+
                     last_joint_positions = self._joint_positions_np().tolist()
                 except Exception:
                     # Keep commanding the target; the final state read below is
@@ -1036,10 +1065,29 @@ class OmniDriver:
                     velocity_m_s=float(linear_speed),
                 )
 
-            if float(linear_speed) <= 0:
+            speed = float(linear_speed)
+            if speed <= 0:
                 return _failed("SPEED_LIMIT_EXCEEDED", 0)
+
+            # Advance the IK target by at most both the configured Cartesian
+            # speed for one physics frame and the hard STEP_LIMIT_M bound.
+            command_delta = target - command
+            command_distance = float(np.linalg.norm(command_delta))
+            frame_step_m = min(
+                float(self.STEP_LIMIT_M),
+                speed * max(float(self._physics_dt_s), 1e-6),
+            )
+            if command_distance > frame_step_m:
+                command = (
+                    command
+                    + command_delta
+                    * (frame_step_m / command_distance)
+                )
+            else:
+                command = target.copy()
+
             self._franka.set_end_effector_pose(
-                position=target,
+                position=command,
                 orientation=orientation,
                 ik_method=self.IK_METHOD,
             )
@@ -1048,6 +1096,17 @@ class OmniDriver:
 
             if stall_samples >= 6:
                 wall_ms = int((time.monotonic() - start_wall) * 1000)
+                print(
+                    "[omni-ik-stalled] "
+                    f"target={target.tolist()!r} "
+                    f"current={current.tolist()!r} "
+                    f"command={command.tolist()!r} "
+                    f"best_distance_m={best_distance!r} "
+                    f"stall_reference_distance_m={stall_reference_distance!r} "
+                    f"frames={frames!r} "
+                    f"joint_positions={list(last_joint_positions)!r}",
+                    flush=True,
+                )
                 return motion_result(
                     "FAILED", "IK_STALLED", wall_ms,
                     trajectory=trajectory,

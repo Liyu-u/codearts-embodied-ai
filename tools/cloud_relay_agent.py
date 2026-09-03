@@ -146,7 +146,11 @@ class CloudRelayAgent:
         state: RelayStateStore,
         spool: EventSpool,
         *,
-        lease_ms: int = 20_000,
+        # RELAY_LEASE_HARDENED_120S:
+        # Isaac execution can take far longer than 20s.  Renew every 20s,
+        # but keep six renewal intervals of lease headroom so scheduler/SSH
+        # jitter cannot expire an otherwise healthy job.
+        lease_ms: int = 120_000,
         renew_interval_s: float = 20.0,
         heartbeat_interval_s: float = 10.0,
     ) -> None:
