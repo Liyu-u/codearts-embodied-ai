@@ -13,6 +13,7 @@ Group=codearts
 WorkingDirectory=/opt/codearts/current
 EnvironmentFile=/etc/codearts/demo.env
 EnvironmentFile=/etc/codearts/ria.env
+Environment=CLOUD_MODEL_CONFIG_PATH=/opt/codearts/state/model_config.local.json
 # The server reads CLOUD_BIND_HOST/CLOUD_BIND_PORT from the environment file
 # (candidate binds 127.0.0.1:8876; production keeps 8765 on a separate unit).
 ExecStart=/opt/codearts/venv/bin/python -m demo.server

@@ -33,7 +33,12 @@ from integration.config.local_env import load_codearts_env, load_local_env  # no
 from demo.cloud.security import MAX_JSON_BYTES, read_json_body  # noqa: E402
 from demo.cloud.service import configure_cloud_service, get_cloud_service  # noqa: E402
 
-MODEL_CONFIG_PATH = ROOT / ".model_config.local.json"
+MODEL_CONFIG_PATH = Path(
+    os.getenv(
+        "CLOUD_MODEL_CONFIG_PATH",
+        str(ROOT / ".model_config.local.json"),
+    )
+).expanduser()
 _MODEL_IDS = ("A", "B", "C", "D")
 _MODEL_MODES = {"rule", "mock", "smart"}
 
@@ -131,6 +136,15 @@ def _persist_model_config(config: dict) -> None:
     payload = deepcopy(config)
     payload["source"] = "persistent"
     payload["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Production releases are intentionally immutable under systemd
+    # ProtectSystem=strict. Persist mutable configuration only beneath
+    # the explicitly writable state directory.
+    MODEL_CONFIG_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
     temp_path = MODEL_CONFIG_PATH.with_suffix(".tmp")
     temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(temp_path, MODEL_CONFIG_PATH)

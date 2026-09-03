@@ -6,6 +6,7 @@ import json
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -18,6 +19,7 @@ from demo.server import (
     DemoHandler,
     _merge_operator_api_key_config,
     _model_config_defaults,
+    _persist_model_config,
 )
 
 
@@ -192,6 +194,44 @@ class DemoHttpAcceptanceTests(unittest.TestCase):
                     }
                 },
                 current,
+            )
+
+    def test_model_config_persists_in_writable_state_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = (
+                Path(directory)
+                / "state"
+                / "model_config.local.json"
+            )
+
+            config = _model_config_defaults()
+
+            config["modules"]["A"]["api_key"] = "test-a-key"
+            config["modules"]["D"]["api_key"] = "test-d-key"
+
+            with patch(
+                "demo.server.MODEL_CONFIG_PATH",
+                state_path,
+            ):
+                _persist_model_config(config)
+
+            self.assertTrue(state_path.is_file())
+
+            saved = json.loads(
+                state_path.read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(
+                saved["modules"]["A"]["api_key"],
+                "test-a-key",
+            )
+            self.assertEqual(
+                saved["modules"]["D"]["api_key"],
+                "test-d-key",
+            )
+
+            self.assertFalse(
+                state_path.with_suffix(".tmp").exists()
             )
 
     def test_home_hides_redundant_page_titles(self):
