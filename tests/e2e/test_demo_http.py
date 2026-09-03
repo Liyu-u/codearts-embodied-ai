@@ -14,7 +14,11 @@ from urllib.request import Request, urlopen
 from demo.cloud.orchestrator import CloudOrchestrator
 from demo.cloud.service import CloudService, configure_cloud_service
 from demo.cloud.store import CloudStore
-from demo.server import DemoHandler
+from demo.server import (
+    DemoHandler,
+    _merge_operator_api_key_config,
+    _model_config_defaults,
+)
 
 
 class DemoHttpAcceptanceTests(unittest.TestCase):
@@ -125,11 +129,70 @@ class DemoHttpAcceptanceTests(unittest.TestCase):
             '["A", "B", "D"]',
             'credential === "ak" ? 0 : 1',
             'role === "admin"',
-            '"管理员登录"',
-            '"比赛公开模式：配置只读，仅管理员可保存配置"',
             'isAdminSession()',
+            'canEditApiKeys()',
+            '"公开模式：可填写 A/D API Key；其他系统配置只读"',
+            '"API Key 已保存并应用"',
         ):
             self.assertIn(value, javascript)
+
+    def test_operator_may_update_only_a_d_api_keys(self):
+        current = _model_config_defaults()
+
+        updated = _merge_operator_api_key_config(
+            {
+                "modules": {
+                    "A": {"api_key": "operator-a-secret"},
+                    "D": {"api_key": "operator-d-secret"},
+                }
+            },
+            current,
+        )
+
+        self.assertEqual(
+            updated["modules"]["A"]["api_key"],
+            "operator-a-secret",
+        )
+        self.assertEqual(
+            updated["modules"]["D"]["api_key"],
+            "operator-d-secret",
+        )
+
+        with self.assertRaises(PermissionError):
+            _merge_operator_api_key_config(
+                {
+                    "modules": {
+                        "A": {
+                            "model": "unauthorized-model-change",
+                        }
+                    }
+                },
+                current,
+            )
+
+        with self.assertRaises(PermissionError):
+            _merge_operator_api_key_config(
+                {
+                    "modules": {
+                        "B": {
+                            "api_key": "forbidden-b-key",
+                        }
+                    }
+                },
+                current,
+            )
+
+        with self.assertRaises(PermissionError):
+            _merge_operator_api_key_config(
+                {
+                    "modules": {
+                        "D": {
+                            "base_url": "https://example.invalid",
+                        }
+                    }
+                },
+                current,
+            )
 
     def test_home_hides_redundant_page_titles(self):
         _, _, body = self.get("/")

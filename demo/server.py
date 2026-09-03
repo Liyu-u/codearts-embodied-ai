@@ -213,6 +213,57 @@ def _merge_model_config(payload: dict, current: dict) -> dict:
     return merged
 
 
+def _merge_operator_api_key_config(payload: dict, current: dict) -> dict:
+    """Allow a public operator to provide only A/D API credentials.
+
+    The competition page intentionally lets each operator supply the paid
+    DeepSeek credential needed by A/D.  All structural runtime configuration
+    remains protected from public modification.
+    """
+    incoming = payload.get("modules", payload) if isinstance(payload, dict) else None
+    if not isinstance(incoming, dict):
+        raise ValueError("modules 必须是 JSON 对象")
+
+    allowed_modules = {"A", "D"}
+    allowed_keys = {"api_key"}
+
+    merged = deepcopy(current)
+    changed = False
+
+    for module_id, values in incoming.items():
+        if module_id not in allowed_modules:
+            raise PermissionError(
+                f"operator cannot modify module {module_id}"
+            )
+
+        if not isinstance(values, dict):
+            raise ValueError(f"{module_id} 配置必须是 JSON 对象")
+
+        forbidden = set(values) - allowed_keys
+        if forbidden:
+            raise PermissionError(
+                "operator can modify only A/D API Key"
+            )
+
+        if "api_key" not in values:
+            continue
+
+        key = str(values.get("api_key") or "").strip()
+
+        if not key or key.startswith("••"):
+            raise ValueError(
+                f"{module_id} API Key 不能为空"
+            )
+
+        merged["modules"][module_id]["api_key"] = key
+        changed = True
+
+    if not changed:
+        raise ValueError("请至少填写一个 A/D API Key")
+
+    return merged
+
+
 _MODEL_CONFIG = _load_model_config()
 from demo.scenarios import get_scenario, list_scenarios  # noqa: E402
 from integration.adapters import intent, strategy, tracecoder  # noqa: E402
@@ -805,23 +856,70 @@ class DemoHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/model-config":
             global _MODEL_CONFIG
             try:
-                # Model/provider credentials are infrastructure configuration.
-                # Browser operators, including competition open-access users,
-                # must never be able to modify them.
-                self._require_browser("update_configuration")
+                # Public competition operators may supply only the paid
+                # DeepSeek credentials used by A/D.  Full infrastructure
+                # configuration remains ADMIN-only.
+                session = self._require_browser("read")
+
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
-                updated = _merge_model_config(payload, _MODEL_CONFIG)
+
+                role = getattr(
+                    session.role,
+                    "value",
+                    str(session.role),
+                )
+
+                if role == "admin":
+                    updated = _merge_model_config(
+                        payload,
+                        _MODEL_CONFIG,
+                    )
+                elif role == "operator":
+                    updated = _merge_operator_api_key_config(
+                        payload,
+                        _MODEL_CONFIG,
+                    )
+                else:
+                    raise PermissionError(
+                        f"role {role} cannot modify configuration"
+                    )
+
                 _persist_model_config(updated)
                 _MODEL_CONFIG = updated
                 _apply_model_config(_MODEL_CONFIG)
-                self._send_json(200, {"ok": True, "config": _public_model_config(_MODEL_CONFIG)})
+
+                self._send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "config": _public_model_config(
+                            _MODEL_CONFIG
+                        ),
+                    },
+                )
             except PermissionError as exc:
-                self._send_json(403, {"ok": False, "error": str(exc)})
-            except (ValueError, TypeError, json.JSONDecodeError) as exc:
-                self._send_json(400, {"ok": False, "error": str(exc)})
+                self._send_json(
+                    403,
+                    {"ok": False, "error": str(exc)},
+                )
+            except (
+                ValueError,
+                TypeError,
+                json.JSONDecodeError,
+            ) as exc:
+                self._send_json(
+                    400,
+                    {"ok": False, "error": str(exc)},
+                )
             except OSError as exc:
-                self._send_json(500, {"ok": False, "error": f"模型配置写入失败: {exc}"})
+                self._send_json(
+                    500,
+                    {
+                        "ok": False,
+                        "error": f"模型配置写入失败: {exc}",
+                    },
+                )
             return
         if parsed.path.startswith("/api/scenes/"):
             scene_id = parsed.path.rsplit("/", 1)[-1]

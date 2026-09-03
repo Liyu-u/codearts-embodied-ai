@@ -124,21 +124,43 @@
     );
   }
 
+  function canEditApiKeys() {
+    return Boolean(
+      state.session &&
+      state.session.authenticated &&
+      (
+        state.session.role === "operator" ||
+        state.session.role === "admin"
+      )
+    );
+  }
+
   function syncConfigAccess() {
     var isAdmin = isAdminSession();
+    var canEditKeys = canEditApiKeys();
 
-    document.querySelectorAll("#modelConfigForm [data-module]").forEach(function (control) {
-      control.disabled = !isAdmin;
+    document.querySelectorAll(
+      "#modelConfigForm [data-module]"
+    ).forEach(function (control) {
+      var secret = Boolean(control.dataset.configSecret);
+
+      if (isAdmin) {
+        control.disabled = false;
+      } else {
+        control.disabled = !(canEditKeys && secret);
+      }
     });
 
     if ($("saveConfigBtn")) {
-      $("saveConfigBtn").disabled = !isAdmin;
+      $("saveConfigBtn").disabled = !canEditKeys;
     }
 
     if ($("configMessage")) {
       $("configMessage").textContent = isAdmin
-        ? "管理员模式：可修改 A/D API Key 与模型配置"
-        : "比赛公开模式：配置只读，仅管理员可保存配置";
+        ? "管理员模式：可修改完整模型配置"
+        : canEditKeys
+          ? "公开模式：可填写 A/D API Key；其他系统配置只读"
+          : "当前配置只读";
     }
   }
 
@@ -148,7 +170,7 @@
     var role = authenticated ? (session.role || "—") : "—";
     var openAccess = Boolean(session && session.demo_open_access);
     var isAdmin = authenticated && role === "admin";
-    var canLogout = authenticated && (isAdmin || !openAccess);
+    var canLogout = authenticated && !openAccess;
 
     if ($("sessionState")) {
       $("sessionState").textContent =
@@ -164,17 +186,15 @@
     if ($("userRole")) $("userRole").textContent = role;
 
     if ($("userSessionStatus")) {
-      $("userSessionStatus").textContent = isAdmin
-        ? "管理员会话"
+      $("userSessionStatus").textContent = openAccess
+        ? "比赛公开会话"
         : authenticated
           ? "已登录"
           : "未登录";
     }
 
     if ($("loginBtn")) {
-      $("loginBtn").hidden = isAdmin || (authenticated && !openAccess);
-      $("loginBtn").textContent =
-        openAccess && !isAdmin ? "管理员登录" : "登录";
+      $("loginBtn").hidden = authenticated;
     }
 
     if ($("logoutBtn")) {
@@ -457,24 +477,48 @@
   function saveConfig(event) {
     event.preventDefault();
 
-    if (!isAdminSession()) {
+    if (!canEditApiKeys()) {
       if ($("configMessage")) {
         $("configMessage").textContent =
-          "保存失败：仅管理员可以修改运行配置";
+          "当前会话无权提交 API Key";
       }
-      toast("请先进行管理员登录");
+      toast("当前会话无权提交 API Key");
       return;
     }
 
     var modules = {};
+    var isAdmin = isAdminSession();
 
-    document.querySelectorAll("[data-module]").forEach(function (control) {
-      if (control.dataset.configSecret && !control.value.trim()) return;
+    document.querySelectorAll(
+      "[data-module]"
+    ).forEach(function (control) {
+      if (!isAdmin && !control.dataset.configSecret) {
+        return;
+      }
+
+      if (
+        control.dataset.configSecret &&
+        !control.value.trim()
+      ) {
+        return;
+      }
 
       var id = control.dataset.module;
       modules[id] = modules[id] || {};
       modules[id][control.dataset.key] = control.value;
     });
+
+    if (
+      !isAdmin &&
+      Object.keys(modules).length === 0
+    ) {
+      if ($("configMessage")) {
+        $("configMessage").textContent =
+          "请至少填写一个 A/D API Key";
+      }
+      toast("请先填写 API Key");
+      return;
+    }
 
     api("model-config", {
       method: "PUT",
@@ -482,16 +526,25 @@
     })
       .then(function (data) {
         renderConfig(data);
+
         if ($("configMessage")) {
-          $("configMessage").textContent = "配置已保存并应用";
+          $("configMessage").textContent = isAdmin
+            ? "完整配置已保存并应用"
+            : "API Key 已保存并应用";
         }
-        toast("配置保存成功");
+
+        toast(
+          isAdmin
+            ? "配置保存成功"
+            : "API Key 已应用"
+        );
       })
       .catch(function (error) {
         if ($("configMessage")) {
           $("configMessage").textContent =
             "保存失败: " + error.message;
         }
+
         toast("配置保存失败");
       });
   }
