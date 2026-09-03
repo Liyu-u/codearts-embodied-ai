@@ -91,6 +91,47 @@ class DemoHttpAcceptanceTests(unittest.TestCase):
         self.assertIn(b"apiBase", js_body)
         self.assertIn(b"/api/livestream", js_body)
 
+    def test_frontend_cockpit_contract_is_present(self):
+        _, _, body = self.get("/")
+        html = body.decode("utf-8")
+        for value in (
+            'data-view="home"',
+            'data-view="config"',
+            'data-view="records"',
+            'data-view="user"',
+            'id="homeView"',
+            'id="configView"',
+            'id="recordsView"',
+            'id="userView"',
+            'id="stageAState"',
+            'id="stageBState"',
+            'id="stageCState"',
+            'id="stageDState"',
+            'id="modelConfigForm"',
+            'id="recordsList"',
+            'id="userName"',
+            'id="userRole"',
+        ):
+            self.assertIn(value, html)
+
+        _, _, js_body = self.get("/app.js")
+        javascript = js_body.decode("utf-8")
+        for value in (
+            'data-config-secret',
+            'data-config-field',
+            'data-credential-status',
+            'id + "." + key',
+            '["A", "B", "D"]',
+            'credential === "ak" ? 0 : 1',
+        ):
+            self.assertIn(value, javascript)
+
+    def test_home_hides_redundant_page_titles(self):
+        _, _, body = self.get("/")
+        html = body.decode("utf-8")
+        self.assertNotIn("<h1>具身智能执行平台</h1>", html)
+        self.assertNotIn('id="homeTitle"', html)
+
     def test_scenario_catalog_exposes_only_verified_isaac_presets(self):
         status, _, body = self.get("/api/scenarios")
         catalog = json.loads(body.decode("utf-8"))["scenarios"]
